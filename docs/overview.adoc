@@ -1,0 +1,27 @@
+== Overview
+
+Cucumber NewsScraper is a responsive, client-side news dashboard that aggregates articles from multiple publishers, with optional **AI-generated summaries** and related tools (comments metadata, sorting, YouTube search suggestions).
+
+=== Supported news sources
+
+Sources are defined in `js/news-sources-registry.js` and loaded by `js/news-scraper.js` (switch in the header):
+
+* *heise.de* — Atom + rubric/magazine feeds (CORS-friendly Atom URLs; optional `dev_server` proxy for some URLs)
+* *Telepolis* — Atom via `GET /api/telepolis-feed` when using `scripts/dev_server.py`
+* *golem.de* — RSS via `GET /api/golem-feed`
+* *ComputerBase* — Atom (`/rss/news.xml`), often direct fetch (permissive CORS)
+* *t3n* — RSS via `GET /api/t3n-feed`
+* *IT-Administrator* — RSS via `GET /api/it-administrator-feed`
+* *The Verge* — Atom via `GET /api/verge-feed` (optional `?url=` for section feeds)
+
+=== Highlights
+
+* Automatic feed refresh on a configurable interval (minutes)
+* Category filters (IT & Tech, Security, AI, Science, Mobiles, Entertainment, Economy, Net politics, Journal, plus Heise-specific magazine keys)
+* Dark/light appearance and multiple accent color themes
+* IndexedDB persistence for articles and AI summaries (configurable TTL)
+* Comment counts / forum links where APIs exist (Heise, Golem); stubs for other sources
+* Sorting by recency, date range, comment counts, or ratings (where data is available)
+* “New article” badges and optional auto-summary for new items matching the current filter
+* Batch actions: summarize all filtered articles (with concurrency limits)
+* Internationalized UI strings (`locales/de.json`, `locales/en.json`)

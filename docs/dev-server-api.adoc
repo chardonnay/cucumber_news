@@ -1,0 +1,82 @@
+== Dev server HTTP API (`scripts/dev_server.py`)
+
+Unless noted, routes are intended for *local development* on the same origin as the static app.
+
+[cols="2,1,3",options="header"]
+|===
+|Route |Method |Purpose
+
+|`/.well-known/lmstudio-dev-server`
+|GET
+|Probe: app detects bundled LM Studio proxy capabilities.
+
+|`/api/heise-comments`
+|GET
+|Heise article + forum comment stats (`url` query).
+
+|`/api/heise-feed`
+|GET
+|Proxy for `https://www.heise.de/…/*.xml` feeds (`url` query; allowlisted paths).
+
+|`/api/telepolis-feed`
+|GET
+|Telepolis Atom proxy.
+
+|`/api/golem-feed`
+|GET
+|Golem RSS proxy (shared cache with comment helper).
+
+|`/api/golem-comments`
+|GET
+|Golem comment count + forum link from RSS (`url` query).
+
+|`/api/t3n-feed`
+|GET
+|t3n RSS proxy.
+
+|`/api/it-administrator-feed`
+|GET
+|IT-Administrator RSS proxy.
+
+|`/api/verge-feed`
+|GET
+|The Verge Atom proxy; optional `url` for section feeds under `https://www.theverge.com/rss/`.
+
+|`/api/computerbase-comments`
+|GET
+|Stub / metadata for ComputerBase articles.
+
+|`/api/t3n-comments`
+|GET
+|Stub for t3n.
+
+|`/api/verge-comments`
+|GET
+|Stub / `#comments` link for Verge.
+
+|`/api/check-url`
+|GET
+|HTTP probe for alternative-link validation (`url` query).
+
+|`/api/search-news`
+|GET
+|Bing News RSS search (`q`, `limit`, `mkt` query params).
+
+|`/api/reddit-search`
+|GET
+|Reddit thread search JSON proxy.
+
+|`/api/youtube-search`
+|GET
+|YouTube Data API v3 search if `YOUTUBE_API_KEY` is set.
+
+|`/api/v1/chat`
+|POST
+|Forwarded to LM Studio chat (same-origin bridge).
+
+|`/v1/models`
+|GET
+|Forwarded model list (OpenAI-style discovery).
+|===
+
+Also serves static files from the project root (e.g. `index.html`, `js/`, `locales/`).

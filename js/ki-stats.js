@@ -1,0 +1,303 @@
+/**
+ * Cucumber NewsScraper — client-side KI usage stats (tokens, duration); localStorage.
+ *
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Daniel Mengel
+ */
+
+const KI_STATS_STORAGE_KEY = 'heise_ki_article_stats_v1';
+const KI_STATS_MAX_ENTRIES = 500;
+
+/**
+ * @typedef {{ t: number, durationMs: number, totalTokens: number|null, promptTokens?: number, completionTokens?: number }} KiStatsEntry
+ */
+
+class KiStats {
+    /**
+     * OpenAI-style `usage` on chat completions.
+     * @param {unknown} data
+     * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
+     */
+    static _extractOpenAiUsage(data) {
+        if (!data || typeof data !== 'object') {
+            return null;
+        }
+        const u = /** @type {Record<string, unknown>} */ (data).usage;
+        if (!u || typeof u !== 'object') {
+            return null;
+        }
+        const uo = /** @type {Record<string, unknown>} */ (u);
+        const pt =
+            Number(uo.prompt_tokens ?? uo.promptTokens ?? uo.input_tokens ?? uo.inputTokens ?? 0) || 0;
+        const ct =
+            Number(
+                uo.completion_tokens ?? uo.completionTokens ?? uo.output_tokens ?? uo.outputTokens ?? 0
+            ) || 0;
+        let tt = Number(uo.total_tokens ?? uo.totalTokens ?? 0) || 0;
+        if (!tt && (pt || ct)) {
+            tt = pt + ct;
+        }
+        if (!(tt > 0) && !(pt > 0) && !(ct > 0)) {
+            return null;
+        }
+        return {
+            totalTokens: Math.round(tt),
+            promptTokens: Math.round(pt),
+            completionTokens: Math.round(ct)
+        };
+    }
+
+    /**
+     * LM Studio native REST (`/api/v1/chat`): token counts in `stats`, not `usage`.
+     * @see LM Studio log: stats.input_tokens, stats.total_output_tokens, stats.reasoning_output_tokens
+     * @param {unknown} data
+     * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
+     */
+    static _extractLmStudioStatsUsage(data) {
+        if (!data || typeof data !== 'object') {
+            return null;
+        }
+        const d = /** @type {Record<string, unknown>} */ (data);
+        const s = d.stats;
+        if (!s || typeof s !== 'object') {
+            return null;
+        }
+        const so = /** @type {Record<string, unknown>} */ (s);
+        const input =
+            Number(so.input_tokens ?? so.prompt_tokens ?? so.promptTokens ?? 0) || 0;
+        let out =
+            Number(
+                so.total_output_tokens ??
+                    so.output_tokens ??
+                    so.completion_tokens ??
+                    so.completionTokens ??
+                    0
+            ) || 0;
+        const reasoning =
+            Number(so.reasoning_output_tokens ?? so.reasoningTokens ?? 0) || 0;
+        if (out <= 0 && reasoning > 0) {
+            out = reasoning;
+        }
+        let tt = Number(so.total_tokens ?? so.totalTokens ?? 0) || 0;
+        if (!tt && (input || out)) {
+            tt = input + out;
+        }
+        if (!(tt > 0) && !(input > 0) && !(out > 0)) {
+            return null;
+        }
+        if (!tt) {
+            tt = input + out;
+        }
+        return {
+            totalTokens: Math.round(tt),
+            promptTokens: Math.round(input),
+            completionTokens: Math.round(out)
+        };
+    }
+
+    /**
+     * @param {unknown} data — OpenAI-compatible (`usage`) or LM Studio REST (`stats`)
+     * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
+     */
+    static extractUsageFromChatResponse(data) {
+        return KiStats._extractOpenAiUsage(data) || KiStats._extractLmStudioStatsUsage(data);
+    }
+
+    /**
+     * @param {{ durationMs: number, usage: { totalTokens: number, promptTokens: number, completionTokens: number } | null }} payload
+     */
+    static recordArticleSummary(payload) {
+        const durationMs = Math.max(0, Math.round(Number(payload.durationMs) || 0));
+        const usage = payload.usage;
+        /** @type {KiStatsEntry} */
+        const entry = {
+            t: Date.now(),
+            durationMs,
+            totalTokens: usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : null,
+            promptTokens: usage && typeof usage.promptTokens === 'number' ? usage.promptTokens : undefined,
+            completionTokens:
+                usage && typeof usage.completionTokens === 'number' ? usage.completionTokens : undefined
+        };
+        try {
+            const raw = localStorage.getItem(KI_STATS_STORAGE_KEY);
+            let list = [];
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    list = parsed;
+                }
+            }
+            list.push(entry);
+            if (list.length > KI_STATS_MAX_ENTRIES) {
+                list = list.slice(-KI_STATS_MAX_ENTRIES);
+            }
+            localStorage.setItem(KI_STATS_STORAGE_KEY, JSON.stringify(list));
+        } catch (e) {
+            console.warn('KiStats: persist failed', e);
+        }
+    }
+
+    static clear() {
+        try {
+            localStorage.removeItem(KI_STATS_STORAGE_KEY);
+        } catch (e) {
+            console.warn('KiStats: clear failed', e);
+        }
+    }
+
+    /**
+     * @returns {KiStatsEntry[]}
+     */
+    static loadEntries() {
+        try {
+            const raw = localStorage.getItem(KI_STATS_STORAGE_KEY);
+            if (!raw) {
+                return [];
+            }
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? /** @type {KiStatsEntry[]} */ (parsed) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * @returns {{
+     *   entries: KiStatsEntry[],
+     *   count: number,
+     *   totalTokens: number,
+     *   tokenSamples: number,
+     *   avgTokens: number|null,
+     *   avgDurationMs: number|null
+     * }}
+     */
+    static getSnapshot() {
+        const entries = KiStats.loadEntries();
+        const count = entries.length;
+        let totalTokens = 0;
+        let tokenSamples = 0;
+        for (const e of entries) {
+            if (e && typeof e.totalTokens === 'number' && e.totalTokens > 0) {
+                totalTokens += e.totalTokens;
+                tokenSamples += 1;
+            }
+        }
+        const avgTokens = tokenSamples > 0 ? Math.round(totalTokens / tokenSamples) : null;
+        let sumDur = 0;
+        for (const e of entries) {
+            if (e && typeof e.durationMs === 'number') {
+                sumDur += e.durationMs;
+            }
+        }
+        const avgDurationMs = count > 0 ? Math.round(sumDur / count) : null;
+        return {
+            entries,
+            count,
+            totalTokens,
+            tokenSamples,
+            avgTokens,
+            avgDurationMs
+        };
+    }
+
+    /** Max buckets shown (oldest dropped when over). */
+    static _maxBuckets(period) {
+        if (period === 'day') {
+            return 31;
+        }
+        if (period === 'month') {
+            return 24;
+        }
+        return 12;
+    }
+
+    /**
+     * @typedef {{
+     *   key: string,
+     *   label: string,
+     *   avgTokens: number|null,
+     *   totalTokens: number,
+     *   tokenSamples: number,
+     *   summaryCount: number
+     * }} KiStatsTokenCompareBucket
+     */
+
+    /**
+     * Chart buckets: per calendar month — average tokens per article (among entries with token data)
+     * and sum of tokens in that month. Compares “intensity per request” vs “volume”.
+     * @param {'month'} resolution
+     * @param {string} [locale]
+     * @returns {KiStatsTokenCompareBucket[]}
+     */
+    static getChartBucketsAvgVsTotalTokens(resolution, locale) {
+        const loc = locale && String(locale).trim() ? String(locale) : 'de-DE';
+        const entries = KiStats.loadEntries().filter((e) => e && typeof e.t === 'number');
+
+        if (resolution !== 'month') {
+            return [];
+        }
+
+        /** @type {Map<string, { summaryCount: number, tokenSum: number, tokenCount: number }>} */
+        const perMonth = new Map();
+        for (const e of entries) {
+            const d = new Date(e.t);
+            const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            let agg = perMonth.get(mk);
+            if (!agg) {
+                agg = { summaryCount: 0, tokenSum: 0, tokenCount: 0 };
+                perMonth.set(mk, agg);
+            }
+            agg.summaryCount += 1;
+            const tt = e.totalTokens;
+            if (typeof tt === 'number' && tt > 0) {
+                agg.tokenSum += tt;
+                agg.tokenCount += 1;
+            }
+        }
+
+        let keys = [...perMonth.keys()].sort();
+        const maxB = KiStats._maxBuckets('month');
+        if (keys.length > maxB) {
+            keys = keys.slice(-maxB);
+        }
+
+        return keys.map((key) => {
+            const agg = perMonth.get(key);
+            const tokenSamples = agg ? agg.tokenCount : 0;
+            const totalTokens = agg ? agg.tokenSum : 0;
+            const avgTokens =
+                agg && agg.tokenCount > 0 ? Math.round(agg.tokenSum / agg.tokenCount) : null;
+            return {
+                key,
+                label: KiStats._formatBucketLabel(key, 'month', loc),
+                avgTokens,
+                totalTokens,
+                tokenSamples,
+                summaryCount: agg ? agg.summaryCount : 0
+            };
+        });
+    }
+
+    /**
+     * @param {string} key
+     * @param {'day'|'month'|'year'} period
+     * @param {string} locale
+     */
+    static _formatBucketLabel(key, period, locale) {
+        if (period === 'year' && /^\d{4}$/.test(String(key).trim())) {
+            return String(key).trim();
+        }
+        const parts = key.split('-').map((x) => parseInt(x, 10));
+        if (period === 'month' && parts.length >= 2) {
+            const d = new Date(parts[0], parts[1] - 1, 1);
+            return d.toLocaleDateString(locale, { month: 'short', year: 'numeric' });
+        }
+        if (parts.length >= 3) {
+            const d = new Date(parts[0], parts[1] - 1, parts[2]);
+            return d.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+        }
+        return key;
+    }
+}
+
+window.KiStats = KiStats;

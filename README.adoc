@@ -1,0 +1,98 @@
+= Cucumber NewsScraper
+// SPDX-License-Identifier: MIT
+:toc: macro
+:toclevels: 3
+
+image::images/cucumber-news-banner-v2.png[Cucumber NewsScraper banner,width=800,align=center]
+
+Multi-source, responsive news dashboard (Heise, Telepolis, Golem, ComputerBase, t3n, IT-Administrator, The Verge) with optional *AI summaries* (LM Studio REST v1 or OpenAI-compatible APIs), local IndexedDB cache, and a Python dev server for feeds, comments metadata, and same-origin KI proxying.
+
+License: link:LICENSE[MIT] (see <<license,License>>). Feed content and trademarks belong to their respective publishers.
+
+toc::[]
+
+== Quick start (recommended)
+
+[source,bash]
+----
+cd news_reader_web
+python3 scripts/dev_server.py
+# Open http://127.0.0.1:8080/index.html
+----
+
+The bundled server serves static files and proxies LM Studio (`POST /api/v1/chat`, `GET /v1/models`) plus feed and helper routes (see link:docs/dev-server-api.adoc[Dev server API]).
+
+=== KI (LM Studio)
+
+. Start LM Studio local server (e.g. port `1234`).
+. Open *KI-Server* in the dashboard: mode *LM Studio REST v1*, base URL `http://127.0.0.1:1234` (no path), model name exactly as shown in LM Studio.
+. Enable *REST via same page origin* when using `dev_server`, save, reload.
+
+Details: link:docs/ki-integration.adoc[AI integration guide].
+
+== Plain static server (limited)
+
+[source,bash]
+----
+python3 -m http.server 8080
+----
+
+Without `dev_server`, many `/api/*` routes and same-origin KI proxying are unavailable; some feeds may fail in the browser due to CORS.
+
+== Repository layout
+
+[source,text]
+----
+news_reader_web/
+├── index.html              # SPA shell, CSP, styles
+├── images/
+│   └── cucumber-news-banner-v2.png
+├── js/
+│   ├── app.js
+│   ├── news-scraper.js
+│   ├── ai-summarizer.js
+│   ├── storage.js
+│   ├── heise-comments.js
+│   ├── youtube-related.js
+│   ├── ki-stats.js
+│   └── news-sources-registry.js
+├── locales/
+│   ├── de.json
+│   └── en.json
+├── scripts/
+│   ├── dev_server.py
+│   └── lm_studio_cors_proxy.py
+├── docs/                   # AsciiDoc manual (this README includes it)
+└── LICENSE
+----
+
+include::docs/overview.adoc[]
+
+include::docs/architecture.adoc[]
+
+include::docs/ki-integration.adoc[]
+
+include::docs/adding-sources.adoc[]
+
+include::docs/dev-server-api.adoc[]
+
+include::docs/troubleshooting.adoc[]
+
+include::docs/privacy.adoc[]
+
+include::docs/CONTRIBUTING.adoc[]
+
+include::docs/CHANGELOG.adoc[]
+
+[[license]]
+== License
+
+The software in this repository is licensed under the link:LICENSE[MIT License].
+
+Copyright (c) 2026 Daniel Mengel.
+
+RSS/Atom content, logos, and trademarks of news sites are *not* covered by this license and remain with their owners. This project only displays data made available through public feeds and the user’s browser.
+
+== Markdown README
+
+A short pointer file is kept as link:README.md[`README.md`] for tools that expect Markdown by default.

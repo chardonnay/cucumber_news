@@ -1,0 +1,9 @@
+.venv-doc/
+
+# macOS / editor
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class

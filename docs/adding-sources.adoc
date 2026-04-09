@@ -1,0 +1,58 @@
+== Adding a new article source
+
+Follow these steps to integrate another RSS/Atom publisher in a way consistent with the existing codebase.
+
+image::docs/images/diagram-adding-news-source.png[Flow for adding a news source,width=800,align=center]
+
+=== 1. Register the source
+
+Edit `js/news-sources-registry.js`:
+
+* Append `{ id: 'your_id', siteUrl: 'https://…' }` in the desired *default order* (the UI uses this order).
+
+Use a stable `id` (snake_case matches existing entries, e.g. `it_administrator`).
+
+=== 2. Configure scraping
+
+Edit `js/news-scraper.js` — in `configureSource`:
+
+* Add a `case 'your_id':` branch setting `baseUrl`, `feedUrl`, `feedType` (`'atom'` or `'rss'`), `cacheName`, and either `atomLinkHost` or `rssItemHost` to match link hostnames in the feed.
+* If the browser cannot fetch the feed due to CORS, set `feedProxyPath` (e.g. `'/api/your-feed'`).
+
+Implement or extend parsers:
+
+* Atom → `parseAtomFeed`
+* RSS 2.0 → `parseRss2Feed` (may need a small branch for category inference, like `it_administrator`).
+
+Add `getFallbackNews` demo entry and `clearAllFeedCaches` cache name.
+
+=== 3. Dev server proxy (if needed)
+
+In `scripts/dev_server.py`:
+
+* Add a cached fetch function (mirror `_t3n_fetch_rss_xml` / `_golem_fetch_rss_xml`).
+* Expose `GET /api/your-feed` with `Content-Type: application/rss+xml` or `atom+xml` and CORS headers consistent with other feed routes.
+* Document the route in the server banner string at the bottom of the file.
+
+=== 4. Content Security Policy
+
+If the browser should fall back to a *direct* `fetch` to the publisher, add the host to `connect-src` in `index.html`’s CSP meta tag. If you only ever use the same-origin proxy, you may omit the external host.
+
+=== 5. UI, i18n, and migrations
+
+* `js/app.js` — brand logo URL in `getBrandLogoUrl`, optional wordmark/alt branches in locale application, and a *catalog migration* bump (`newsSourcesCatalogMigrationVersion`) so existing users get the new id in `enabledNewsSources`.
+* `locales/de.json` and `locales/en.json` — `header.news_source_your_id`, and optional `brand_wordmark_*` / `logo_alt_*` keys.
+
+=== 6. AI summarizer metadata
+
+Edit `js/ai-summarizer.js`:
+
+* Include the new id in `newsCatalogIds()` fallback array (when `window.NEWS_SOURCE_IDS` is missing).
+* Extend `newsSourceIdMatchesHostname` and `getNewsSourceLabel()` maps so alternative-link filtering and prompts use the correct domain.
+* If the site is German/English, extend `siteLanguageFromArticleUrl` when it is not already covered by defaults.
+
+=== 7. Manual test checklist
+
+* Load via `python3 scripts/dev_server.py`, select the new source, confirm articles appear.
+* Toggle summaries with LM Studio running (same-origin REST).
+* Open an article with “alternative links” and verify `/api/search-news` returns third-party URLs only.

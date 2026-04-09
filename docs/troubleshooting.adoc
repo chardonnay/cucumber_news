@@ -1,0 +1,40 @@
+== Troubleshooting
+
+=== News feed empty or fallback demo articles
+
+* Open the browser developer console and check for network errors.
+* *Heise* and some other feeds require correct URLs; many non-Heise RSS feeds need `scripts/dev_server.py` because publishers do not send `Access-Control-Allow-Origin` for RSS.
+* Confirm you opened the app from the dev server origin when using `/api/*-feed` proxies.
+
+=== AI: “Failed to fetch” or LM Studio logs `OPTIONS /api/v1/chat`
+
+* Prefer `python3 scripts/dev_server.py` and open `http://127.0.0.1:8080/index.html` (or your chosen port).
+* In *KI settings*, enable REST via the same origin and save; reload the page.
+* Alternative: `scripts/lm_studio_cors_proxy.py` or LM Studio *Enable CORS* (see LM Studio documentation).
+
+=== Mixed content (HTTPS page, HTTP API)
+
+* Serve the dashboard over `http://localhost` / `http://127.0.0.1` for local LM Studio, or terminate TLS in front of both app and API.
+
+=== OpenAI-compatible mode: `'messages' field is required`
+
+* Base URL must be `http://host:port/v1` — not `…/v1/chat/completions` (the client appends the path).
+
+=== Summary cache
+
+* Summaries live in IndexedDB; clearing *site data* removes them.
+* To hard-reset in the console (destructive):
+
+[source,javascript]
+----
+localStorage.clear();
+indexedDB.deleteDatabase('HeiseNewsDashboard');
+caches.keys().then((names) => names.forEach((n) => caches.delete(n)));
+location.reload();
+----
+
+Adjust the database name if your fork renamed it in `storage.js`.
+
+=== Comment counts missing
+
+* Comment integration depends on `dev_server` routes. Pure `python -m http.server` will not provide `/api/heise-comments` or `/api/golem-comments`.

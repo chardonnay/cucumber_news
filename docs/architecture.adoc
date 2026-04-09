@@ -1,0 +1,53 @@
+== Architecture
+
+The app is a *single-page* HTML application: `index.html` loads vanilla ES modules / scripts under `js/`. There is no build step required for the browser UI.
+
+=== Front-end modules
+
+[cols="1,3",options="header"]
+|===
+|File |Role
+
+|`js/app.js`
+|Application shell: routing of user actions, news list rendering, filters, sort, KI batch jobs, settings UI, i18n application.
+
+|`js/news-scraper.js`
+|Fetches and parses Atom/RSS per selected source; optional `dev_server` proxy paths; deduplication; category inference; HTTP cache (Cache API) where configured.
+
+|`js/storage.js`
+|IndexedDB (`NewsStorage`): settings mirror, articles, summary cache, schema helpers.
+
+|`js/ai-summarizer.js`
+|Builds prompts, calls LM Studio REST v1 or OpenAI-compatible chat completions, reads/writes summary cache, fetches *alternative links* via Bing News RSS through the dev server, validates URLs via `/api/check-url`.
+
+|`js/heise-comments.js`
+|Loads comment statistics for supported sites via dev-server JSON endpoints.
+
+|`js/youtube-related.js`
+|AI-driven YouTube *search directions* (JSON from the model); optional legacy `/api/youtube-search` if an API key is configured server-side.
+
+|`js/ki-stats.js`
+|Lightweight stats/helpers for KI usage (if present in your tree).
+
+|`js/news-sources-registry.js`
+|Canonical ordered list of source ids and site URLs exposed as `window.NEWS_SOURCE_IDS`.
+|===
+
+=== Server-side companion (`scripts/dev_server.py`)
+
+When you open the dashboard from this server (e.g. `http://127.0.0.1:8080/index.html`), the browser and the API share the *same origin*. That avoids CORS preflight issues when proxying:
+
+* LM Studio `POST /api/v1/chat` and `GET /v1/models`
+* Feed proxies (`/api/golem-feed`, `/api/t3n-feed`, …)
+* `GET /api/heise-comments`, `GET /api/golem-comments`, stubs for other comment routes
+* `GET /api/search-news` (Bing News RSS → article URLs for “alternative sources”)
+* `GET /api/check-url` (HTTP probe for link validation)
+* `GET /api/reddit-search` (used from the app for related discussion threads)
+
+The app can auto-detect this setup via `GET /.well-known/lmstudio-dev-server`.
+
+=== Data stores (browser)
+
+* *IndexedDB* — primary persistence for news items, summaries, and many settings.
+* *localStorage* — small mirrors for quick reads (e.g. selected source, theme).
+* *Cache API* — optional feed response caching keyed by feed URL.

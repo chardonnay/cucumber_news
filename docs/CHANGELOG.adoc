@@ -1,0 +1,9 @@
+== Changelog
+
+All notable documentation and packaging changes for this repository may be recorded here.
+
+=== Unreleased
+
+* Documentation migrated to AsciiDoc; added MIT `LICENSE`, architecture and KI integration guides, diagrams, and dev-server API reference.
+
+_(Maintain release sections below as you tag versions.)_

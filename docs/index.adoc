@@ -1,0 +1,15 @@
+= Cucumber NewsScraper — documentation index
+
+The full manual is assembled in the repository root as link:../README.adoc[`README.adoc`] (includes the chapters below).
+
+* link:overview.adoc[Overview]
+* link:architecture.adoc[Architecture]
+* link:ki-integration.adoc[AI integration]
+* link:adding-sources.adoc[Adding a news source]
+* link:dev-server-api.adoc[Dev server API]
+* link:troubleshooting.adoc[Troubleshooting]
+* link:privacy.adoc[Privacy]
+* link:CONTRIBUTING.adoc[Contributing]
+* link:CHANGELOG.adoc[Changelog]
+
+Diagram sources: `docs/diagrams/*.mmd` — PNG outputs in `docs/images/`.

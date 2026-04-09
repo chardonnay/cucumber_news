@@ -1,0 +1,18 @@
+== Contributing
+
+* Prefer small, focused changes with clear commit messages.
+* Keep `backup/` as archival reference; edit the primary files under `js/`, `scripts/`, and `locales/` instead.
+* When changing user-visible strings, update *both* `locales/de.json` and `locales/en.json`.
+* After adding HTTP APIs or static paths, document them in `docs/dev-server-api.adoc` and mention CSP impacts in `index.html` if the browser calls new origins directly.
+* License: code is contributed under the same link:../LICENSE[MIT license] unless explicitly stated otherwise.
+
+=== Diagrams (maintainers)
+
+Mermaid sources live in `docs/diagrams/*.mmd`. Regenerate PNGs for GitHub:
+
+[source,bash]
+----
+cd /path/to/news_reader_web
+npx --yes @mermaid-js/mermaid-cli@11.4.0 -i docs/diagrams/ki-integration.mmd -o docs/images/diagram-ki-integration.png -b white
+npx --yes @mermaid-js/mermaid-cli@11.4.0 -i docs/diagrams/adding-news-source.mmd -o docs/images/diagram-adding-news-source.png -b white
+----

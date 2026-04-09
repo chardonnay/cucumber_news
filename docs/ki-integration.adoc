@@ -1,0 +1,52 @@
+== AI integration (KI)
+
+This section describes what the *Cucumber NewsScraper* AI layer can do and how it interacts with your environment.
+
+image::docs/images/diagram-ki-integration.png[AI integration data flow,width=800,align=center]
+
+=== Modes
+
+* *LM Studio REST v1* (recommended with `dev_server`) — `POST /api/v1/chat` with `model`, `input`, and `system_prompt`. Responses may include `output[]` entries of type `message` and optionally `reasoning`. The UI shows only final `message` text, not internal reasoning.
+* *OpenAI-compatible* — `POST /v1/chat/completions` with a chat-style payload. Base URL must end with `/v1` (the client appends `/chat/completions`).
+
+Enable *REST via same page origin* in settings when using `scripts/dev_server.py` so the browser does not call LM Studio cross-origin (avoids `OPTIONS` preflight failures on many LM Studio builds).
+
+=== Summary language
+
+* *Site* (`summaryLangMode: site`) — output language is inferred from the article URL (e.g. English for `theverge.com`, German for typical `.de` publishers).
+* *Browser* — uses `navigator.language`.
+
+The prompt includes a *source label* (e.g. `heise.de`, `The Verge`) so the model can align tone and context.
+
+=== Caching and batch operations
+
+* Summaries are stored in IndexedDB with a configurable TTL (*Summary cache (days)*; `0` = no expiry).
+* *Show summary* uses the cache when fresh; *Regenerate* / *Neu erstellen* sets `forceRefresh` and deletes the cached row first.
+* *Summarize all* (header) walks all articles matching the *current category filter*, respects the same cache rules, and uses a configurable concurrency limit and per-request timeout.
+* For *new* articles that match the active filter, the app can automatically request summaries when the feed updates (if the model endpoint is reachable).
+
+=== Alternative article links (not LLM-hallucinated URLs)
+
+The model is instructed to produce a summary; *concrete alternative URLs* are fetched separately:
+
+. The client calls `GET /api/search-news` on the dev server with the article headline (Bing News RSS).
+. Results are filtered through `AISummarizer.shouldExcludeAlternativeLinkUrl` (drops same-host links and configured news-source domains, plus an optional user domain blocklist).
+. Optional: `GET /api/check-url` drops obvious `404`/`410` responses before showing a link.
+
+This keeps “more sources” grounded in real publisher URLs when the dev server is available.
+
+=== Reddit search
+
+The dashboard can query `GET /api/reddit-search` (JSON proxy) to suggest related Reddit threads for a headline — useful for discussion context alongside news.
+
+=== YouTube suggestions
+
+Per-article *YouTube* uses the AI to return structured JSON (search directions and `searchQuery` strings). The UI opens YouTube search result pages — *no YouTube Data API key is required* for that path.
+
+If `YOUTUBE_API_KEY` is set on the server, `GET /api/youtube-search` remains available as an optional legacy integration (`js/youtube-related.js`).
+
+=== Failure modes (short)
+
+* *CORS / Failed to fetch* — use `dev_server` + same-origin REST, or enable CORS in LM Studio, or use the OpenAI-compatible path; see link:troubleshooting.adoc[Troubleshooting].
+* *HTTP 400* — wrong model id, or unsupported `reasoning` parameter (the client retries without it when possible).
+* *Only reasoning, no message* — change model/settings or use *Regenerate*; the UI surfaces a clear error.

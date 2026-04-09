@@ -1,0 +1,12 @@
+%% Cucumber NewsScraper — adding a news source (source for PNG export)
+flowchart LR
+  A["news-sources-registry.js<br/>NEWS_SOURCES_REGISTRY"] --> B["news-scraper.js<br/>configureSource"]
+  B --> C{Feed needs<br/>CORS proxy?}
+  C -->|yes| D["dev_server.py<br/>GET /api/*-feed + cache"]
+  C -->|no| E["Direct fetch"]
+  D --> F["index.html<br/>connect-src CSP"]
+  E --> F
+  B --> G["locales<br/>news_source_*"]
+  B --> H["app.js<br/>catalog migration"]
+  B --> I["ai-summarizer.js<br/>host map"]
+  H --> J["UI select + branding"]

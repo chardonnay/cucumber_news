@@ -1,0 +1,36 @@
+%% Cucumber NewsScraper — AI integration data flow (source for PNG export)
+flowchart TB
+  subgraph browser [Browser]
+    UI[Dashboard UI / App.js]
+    AS[AISummarizer.js]
+    ST[NewsStorage IndexedDB]
+    UI --> AS
+    AS --> ST
+  end
+
+  subgraph devsrv [Optional dev_server same origin]
+    PROXY["POST /api/v1/chat → LM Studio"]
+    MODELS["GET /v1/models"]
+    SEARCH["GET /api/search-news Bing RSS"]
+    CHECK["GET /api/check-url"]
+    REDDIT["GET /api/reddit-search"]
+  end
+
+  subgraph external [External]
+    LM[LM Studio or OpenAI-compatible API]
+    BING[Bing News]
+  end
+
+  AS -->|"restSameOrigin"| PROXY
+  AS --> MODELS
+  AS --> SEARCH
+  AS --> CHECK
+  AS --> REDDIT
+  PROXY --> LM
+  SEARCH --> BING
+  ST -->|"summary cache TTL"| AS
+
+  subgraph extras [Related features]
+    YT[YouTube suggestions KI JSON]
+  end
+  UI --> YT

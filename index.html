@@ -1,0 +1,2575 @@
+<!DOCTYPE html>
+<html lang="de" data-color-theme="slate">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <title>Heise News Dashboard</title>
+    <!-- Fonts: Google Fonts via CSP-erlaubte URL -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        /* CSS Variables — CRM-style light/dark + accent themes (data-color-theme on <html>) */
+        :root {
+            --primary-color: #ff6b00;
+            --primary-hover: #ff8533;
+            --header-surface: #ffffff;
+            --header-text: #1a1a1a;
+            --header-border: #e5e5e5;
+            --text-primary: #1a1a1a;
+            --text-secondary: #4b5563;
+            --bg-primary: #ffffff;
+            --bg-secondary: #fff7f2;
+            --bg-card: #ffffff;
+            --border-color: #e5e5e5;
+            --shadow: 0 4px 24px rgba(26, 26, 26, 0.06);
+            --shadow-card-hover: 0 12px 40px rgba(26, 26, 26, 0.1);
+            --radius-sm: 10px;
+            --radius-md: 14px;
+            --radius-lg: 16px;
+            --transition-speed: 0.3s;
+        }
+
+        [data-theme="dark"] {
+            --primary-color: #ff8c38;
+            --primary-hover: #ffa64d;
+            --header-surface: #252525;
+            --header-text: #f5f5f5;
+            --header-border: #404040;
+            --text-primary: #f5f5f5;
+            --text-secondary: #a8a8a8;
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #242424;
+            --bg-card: #2d2d2d;
+            --border-color: #404040;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+            --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.45);
+        }
+
+        /* Accent presets (--primary-color); header stays neutral CRM bar */
+        html[data-color-theme="heise"] {
+            --primary-color: #ff6b00;
+            --primary-hover: #ff8533;
+        }
+        html[data-color-theme="ocean"] {
+            --primary-color: #0284c7;
+            --primary-hover: #0ea5e9;
+        }
+        html[data-color-theme="forest"] {
+            --primary-color: #16a34a;
+            --primary-hover: #22c55e;
+        }
+        html[data-color-theme="violet"] {
+            --primary-color: #7c3aed;
+            --primary-hover: #8b5cf6;
+        }
+        html[data-color-theme="amber"] {
+            --primary-color: #d97706;
+            --primary-hover: #f59e0b;
+        }
+        html[data-color-theme="rose"] {
+            --primary-color: #e11d48;
+            --primary-hover: #f43f5e;
+        }
+        html[data-color-theme="slate"] {
+            --primary-color: #475569;
+            --primary-hover: #64748b;
+        }
+        html[data-color-theme="midnight"] {
+            --primary-color: #6366f1;
+            --primary-hover: #818cf8;
+        }
+
+        [data-theme="dark"][data-color-theme="heise"] {
+            --primary-color: #ff8c38;
+            --primary-hover: #ffa64d;
+        }
+        [data-theme="dark"][data-color-theme="ocean"] {
+            --primary-color: #38bdf8;
+            --primary-hover: #7dd3fc;
+        }
+        [data-theme="dark"][data-color-theme="forest"] {
+            --primary-color: #4ade80;
+            --primary-hover: #86efac;
+        }
+        [data-theme="dark"][data-color-theme="violet"] {
+            --primary-color: #a78bfa;
+            --primary-hover: #c4b5fd;
+        }
+        [data-theme="dark"][data-color-theme="amber"] {
+            --primary-color: #fbbf24;
+            --primary-hover: #fcd34d;
+        }
+        [data-theme="dark"][data-color-theme="rose"] {
+            --primary-color: #fb7185;
+            --primary-hover: #fda4af;
+        }
+        [data-theme="dark"][data-color-theme="slate"] {
+            --primary-color: #94a3b8;
+            --primary-hover: #cbd5e1;
+        }
+        [data-theme="dark"][data-color-theme="midnight"] {
+            --primary-color: #a5b4fc;
+            --primary-hover: #c7d2fe;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+            position: relative;
+            min-height: 100vh;
+            padding-bottom: 3.25rem;
+        }
+
+        /* Fallback: wenn Google Fonts blockiert wird, nutzt der Browser den system font stack */
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--primary-color) 18%, transparent) 0%, transparent 55%),
+                radial-gradient(ellipse 60% 40% at 100% 30%, color-mix(in srgb, var(--primary-color) 8%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse 50% 35% at 0% 70%, color-mix(in srgb, var(--primary-color) 6%, transparent) 0%, transparent 45%);
+        }
+
+        [data-theme="dark"] body::before {
+            background:
+                radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--primary-color) 12%, transparent) 0%, transparent 55%),
+                radial-gradient(ellipse 60% 40% at 100% 30%, color-mix(in srgb, var(--primary-color) 6%, transparent) 0%, transparent 50%);
+        }
+
+        .header,
+        .container {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header — light CRM nav bar */
+        .header {
+            background: var(--header-surface);
+            color: var(--header-text);
+            padding: 1.25rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 1px solid var(--header-border);
+            box-shadow: 0 1px 0 rgba(26, 26, 26, 0.04);
+        }
+
+        [data-theme="dark"] .header {
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .header-title {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem 0.75rem;
+            font-size: 1.8rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin: 0;
+            color: var(--header-text);
+        }
+
+        .header-brand-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.5rem;
+            max-width: min(100%, 55vw, 26rem);
+            min-width: 0;
+            flex: 0 1 auto;
+            background: transparent;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 0.35rem 0.55rem;
+            margin: -0.35rem -0.55rem;
+            border-radius: 8px;
+            font: inherit;
+            text-align: left;
+        }
+
+        .header-brand-toggle:hover {
+            background: color-mix(in srgb, var(--primary-color) 8%, var(--header-surface));
+        }
+
+        .header-brand-toggle:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .header-brand-text {
+            display: inline-block;
+            font-weight: 700;
+            white-space: nowrap;
+            line-height: 1.1;
+            overflow: hidden;
+        }
+
+        .header-brand-logo-img {
+            height: 2.35rem;
+            width: auto;
+            max-width: min(100%, 12rem);
+            display: block;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .header-subtitle {
+            font-size: clamp(0.95rem, 2vw, 1.35rem);
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* Header Controls */
+        .header-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        /* Quelle (top) + Aktualisierung (below) — one compact column */
+        .header-source-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.45rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 0.65rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            min-width: 0;
+        }
+
+        .header-source-stack .header-news-source,
+        .header-source-stack .header-interval {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+        }
+
+        .header-news-source label,
+        .header-interval label {
+            flex: 0 0 auto;
+            min-width: 6.5rem;
+            white-space: nowrap;
+        }
+
+        .header-news-source select {
+            flex: 1 1 auto;
+            min-width: 9rem;
+            max-width: 16rem;
+            background: var(--header-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 0.35rem 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .header-interval select,
+        .header-interval input[type="number"] {
+            background: var(--header-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 0.35rem 0.5rem;
+            font-size: 0.85rem;
+            max-width: 5rem;
+        }
+
+        .header-interval select {
+            flex: 1 1 auto;
+            min-width: 6rem;
+            max-width: 10rem;
+        }
+
+        .header-color-theme {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.4rem 0.6rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            min-width: 0;
+        }
+
+        .header-color-theme label {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .header-color-theme select {
+            flex: 1 1 auto;
+            min-width: 9rem;
+            max-width: 14rem;
+            background: var(--header-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 0.35rem 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .theme-toggle,
+        .summarize-all-btn,
+        .summarize-refresh-btn,
+        .settings-btn {
+            background: var(--header-surface);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 1px 2px rgba(26, 26, 26, 0.04);
+        }
+
+        .refresh-btn {
+            background: var(--primary-color);
+            border: 1px solid transparent;
+            color: #ffffff;
+            padding: 0.5rem 1.15rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+            box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-color) 35%, transparent);
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary-hover);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--primary-color) 40%, transparent);
+        }
+
+        .refresh-btn:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .theme-toggle:hover,
+        .summarize-all-btn:hover:not(:disabled),
+        .summarize-refresh-btn:hover:not(:disabled),
+        .settings-btn:hover {
+            border-color: color-mix(in srgb, var(--primary-color) 45%, var(--border-color));
+            background: color-mix(in srgb, var(--primary-color) 6%, var(--header-surface));
+        }
+
+        .theme-toggle:focus-visible,
+        .summarize-all-btn:focus-visible,
+        .summarize-refresh-btn:focus-visible,
+        .settings-btn:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .summarize-all-btn:disabled,
+        .summarize-refresh-btn:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
+
+        .ki-status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.35rem;
+            vertical-align: middle;
+            background: #888;
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--header-surface) 90%, transparent);
+        }
+
+        .ki-status-dot--ok {
+            background: #2ecc71;
+        }
+
+        .ki-status-dot--err {
+            background: #e74c3c;
+        }
+
+        .settings-btn-wrap {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: clamp(1.5rem, 4vw, 5rem) 2rem;
+            display: grid;
+            gap: 1.75rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+        }
+
+        /* Filter Section */
+        .filter-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            transition: box-shadow 0.25s ease, transform 0.25s ease;
+        }
+
+        .filter-section h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+        }
+
+        .filter-section__heading-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-section__heading-row h2 {
+            margin-bottom: 0;
+        }
+
+        .category-bulk-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .category-bulk-btn {
+            padding: 0.4rem 0.9rem;
+            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
+            border: 2px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-weight: 600;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .category-bulk-btn:hover {
+            border-color: var(--primary-color);
+            background: var(--bg-primary);
+        }
+
+        .category-bulk-btn:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .category-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem 1.1rem;
+            align-items: center;
+        }
+
+        .category-filters__subheading {
+            flex: 1 1 100%;
+            width: 100%;
+            margin: 1rem 0 0.95rem;
+            padding: 0.6rem 0 0.1rem;
+            border-top: 1px solid color-mix(in srgb, var(--text-secondary) 28%, transparent);
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .category-filters__group[hidden] {
+            display: none !important;
+        }
+
+        .category-checkbox {
+            display: none;
+        }
+
+        .category-label {
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 999px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: border-color 0.2s, background 0.2s, transform 0.15s;
+            border: 2px solid transparent;
+        }
+
+        .category-label:hover {
+            border-color: color-mix(in srgb, var(--primary-color) 25%, transparent);
+        }
+
+        .category-checkbox:checked + .category-label {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .sort-section {
+            margin-top: 1rem;
+        }
+
+        .sort-section__header {
+            margin: 0;
+        }
+
+        .sort-section__toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font: inherit;
+            text-align: left;
+            color: var(--primary-color);
+            border-radius: 8px;
+        }
+
+        .sort-section__toggle:hover {
+            opacity: 0.92;
+        }
+
+        .sort-section__toggle:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 3px;
+        }
+
+        .sort-section__chevron {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.25rem;
+            flex-shrink: 0;
+            font-size: 0.65rem;
+            line-height: 1;
+            transition: transform 0.2s ease;
+            color: var(--text-secondary);
+        }
+
+        .sort-section.sort-section--open .sort-section__chevron {
+            transform: rotate(90deg);
+        }
+
+        .sort-section__title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .sort-panel {
+            margin-top: 1rem;
+            padding-top: 0.25rem;
+        }
+
+        .sort-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .sort-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+        }
+
+        .sort-label {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .sort-select {
+            min-width: min(100%, 22rem);
+            padding: 0.45rem 0.6rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .sort-date-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+        }
+
+        .sort-date-range {
+            gap: 1rem;
+        }
+
+        .sort-range-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .sort-date-input {
+            padding: 0.4rem 0.5rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .sort-hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin: 0;
+            max-width: 42rem;
+        }
+
+        .sort-rate-limit-banner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.65rem 1rem;
+            margin: 0.35rem 0 0 0;
+            padding: 0.55rem 0.75rem;
+            max-width: 42rem;
+            font-size: 0.82rem;
+            line-height: 1.4;
+            color: var(--text-primary);
+            background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+
+        .sort-rate-limit-banner__text {
+            flex: 1 1 12rem;
+            min-width: 0;
+        }
+
+        .sort-rate-limit-retry {
+            flex-shrink: 0;
+            padding: 0.4rem 0.9rem;
+            border-radius: 8px;
+            border: 2px solid var(--primary-color);
+            background: var(--bg-primary);
+            color: var(--primary-color);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .sort-rate-limit-retry:hover {
+            filter: brightness(0.95);
+        }
+
+        .sort-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .sort-apply-btn {
+            padding: 0.45rem 1.1rem;
+            border-radius: 8px;
+            border: 2px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .sort-apply-btn:hover:not(:disabled) {
+            border-color: var(--primary-color);
+        }
+
+        .sort-apply-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .sort-progress {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* News Grid — column count follows viewport (min card width) */
+        .news-grid {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 26rem) {
+            .news-grid {
+                grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr));
+            }
+        }
+
+        /* News Card */
+        .news-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s;
+            position: relative;
+        }
+
+        .news-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-card-hover);
+            border-color: color-mix(in srgb, var(--primary-color) 18%, var(--border-color));
+        }
+
+        .news-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+            gap: 0.5rem;
+        }
+
+        .news-header-main {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.45rem;
+            min-width: 0;
+        }
+
+        .news-card-new-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            background: linear-gradient(135deg, #2d8a3e 0%, #1a7f37 100%);
+            color: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        [data-theme="dark"] .news-card-new-badge {
+            background: linear-gradient(135deg, #3fb950 0%, #238636 100%);
+        }
+
+        .news-card--new {
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 45%, transparent), var(--shadow);
+            background: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--primary-color) 8%, transparent) 0%,
+                var(--bg-card) 2.5rem
+            );
+        }
+
+        [data-theme="dark"] .news-card--new {
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 50%, transparent), var(--shadow);
+            background: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--primary-color) 10%, transparent) 0%,
+                var(--bg-card) 2.5rem
+            );
+        }
+
+        .category-badge {
+            padding: 0.25rem 0.75rem;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .forum-mood-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.2rem 0.45rem;
+            border-radius: 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            max-width: 100%;
+        }
+
+        .forum-mood-label {
+            white-space: nowrap;
+        }
+
+        .forum-mood-emoji {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
+        .news-time {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        /* Below .summary-actions (Zusammenfassung / Neu / YouTube) — same slot on every card */
+        .news-comments-row {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin: 0.5rem 0 0 0;
+            line-height: 1.45;
+            min-height: 1.35rem;
+        }
+
+        .news-comments-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.5rem;
+        }
+
+        .news-comments-row-primary {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 0.35rem 0.65rem;
+        }
+
+        .news-comments-row-primary--with-volume {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .news-comments-badges-cluster {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 0.35rem 0.65rem;
+        }
+
+        .news-comments-volume-indicator {
+            flex-shrink: 0;
+            margin-left: auto;
+            font-size: 1.35rem;
+            line-height: 1;
+            user-select: none;
+        }
+
+        .news-comments-volume-indicator--alert {
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: var(--primary-color);
+            filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary-color) 55%, transparent));
+            animation: news-comment-volume-pulse 1.15s ease-in-out infinite;
+        }
+
+        [data-theme="dark"] .news-comments-volume-indicator--alert {
+            filter: drop-shadow(0 0 5px color-mix(in srgb, var(--primary-color) 45%, transparent));
+        }
+
+        .news-comments-volume-indicator--scream {
+            font-size: 1.55rem;
+        }
+
+        .news-comments-volume-indicator--explode {
+            font-size: 1.65rem;
+            filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary-color) 40%, transparent));
+        }
+
+        @keyframes news-comment-volume-pulse {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.12);
+            }
+        }
+
+        .news-comments-max-standalone {
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .news-comments-max-link__icon {
+            flex-shrink: 0;
+            display: flex;
+            align-items: flex-start;
+            padding-top: 0.12rem;
+            color: var(--primary-color);
+        }
+
+        .news-comments-max-link__icon-svg {
+            width: 1.35rem;
+            height: 1.35rem;
+            display: block;
+        }
+
+        .news-comments-max-link--standalone {
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.5rem 0.75rem;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            padding: 0.5rem 0.65rem;
+            margin: 0;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 600;
+            min-height: 2.75rem;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .news-comments-max-link__main {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.25rem;
+        }
+
+        .news-comments-max-link__subject {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3;
+            overflow: hidden;
+            width: 100%;
+            word-break: break-word;
+        }
+
+        .news-comments-max-link--standalone:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+        }
+
+        .news-comments-max-link__text {
+            width: 100%;
+            min-width: 0;
+            color: var(--primary-color);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .news-comments-max-link__action {
+            flex-shrink: 0;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .news-comments-loading {
+            font-style: italic;
+            opacity: 0.85;
+        }
+
+        .news-comments-error,
+        .news-comments-note {
+            opacity: 0.9;
+        }
+
+        .heise-comment-green {
+            color: #1a7f37;
+            font-weight: 600;
+        }
+
+        [data-theme="dark"] .heise-comment-green {
+            color: #3fb950;
+        }
+
+        .heise-comment-red {
+            color: #b42318;
+            font-weight: 600;
+        }
+
+        [data-theme="dark"] .heise-comment-red {
+            color: #ff7b72;
+        }
+
+        .heise-comment-neutral {
+            opacity: 0.85;
+        }
+
+        .heise-comment-total__label {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .heise-comment-total--positive .heise-comment-total__value {
+            margin-left: 0.25em;
+            color: #2563eb;
+            font-weight: 700;
+            font-size: 1.12em;
+        }
+
+        [data-theme="dark"] .heise-comment-total--positive .heise-comment-total__value {
+            color: #60a5fa;
+        }
+
+        .news-comments-max-link {
+            color: var(--primary-color);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .news-comments-max-link:hover {
+            opacity: 0.9;
+        }
+
+        .news-comments-partial {
+            cursor: help;
+            border-bottom: 1px dotted var(--text-secondary);
+        }
+
+        .news-comments-rate-limited {
+            gap: 0.45rem;
+        }
+
+        .news-comments-rate-msg {
+            margin: 0;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: var(--text-secondary);
+        }
+
+        .news-comments-retry-btn {
+            align-self: flex-start;
+            padding: 0.4rem 0.85rem;
+            margin-top: 0.15rem;
+            border-radius: 8px;
+            border: 2px solid var(--primary-color);
+            background: var(--bg-primary);
+            color: var(--primary-color);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .news-comments-retry-btn:hover {
+            filter: brightness(0.95);
+        }
+
+        .news-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            /* Always reserve two lines so cards align; longer titles may grow beyond */
+            min-height: calc(2 * 1.4 * 1em);
+            min-height: 2lh;
+        }
+
+        .news-title a {
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .news-favorite-marker {
+            display: inline-block;
+            margin-right: 0.35rem;
+            color: #d4a106;
+            font-size: 0.98em;
+            vertical-align: baseline;
+        }
+
+        [data-theme="dark"] .news-favorite-marker {
+            color: #f5c542;
+        }
+
+        .news-title a:hover {
+            color: var(--primary-color);
+        }
+
+        .news-summary {
+            display: none;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .news-summary.active {
+            display: block;
+        }
+
+        .summary-loading {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .ai-badge {
+            display: inline-block;
+            margin-bottom: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .summary-alt-links-block {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px dashed var(--border-color);
+        }
+
+        .summary-alt-links-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.25rem;
+        }
+
+        .summary-alt-links-count {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .summary-alt-links-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-shrink: 0;
+        }
+
+        .summary-alt-links-toggle-btn,
+        .summary-alt-links-refresh-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2rem;
+            min-height: 2rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            color: var(--text-secondary);
+        }
+
+        .summary-alt-links-toggle-btn:hover,
+        .summary-alt-links-refresh-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .summary-alt-links-toggle-btn:disabled,
+        .summary-alt-links-refresh-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .summary-alt-links-list {
+            margin: 0.35rem 0 0 0;
+            padding: 0;
+            list-style: none;
+            font-size: 0.88rem;
+        }
+
+        .summary-alt-links-list.summary-alt-links-list--expanded {
+            margin-top: 0.25rem;
+        }
+
+        .summary-alt-link-item {
+            margin-bottom: 0.45rem;
+        }
+
+        .summary-alt-link-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .summary-alt-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.45rem;
+            color: var(--primary-color);
+            text-decoration: none;
+            word-break: break-word;
+            line-height: 1.35;
+        }
+
+        .summary-alt-link:hover {
+            text-decoration: underline;
+        }
+
+        .summary-alt-link-favicon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            margin-top: 0.12rem;
+            border-radius: 2px;
+            background: var(--bg-primary);
+        }
+
+        .summary-alt-link-line {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .summary-alt-link-source {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-right: 0.2rem;
+        }
+
+        .summary-alt-link-title {
+            color: var(--primary-color);
+        }
+
+        .summary-reddit-block {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px dashed var(--border-color);
+        }
+
+        .summary-reddit-list {
+            margin: 0.35rem 0 0 0;
+            padding: 0;
+            list-style: none;
+            font-size: 0.88rem;
+        }
+
+        .summary-reddit-item {
+            margin-bottom: 0.45rem;
+        }
+
+        .summary-reddit-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .summary-reddit-link {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.45rem;
+            color: var(--primary-color);
+            text-decoration: none;
+            word-break: break-word;
+            line-height: 1.35;
+        }
+
+        .summary-reddit-link:hover {
+            text-decoration: underline;
+        }
+
+        .summary-reddit-logo {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            margin-top: 0.12rem;
+            border-radius: 50%;
+            background: var(--bg-primary);
+        }
+
+        .summary-reddit-line {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* Summary Toggle Button */
+        .summary-toggle {
+            background: none;
+            border: 2px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .summary-toggle:hover {
+            background: var(--bg-secondary);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .summary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.35rem;
+        }
+
+        .article-flag-btn {
+            background: transparent;
+            border: 2px solid var(--border-color);
+            padding: 0.38rem 0.62rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .article-flag-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            background: var(--bg-secondary);
+        }
+
+        .youtube-toggle,
+        .article-web-search-btn,
+        .article-reddit-search-btn {
+            background: transparent;
+            border: 2px dashed var(--border-color);
+            padding: 0.45rem 0.85rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .youtube-toggle:hover:not(:disabled),
+        .article-web-search-btn:hover:not(:disabled),
+        .article-reddit-search-btn:hover:not(:disabled) {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .youtube-toggle:disabled,
+        .article-web-search-btn:disabled,
+        .article-reddit-search-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .summary-refresh-btn {
+            background: transparent;
+            border: 2px dashed var(--border-color);
+            padding: 0.45rem 0.85rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .summary-refresh-btn:hover:not(:disabled) {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .summary-refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Load More */
+        .load-more-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 0.75rem 1rem;
+            margin-top: 2rem;
+        }
+
+        .load-more-btn {
+            background: var(--primary-color);
+            color: #ffffff;
+            border: 1px solid transparent;
+            padding: 1rem 3rem;
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+            box-shadow: 0 2px 12px color-mix(in srgb, var(--primary-color) 30%, transparent);
+        }
+
+        .load-more-btn:hover {
+            background: var(--primary-hover);
+            box-shadow: 0 4px 20px color-mix(in srgb, var(--primary-color) 38%, transparent);
+        }
+
+        .load-more-btn:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 3px;
+        }
+
+        .load-more-btn--secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+        }
+
+        .load-more-btn--secondary:hover {
+            background: var(--bg-card);
+            border-color: var(--primary-color);
+            box-shadow: 0 2px 12px color-mix(in srgb, var(--primary-color) 18%, transparent);
+        }
+
+        /* Settings Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 26, 26, 0.45);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-card-hover);
+        }
+
+        .modal h2 {
+            margin-bottom: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        .setting-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .setting-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .setting-select,
+        .setting-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 1rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .modal-actions__spacer {
+            flex: 1;
+            min-width: 0.5rem;
+        }
+
+        .ki-stats-modal {
+            max-height: min(85vh, 52rem);
+            overflow-y: auto;
+        }
+
+        .ki-stats-modal .ki-stats-intro {
+            margin-bottom: 1rem;
+        }
+
+        .ki-stats-empty {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+        }
+
+        .ki-stats-panel {
+            margin-top: 0.5rem;
+        }
+
+        .ki-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .ki-stats-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .ki-stats-card__label {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+
+        .ki-stats-card__value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .ki-stats-token-hint {
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+
+        .ki-stats-chart-wrap {
+            margin: 0;
+            padding: 0;
+        }
+
+        .ki-stats-chart-caption {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .ki-stats-chart-inner {
+            display: flex;
+            align-items: stretch;
+            gap: 0.35rem;
+            min-height: 220px;
+        }
+
+        .ki-stats-chart-inner--full {
+            min-height: 360px;
+        }
+
+        .ki-stats-chart-inner svg {
+            flex: 1;
+            min-width: 0;
+            display: block;
+        }
+
+        .btn-primary,
+        .btn-secondary {
+            padding: 0.75rem 2rem;
+            border-radius: var(--radius-sm);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            font-weight: 600;
+            box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-color) 28%, transparent);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-primary:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .btn-secondary {
+            background: var(--header-surface);
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+            font-weight: 600;
+        }
+
+        .btn-secondary:hover {
+            border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+            background: color-mix(in srgb, var(--primary-color) 5%, var(--header-surface));
+        }
+
+        /* Status Bar */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--header-surface);
+            padding: 0.65rem 2rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border-color);
+            box-shadow: 0 -4px 24px rgba(26, 26, 26, 0.06);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.25rem 0.5rem;
+            z-index: 50;
+        }
+
+        [data-theme="dark"] .status-bar {
+            box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+        }
+
+        .status-flash:empty {
+            display: none;
+        }
+
+        .status-flash:not(:empty) {
+            font-weight: 600;
+        }
+
+        .status-flash:not(:empty)::after {
+            content: ' | ';
+            font-weight: normal;
+            opacity: 0.85;
+        }
+
+        /* Loading Skeleton */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--border-color) 50%, var(--bg-secondary) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 4px;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .news-card.skeleton {
+            min-height: 200px;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 480px) {
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+
+            .header-controls {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .category-filters {
+                justify-content: center;
+            }
+
+            .filter-section__heading-row {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+
+            .category-bulk-actions {
+                justify-content: center;
+            }
+        }
+
+        .settings-btn--gear {
+            margin-right: 0.25rem;
+        }
+
+        .modal.modal--sources {
+            max-width: 34rem;
+        }
+
+        .settings-section-title {
+            font-size: 1.05rem;
+            margin: 0 0 0.35rem;
+            font-weight: 600;
+        }
+
+        .news-sources-filter-row {
+            margin-bottom: 0.75rem;
+        }
+
+        .news-sources-filter-row label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        .news-sources-settings-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            align-items: center;
+        }
+
+        .news-sources-toggle-visible-btn {
+            min-width: 2.75rem;
+            padding-left: 0.65rem;
+            padding-right: 0.65rem;
+            font-size: 1.25rem;
+            line-height: 1.2;
+        }
+
+        .news-sources-toggle-visible-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .news-sources-toggle__icon {
+            display: inline-block;
+            font-weight: 600;
+        }
+
+        .news-sources-settings__list {
+            list-style: none;
+            margin: 0 0 1rem;
+            padding: 0;
+            max-height: min(42vh, 22rem);
+            overflow: auto;
+            border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+            border-radius: 8px;
+            background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
+        }
+
+        .news-sources-settings__item {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+        }
+
+        .news-sources-settings__item:last-child {
+            border-bottom: none;
+        }
+
+        .news-sources-settings__item[hidden] {
+            display: none !important;
+        }
+
+        .news-sources-settings__label {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .news-sources-settings__label input {
+            margin-top: 0.2rem;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        .news-sources-settings__text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .news-sources-settings__name {
+            display: block;
+        }
+
+        .news-sources-settings__url {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+            margin-top: 0.15rem;
+        }
+
+        .heise-magazine-feeds {
+            margin: 0.5rem 0 0 1.75rem;
+            padding: 0.35rem 0 0.15rem 0.75rem;
+            border-left: 2px solid var(--border-color, rgba(0, 0, 0, 0.12));
+        }
+
+        .heise-magazine-feeds__legend {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .heise-magazine-feeds__item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.4rem;
+            margin: 0.2rem 0;
+            font-size: 0.84rem;
+            cursor: pointer;
+        }
+
+        .heise-magazine-feeds__item input {
+            margin-top: 0.12rem;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        .modal-actions--sources-footer {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-actions--sources-footer__spacer {
+            flex: 1 1 auto;
+            min-width: 0.5rem;
+        }
+
+        /* Top banner — Cucumber NewsScraper (panoramic artwork) */
+        .cucumber-brand-banner {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            border-bottom: 2px solid #1b5e20;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .cucumber-brand-banner__img {
+            display: block;
+            width: 100%;
+            height: clamp(100px, 20vw, 320px);
+            object-fit: cover;
+            object-position: center 35%;
+        }
+
+        .cucumber-brand-banner__overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 clamp(1rem, 4vw, 2.5rem);
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(0, 0, 0, 0.15) 40%,
+                rgba(0, 0, 0, 0.55) 100%
+            );
+            pointer-events: none;
+        }
+
+        .cucumber-brand-banner__title {
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+            font-weight: 700;
+            font-size: clamp(1.05rem, 3.2vw, 1.85rem);
+            letter-spacing: 0.06em;
+            color: #f1f8e9;
+            text-shadow:
+                0 0 20px rgba(0, 0, 0, 0.9),
+                0 2px 8px rgba(0, 0, 0, 0.85);
+            white-space: nowrap;
+        }
+
+        [data-theme="dark"] .cucumber-brand-banner {
+            border-bottom-color: #0d1f0c;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="cucumber-brand-banner" role="banner" aria-label="Cucumber NewsScraper">
+        <img
+            class="cucumber-brand-banner__img"
+            src="images/cucumber-news-banner-v2.png"
+            width="1920"
+            height="640"
+            alt=""
+            decoding="async"
+            fetchpriority="high"
+        />
+        <div class="cucumber-brand-banner__overlay" aria-hidden="true">
+            <span class="cucumber-brand-banner__title">Cucumber NewsScraper</span>
+        </div>
+    </div>
+    <header class="header">
+        <h1 class="header-title">
+            <button
+                type="button"
+                class="header-brand-toggle"
+                id="headerBrandToggle"
+                title=""
+                aria-label=""
+                aria-pressed="true"
+            >
+                <img
+                    id="heiseBrandLogo"
+                    class="header-brand-logo-img"
+                    src=""
+                    alt=""
+                    width="48"
+                    height="48"
+                    decoding="async"
+                    hidden
+                />
+                <span id="headerBrandText" class="header-brand-text">heise online</span>
+            </button>
+            <span class="header-subtitle" id="headerSubtitle">News Dashboard</span>
+        </h1>
+        <div class="header-controls">
+            <div
+                class="header-source-stack"
+                title="Nachrichtenquelle und Intervall für automatischen Abruf"
+            >
+                <div class="header-news-source">
+                    <label for="newsSourceSelect">Quelle</label>
+                    <select id="newsSourceSelect" aria-label="Nachrichtenquelle"></select>
+                </div>
+                <div class="header-interval">
+                    <label for="refreshIntervalSelect">Aktualisierung</label>
+                    <select id="refreshIntervalSelect" aria-label="Aktualisierungsintervall in Minuten">
+                        <option value="15">15 min</option>
+                        <option value="30">30 min</option>
+                        <option value="60" selected>60 min</option>
+                        <option value="120">120 min</option>
+                        <option value="custom">Eigene…</option>
+                    </select>
+                    <span id="headerCustomIntervalWrap" style="display: none;">
+                        <input type="number" id="headerCustomInterval" min="5" max="480" value="60" aria-label="Eigene Minuten" title="Minuten">
+                        <span>min</span>
+                    </span>
+                </div>
+            </div>
+            <div class="header-color-theme" id="headerColorThemeWrap" title="Akzentfarbe für Links, Buttons und Kopfzeile">
+                <label for="colorThemeSelect">Farbschema</label>
+                <select id="colorThemeSelect" aria-label="Farbdesign der Oberfläche">
+                    <option value="heise">Orange (CRM)</option>
+                    <option value="ocean">Ozean-Blau</option>
+                    <option value="forest">Wald-Grün</option>
+                    <option value="violet">Violett</option>
+                    <option value="amber">Bernstein</option>
+                    <option value="rose">Rose</option>
+                    <option value="slate">Schiefer</option>
+                    <option value="midnight">Mitternacht</option>
+                </select>
+            </div>
+            <button type="button" class="theme-toggle" id="themeToggle" aria-label="Theme umschalten">
+                🌙 / ☀️
+            </button>
+            <button type="button" class="refresh-btn" id="refreshBtn" aria-label="Nachrichten aktualisieren">
+                ↻ Aktualisieren
+            </button>
+            <button type="button" class="summarize-all-btn" id="summarizeAllBtn"
+                title="Erzeugt KI-Zusammenfassungen für alle aktuell gefilterten Nachrichten (nutzt Cache, sofern gültig)"
+                aria-label="Alle KI-Zusammenfassungen für die aktuellen Filter erzeugen">
+                🤖 Alle Zusammenfassungen
+            </button>
+            <button type="button" class="summarize-refresh-btn" id="summarizeAllRefreshBtn"
+                title="Alle Zusammenfassungen für die aktuellen Filter neu von der KI erzeugen (Cache wird überschrieben — Bestätigung)"
+                aria-label="Alle Zusammenfassungen neu erzeugen (mit Bestätigung)">
+                🔄 Alle neu erzeugen
+            </button>
+            <button type="button" class="settings-btn settings-btn--gear" id="dashboardSettingsBtn" title="Einstellungen" aria-label="Einstellungen">
+                ⚙️ Einstellungen
+            </button>
+            <span class="settings-btn-wrap" title="KI-Verbindungsstatus (grün = letzte Anfrage ok)">
+                <span class="ki-status-dot" id="kiStatusDot" aria-hidden="true"></span>
+                <button type="button" class="settings-btn" id="settingsBtn" aria-label="KI-Server (LM Studio) einstellen">
+                    🤖 KI-Server
+                </button>
+            </span>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Filter Section -->
+        <section class="filter-section" aria-labelledby="filter-heading">
+            <div class="filter-section__heading-row">
+                <h2 id="filter-heading">📁 Kategorien</h2>
+                <div class="category-bulk-actions">
+                    <button
+                        type="button"
+                        class="category-bulk-btn"
+                        id="categorySelectAllBtn"
+                        title="Alle Themen aktivieren"
+                        aria-label="Alle Themen aktivieren"
+                    >
+                        Alle aktivieren
+                    </button>
+                    <button
+                        type="button"
+                        class="category-bulk-btn"
+                        id="categorySelectNoneBtn"
+                        title="Alle Themen deaktivieren"
+                        aria-label="Alle Themen deaktivieren"
+                    >
+                        Alle deaktivieren
+                    </button>
+                </div>
+            </div>
+            <div class="category-filters" id="categoryFilters">
+                <div class="category-filters__group" id="categoryFiltersHeise" data-news-source-scope="heise">
+                <input type="checkbox" id="cat-it" class="category-checkbox" value="it" checked>
+                <label for="cat-it" class="category-label">IT & Tech</label>
+
+                <input type="checkbox" id="cat-security" class="category-checkbox" value="security" checked>
+                <label for="cat-security" class="category-label">Security</label>
+
+                <input type="checkbox" id="cat-ki" class="category-checkbox" value="ki" checked>
+                <label for="cat-ki" class="category-label">KI</label>
+
+                <input type="checkbox" id="cat-wissenschaft" class="category-checkbox" value="wissenschaft" checked>
+                <label for="cat-wissenschaft" class="category-label">Wissenschaft</label>
+
+                <input type="checkbox" id="cat-mobiles" class="category-checkbox" value="mobiles" checked>
+                <label for="cat-mobiles" class="category-label">Mobiles</label>
+
+                <input type="checkbox" id="cat-entertainment" class="category-checkbox" value="entertainment" checked>
+                <label for="cat-entertainment" class="category-label">Entertainment</label>
+
+                <input type="checkbox" id="cat-wirtschaft" class="category-checkbox" value="wirtschaft" checked>
+                <label for="cat-wirtschaft" class="category-label">Wirtschaft</label>
+
+                <input type="checkbox" id="cat-netzpolitik" class="category-checkbox" value="netzpolitik" checked>
+                <label for="cat-netzpolitik" class="category-label">Netzpolitik</label>
+
+                <input type="checkbox" id="cat-journal" class="category-checkbox" value="journal" checked>
+                <label for="cat-journal" class="category-label">Journal</label>
+
+                <p class="category-filters__subheading" id="categoryFiltersMagazineHeading" role="presentation"></p>
+
+                <input type="checkbox" id="cat-heise_ix" class="category-checkbox" value="heise_ix" checked>
+                <label for="cat-heise_ix" class="category-label">iX</label>
+
+                <input type="checkbox" id="cat-heise_ct" class="category-checkbox" value="heise_ct" checked>
+                <label for="cat-heise_ct" class="category-label">c't</label>
+
+                <input type="checkbox" id="cat-heise_foto" class="category-checkbox" value="heise_foto" checked>
+                <label for="cat-heise_foto" class="category-label">c't Fotografie</label>
+
+                <input type="checkbox" id="cat-heise_mac" class="category-checkbox" value="heise_mac" checked>
+                <label for="cat-heise_mac" class="category-label">Mac &amp; i</label>
+
+                <input type="checkbox" id="cat-heise_make" class="category-checkbox" value="heise_make" checked>
+                <label for="cat-heise_make" class="category-label">Make</label>
+
+                <input type="checkbox" id="cat-heise_autos" class="category-checkbox" value="heise_autos" checked>
+                <label for="cat-heise_autos" class="category-label">heise autos</label>
+                </div>
+
+                <div class="category-filters__group" id="categoryFiltersTelepolis" data-news-source-scope="telepolis" hidden>
+                <input type="checkbox" id="cat-telepolis" class="category-checkbox" value="telepolis" checked>
+                <label for="cat-telepolis" class="category-label">Telepolis</label>
+                </div>
+
+                <div class="category-filters__group" id="categoryFiltersGenericSources" data-news-source-scope="generic" hidden>
+                <input type="checkbox" id="cat-src-it" class="category-checkbox" value="it" checked>
+                <label for="cat-src-it" class="category-label">IT & Tech</label>
+
+                <input type="checkbox" id="cat-src-security" class="category-checkbox" value="security" checked>
+                <label for="cat-src-security" class="category-label">Security</label>
+
+                <input type="checkbox" id="cat-src-ki" class="category-checkbox" value="ki" checked>
+                <label for="cat-src-ki" class="category-label">KI</label>
+
+                <input type="checkbox" id="cat-src-wissenschaft" class="category-checkbox" value="wissenschaft" checked>
+                <label for="cat-src-wissenschaft" class="category-label">Wissenschaft</label>
+
+                <input type="checkbox" id="cat-src-mobiles" class="category-checkbox" value="mobiles" checked>
+                <label for="cat-src-mobiles" class="category-label">Mobiles</label>
+
+                <input type="checkbox" id="cat-src-entertainment" class="category-checkbox" value="entertainment" checked>
+                <label for="cat-src-entertainment" class="category-label">Entertainment</label>
+
+                <input type="checkbox" id="cat-src-wirtschaft" class="category-checkbox" value="wirtschaft" checked>
+                <label for="cat-src-wirtschaft" class="category-label">Wirtschaft</label>
+
+                <input type="checkbox" id="cat-src-netzpolitik" class="category-checkbox" value="netzpolitik" checked>
+                <label for="cat-src-netzpolitik" class="category-label">Netzpolitik</label>
+
+                <input type="checkbox" id="cat-src-journal" class="category-checkbox" value="journal" checked>
+                <label for="cat-src-journal" class="category-label">Journal</label>
+                </div>
+            </div>
+        </section>
+
+        <section class="filter-section sort-section" aria-labelledby="sort-heading">
+            <div class="sort-section__header">
+                <button
+                    type="button"
+                    class="sort-section__toggle"
+                    id="sortPanelToggle"
+                    aria-expanded="false"
+                    aria-controls="sortPanelBody"
+                    title="Sortierung ein- oder ausklappen"
+                    aria-label="Sortierung ein- oder ausklappen"
+                >
+                    <span class="sort-section__chevron" aria-hidden="true">▶</span>
+                    <span id="sort-heading" class="sort-section__title" role="heading" aria-level="2">↕ Sortierung</span>
+                </button>
+            </div>
+            <div id="sortPanelBody" class="sort-panel" hidden>
+            <div class="sort-controls">
+                <div class="sort-row">
+                    <label for="sortSelect" class="sort-label">Reihenfolge</label>
+                    <select id="sortSelect" class="sort-select" aria-describedby="sort-hint">
+                        <option value="recency">Neueste zuerst (Aktualität)</option>
+                        <option value="favorites_first">Favoriten zuerst</option>
+                        <option value="favorites_only">Nur Favoriten</option>
+                        <option value="hidden_only">Ausgeblendete</option>
+                        <option value="date_day">Nur ein bestimmtes Datum</option>
+                        <option value="date_range">Datumsbereich</option>
+                        <option value="comments">Meiste Kommentare (gesamt)</option>
+                        <option value="green">Meiste grüne Bewertungen</option>
+                        <option value="red">Meiste rote Bewertungen</option>
+                    </select>
+                </div>
+                <div id="sortDateSingleWrap" class="sort-date-wrap" hidden>
+                    <label for="sortDateSingle">Datum</label>
+                    <input type="date" id="sortDateSingle" class="sort-date-input">
+                </div>
+                <div id="sortDateRangeWrap" class="sort-date-wrap sort-date-range" hidden>
+                    <span class="sort-range-field">
+                        <label for="sortDateFrom">Von</label>
+                        <input type="date" id="sortDateFrom" class="sort-date-input">
+                    </span>
+                    <span class="sort-range-field">
+                        <label for="sortDateTo">Bis</label>
+                        <input type="date" id="sortDateTo" class="sort-date-input">
+                    </span>
+                </div>
+                <p id="sort-hint" class="sort-hint">
+                    Kommentar-Sortierungen laden Metadaten über den Dev-Server (<code>/api/heise-comments</code>) — kann etwas dauern.
+                </p>
+                <p id="sortRateLimitBanner" class="sort-rate-limit-banner" hidden role="status">
+                    <span id="sortRateLimitBannerText" class="sort-rate-limit-banner__text"></span>
+                    <button type="button" id="sortRateLimitRetryBtn" class="sort-rate-limit-retry"></button>
+                </p>
+                <div class="sort-actions">
+                    <button type="button" class="sort-apply-btn" id="sortApplyBtn">Anwenden</button>
+                    <span id="sortProgress" class="sort-progress" hidden></span>
+                </div>
+            </div>
+            </div>
+        </section>
+
+        <!-- News Grid -->
+        <section class="news-grid" id="newsGrid" aria-live="polite">
+            <!-- Nachrichten werden hier dynamisch eingefügt -->
+            <div class="skeleton news-card"></div>
+            <div class="skeleton news-card"></div>
+            <div class="skeleton news-card"></div>
+        </section>
+
+        <!-- Load More -->
+        <div class="load-more-container">
+            <button type="button" class="load-more-btn" id="loadMoreBtn">Mehr laden</button>
+            <button type="button" class="load-more-btn load-more-btn--secondary" id="showAllNewsBtn">Alles anzeigen</button>
+        </div>
+    </main>
+
+    <!-- Dashboard settings: news sources in header dropdown -->
+    <div class="modal-overlay" id="dashboardSettingsModal" role="dialog" aria-labelledby="dashboardSettingsTitle" aria-modal="true">
+        <div class="modal modal--sources">
+            <h2 id="dashboardSettingsTitle">Einstellungen — Newsquellen</h2>
+            <h3 id="dashboardSourcesSectionTitle" class="settings-section-title">Websites im Pulldown „Quelle“</h3>
+            <p id="dashboardSourcesHint" class="modal-hint" style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 0.75rem;"></p>
+            <div class="news-sources-filter-row">
+                <label for="newsSourcesFilterInput" id="newsSourcesSearchLabel">Suche</label>
+                <input type="search" id="newsSourcesFilterInput" class="setting-input" placeholder="" autocomplete="off" aria-label="">
+            </div>
+            <div class="news-sources-settings-toolbar">
+                <button
+                    type="button"
+                    class="btn-secondary news-sources-toggle-visible-btn"
+                    id="newsSourcesToggleVisibleBtn"
+                    title=""
+                    aria-label=""
+                >
+                    <span class="news-sources-toggle__icon" aria-hidden="true">⊕</span>
+                </button>
+            </div>
+            <ul id="newsSourcesSettingsList" class="news-sources-settings__list" aria-label="Newsquellen"></ul>
+            <div class="modal-actions modal-actions--sources-footer">
+                <button type="button" class="btn-secondary" id="dashboardOpenKiLangBtn" title="KI-Server: Sprache der Zusammenfassung">
+                    🌐 KI-Zusammenfassung: Sprache …
+                </button>
+                <span class="modal-actions--sources-footer__spacer" aria-hidden="true"></span>
+                <button type="button" class="btn-secondary" id="cancelDashboardSettings">Schließen</button>
+                <button type="button" class="btn-primary" id="saveDashboardSettings">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KI / LM Studio Modal -->
+    <div class="modal-overlay" id="settingsModal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
+        <div class="modal">
+            <h2 id="modal-title">🤖 KI-Zusammenfassung (LM Studio)</h2>
+            <p class="modal-hint" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                <strong>Empfohlen:</strong> <code>python3 scripts/dev_server.py</code>, Seite neu laden — die App erkennt den Server und aktiviert <strong>REST über dieselbe Origin</strong> automatisch (Well-known-URL). Kein CORS-<code>OPTIONS</code> an LM Studio.
+                Alternativ: <code>scripts/lm_studio_cors_proxy.py</code> (siehe README). OpenAI-Modus bleibt wählbar. <strong>HTTPS</strong>-Seite → API ebenfalls HTTPS („Mixed Content“).
+            </p>
+
+            <div class="setting-group">
+                <label for="kiApiMode" class="setting-label">API-Modus</label>
+                <select id="kiApiMode" class="setting-input" aria-describedby="serverUrlHint">
+                    <option value="lm_rest_v1">LM Studio REST v1 — POST /api/v1/chat (empfohlen, LM Studio 0.4+)</option>
+                    <option value="openai">OpenAI-kompatibel — POST /v1/chat/completions</option>
+                </select>
+            </div>
+
+            <div class="setting-group" id="restSameOriginWrap">
+                <label class="setting-label" style="display: flex; align-items: flex-start; gap: 0.5rem; font-weight: normal; cursor: pointer;">
+                    <input type="checkbox" id="restSameOrigin" style="width: auto; margin-top: 0.2rem;">
+                    <span><strong>REST über dieselbe Origin wie diese Seite</strong> (benötigt <code>scripts/dev_server.py</code> — vermeidet <code>OPTIONS /api/v1/chat</code> an LM Studio)</span>
+                </label>
+            </div>
+
+            <div class="setting-group">
+                <label for="apiBaseUrl" class="setting-label">Server-URL</label>
+                <p id="serverUrlHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <input type="url" id="apiBaseUrl" class="setting-input" placeholder="http://127.0.0.1:1234" autocomplete="off">
+            </div>
+
+            <div class="setting-group">
+                <label for="lmApiToken" class="setting-label">API-Token (optional)</label>
+                <input type="password" id="lmApiToken" class="setting-input" placeholder="Nur wenn LM Studio „Require Authentication“ nutzt" autocomplete="off">
+            </div>
+
+            <div class="setting-group">
+                <label for="lmModel" class="setting-label">Modellname (wie in LM Studio geladen)</label>
+                <input type="text" id="lmModel" class="setting-input" placeholder="z. B. qwen/qwen3.5-35b-a3b — leer = erstes Modell aus GET /v1/models (Dev-Server: same-origin)" autocomplete="off">
+            </div>
+
+            <div class="setting-group">
+                <label for="summaryLangMode" class="setting-label">Sprache der KI-Zusammenfassung</label>
+                <p id="summaryLangHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <select id="summaryLangMode" class="setting-input" aria-describedby="summaryLangHint">
+                    <option value="site">Wie die News-Website (je nach Quelle)</option>
+                    <option value="browser">Browser- / Systemsprache</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="summaryCacheDays" class="setting-label">Zusammenfassung-Cache (Tage)</label>
+                <p id="summaryCacheHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Speicher in <strong>IndexedDB</strong> im Browser — bleibt nach Neustart des Webservers erhalten.
+                    <strong>0</strong> = unbegrenzte Gültigkeit (nur „Neu erstellen“ oder Modellwechsel erzwingt neu).
+                    Standard: <strong>14</strong> Tage.
+                </p>
+                <p id="summaryPrivacyHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Es wird nur die fertige Zusammenfassung angezeigt — keine internen Reasoning-/Denkprozesse der KI.
+                </p>
+                <input type="number" id="summaryCacheDays" class="setting-input" min="0" max="3650" step="1" value="14" inputmode="numeric" aria-describedby="summaryCacheHint summaryPrivacyHint">
+            </div>
+
+            <div class="setting-group">
+                <label for="summaryConcurrency" id="summaryConcurrencyLabel" class="setting-label">Gleichzeitige KI-Anfragen (Zusammenfassungen)</label>
+                <p id="summaryConcurrencyHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Beim automatischen Erzeugen und bei „Alle Zusammenfassungen“: wie viele Artikel parallel an die KI gehen. Höher = schneller, aber mehr Last für LM Studio / API. Bereich 1–16, Standard 4.
+                </p>
+                <input type="number" id="summaryConcurrency" class="setting-input" min="1" max="16" step="1" value="4" inputmode="numeric" aria-describedby="summaryConcurrencyHint">
+            </div>
+
+            <div class="setting-group">
+                <label for="kiRequestTimeoutSeconds" id="kiRequestTimeoutLabel" class="setting-label">KI-Anfrage-Timeout (Sekunden)</label>
+                <p id="kiRequestTimeoutHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Maximale Wartezeit pro KI-Aufruf (Zusammenfassung, „Alle Zusammenfassungen“, YouTube-Vorschläge usw.). Danach bricht der Browser die Anfrage ab. Bereich 15–3600, Standard 120.
+                </p>
+                <input type="number" id="kiRequestTimeoutSeconds" class="setting-input" min="15" max="3600" step="1" value="120" inputmode="numeric" aria-describedby="kiRequestTimeoutHint">
+            </div>
+
+            <div class="setting-group">
+                <label for="alternativeLinksCount" id="alternativeLinksCountLabel" class="setting-label">Alternative Artikel-Links (Anzahl)</label>
+                <p id="alternativeLinksHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    0 = aus. Sind alternative Links an, lädt die App echte Artikel über Bing News (RSS) über den lokalen Server — nicht die KI. App über scripts/dev_server.py öffnen. Anzeige siehe unten.
+                </p>
+                <input type="number" id="alternativeLinksCount" class="setting-input" min="0" max="15" step="1" value="5" inputmode="numeric" aria-describedby="alternativeLinksHint">
+            </div>
+
+            <div class="setting-group">
+                <label for="alternativeLinksDisplayMode" id="alternativeLinksDisplayModeLabel" class="setting-label">Alternative Links anzeigen</label>
+                <p id="alternativeLinksDisplayModeHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Steuert, ob die Liste direkt unter der KI-Zusammenfassung sichtbar ist oder erst nach Klick auf „Weitere Quellen“ am Artikel.
+                </p>
+                <select id="alternativeLinksDisplayMode" class="setting-input" aria-describedby="alternativeLinksDisplayModeHint">
+                    <option value="expanded">Immer unter der Zusammenfassung</option>
+                    <option value="collapsed">Erst nach Klick auf „Weitere Quellen“</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="alternativeLinksBlacklist" id="alternativeLinksBlacklistLabel" class="setting-label">Blacklist Domains für alternative Links</label>
+                <p id="alternativeLinksBlacklistHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Pro Zeile eine Domain (z. B. example.com). Diese Domains werden in alternativen Links ausgeschlossen, inkl. Subdomains. URLs sind ebenfalls erlaubt.
+                </p>
+                <textarea
+                    id="alternativeLinksBlacklist"
+                    class="setting-input"
+                    rows="4"
+                    placeholder="example.com&#10;news.example.org"
+                    aria-describedby="alternativeLinksBlacklistHint"
+                ></textarea>
+            </div>
+
+            <div class="setting-group">
+                <label for="webSearchEngine" id="webSearchEngineLabel" class="setting-label">Suchmaschine (Button „Weitere Artikel“)</label>
+                <p id="webSearchEngineHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Öffnet eine Websuche zum Artikeltitel in einem neuen Tab (DuckDuckGo, Google oder Bing).
+                </p>
+                <select id="webSearchEngine" class="setting-input" aria-describedby="webSearchEngineHint">
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="google">Google</option>
+                    <option value="bing">Bing</option>
+                </select>
+            </div>
+
+        <div class="setting-group">
+            <label for="reasoningSelect" class="setting-label">Reasoning‑Level</label>
+            <select id="reasoningSelect" class="setting-input" aria-describedby="reasoningHint">
+                <option value="off">Off</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="on">On</option>
+            </select>
+            <p id="reasoningHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                Wählen Sie das Reasoning‑Level für LM Studio‑Modelle (falls unterstützt).
+            </p>
+        </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="openKiStatsBtn" title="Statistik">Statistik …</button>
+                <span class="modal-actions__spacer" aria-hidden="true"></span>
+                <button type="button" class="btn-secondary" id="cancelSettings">Schließen</button>
+                <button type="button" class="btn-primary" id="saveSettings">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KI usage statistics (localStorage) -->
+    <div class="modal-overlay" id="kiStatsModal" role="dialog" aria-labelledby="kiStatsTitle" aria-modal="true">
+        <div class="modal modal--wide ki-stats-modal">
+            <h2 id="kiStatsTitle">KI-Server — Statistik</h2>
+            <p id="kiStatsIntro" class="modal-hint ki-stats-intro"></p>
+            <p id="kiStatsEmpty" class="ki-stats-empty" hidden>Noch keine Daten.</p>
+            <div id="kiStatsPanel" class="ki-stats-panel">
+                <div class="ki-stats-grid" role="group" aria-label="Statistik-Kennzahlen">
+                    <div class="ki-stats-card">
+                        <span class="ki-stats-card__label" id="kiStatsLblCount"></span>
+                        <span class="ki-stats-card__value" id="kiStatsCountVal">0</span>
+                    </div>
+                    <div class="ki-stats-card">
+                        <span class="ki-stats-card__label" id="kiStatsLblTotalTokens"></span>
+                        <span class="ki-stats-card__value" id="kiStatsTotalTokensVal">—</span>
+                    </div>
+                    <div class="ki-stats-card">
+                        <span class="ki-stats-card__label" id="kiStatsLblAvgTokens"></span>
+                        <span class="ki-stats-card__value" id="kiStatsAvgTokensVal">—</span>
+                    </div>
+                    <div class="ki-stats-card">
+                        <span class="ki-stats-card__label" id="kiStatsLblAvgDuration"></span>
+                        <span class="ki-stats-card__value" id="kiStatsAvgDurationVal">—</span>
+                    </div>
+                </div>
+                <p id="kiStatsTokenHint" class="modal-hint ki-stats-token-hint" hidden></p>
+                <figure class="ki-stats-chart-wrap">
+                    <figcaption id="kiStatsChartCaption" class="ki-stats-chart-caption"></figcaption>
+                    <div class="ki-stats-chart-inner ki-stats-chart-inner--full">
+                        <svg id="kiStatsChartSvg" xmlns="http://www.w3.org/2000/svg" width="100%" height="360" aria-hidden="true"></svg>
+                    </div>
+                </figure>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="clearKiStatsBtn"></button>
+                <span class="modal-actions__spacer" aria-hidden="true"></span>
+                <button type="button" class="btn-primary" id="cancelKiStatsBtn"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- YouTube Modal CSS (must be inside <style> or it renders as visible text) -->
+    <style>
+        /* Wide YouTube modal: one scrollbar — scroll only .youtube-results, not the outer .modal */
+        .modal.modal--wide {
+            max-width: 90vw;
+            width: min(90vw, 85rem);
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .modal.modal--wide > h2,
+        .modal.modal--wide > p,
+        .modal.modal--wide > .search-hint {
+            flex-shrink: 0;
+        }
+
+        .modal.modal--wide .youtube-loading,
+        .modal.modal--wide .youtube-error {
+            flex-shrink: 0;
+        }
+
+        .modal.modal--wide .youtube-results {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: 0.5rem;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .modal.modal--wide .modal-actions--youtube {
+            flex-shrink: 0;
+        }
+
+        .youtube-loading { font-size: 1rem; color: var(--text-secondary); text-align: center; padding: 2rem; }
+        .youtube-error { background: color-mix(in srgb, var(--primary-color) 12%, transparent); border: 1px solid var(--primary-color); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem; color: var(--text-primary); }
+        .youtube-video-card { background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 0.75rem; border: 1px solid var(--border-color); }
+        .video-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+        .video-thumb { width: 120px; height: 68px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--bg-primary); }
+        .video-thumb--placeholder { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border-color); background: var(--bg-primary); }
+        .video-thumb__yt-logo { width: 3rem; height: auto; max-height: 3rem; display: block; flex-shrink: 0; }
+        .yt-modal-title { display: flex; align-items: center; gap: 0.5rem; margin-top: 0; }
+        .yt-modal-title__logo { width: 1.85rem; height: 1.85rem; flex-shrink: 0; display: block; }
+        .modal-actions--youtube { justify-content: flex-end; flex-wrap: wrap; }
+        #youtubeRegenerateBtn { margin-right: auto; }
+        .video-channel--muted { color: var(--text-secondary); font-style: italic; }
+        .video-info { flex: 1 1 auto; min-width: 0; }
+        .youtube-video-card .video-title { font-weight: 600; color: var(--primary-color); text-decoration: none; display: block; margin-bottom: 0.25rem; word-break: break-word; }
+        .youtube-video-card .video-title:hover { text-decoration: underline; }
+        .video-channel { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .video-summary { font-size: 0.9rem; line-height: 1.45; color: var(--text-primary); margin: 0; max-width: 60ch; }
+    </style>
+
+    <!-- YouTube Modal -->
+    <div class="modal-overlay" id="youtubeModal" role="dialog" aria-labelledby="yt-modal-title" aria-modal="true">
+        <div class="modal modal--wide">
+            <h2 id="yt-modal-title" class="yt-modal-title">
+                <svg class="yt-modal-title__logo" viewBox="0 0 24 24" width="48" height="48" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/>
+                    <path fill="#fff" d="M9.75 15.02l6.5-3.51-6.5-3.51v7.02z"/>
+                </svg>
+                <span id="yt-modal-title-text">YouTube (AI suggestions)</span>
+            </h2>
+            <p id="youtubeModalHint" class="modal-hint" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                The AI suggests search directions. Each link opens YouTube search results — no YouTube Data API key required.
+            </p>
+            <div id="youtubeSearchQuery" class="search-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;"></div>
+            <div class="youtube-loading">Generating suggestions …</div>
+            <div class="youtube-error" hidden></div>
+            <div class="youtube-results"></div>
+            <div class="modal-actions modal-actions--youtube">
+                <button type="button" id="youtubeRegenerateBtn" class="btn-secondary" title="Discard cached suggestions and run the AI again">Regenerate</button>
+                <button type="button" id="youtubeCloseBtn" class="btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <footer class="status-bar" id="statusBar">
+        <span id="statusFlash" class="status-flash" role="status" aria-live="polite"></span>
+        <span id="lastUpdate">Letzte Aktualisierung: --:--</span>
+        <span aria-hidden="true"> | </span>
+        <span id="newsCount">0 Nachrichten geladen</span>
+    </footer>
+
+    <!-- DOMPurify für XSS-Schutz bei komplexer HTML-Generierung -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script>
+        try {
+            var _hr = localStorage.getItem('heise_reasoning');
+            if (_hr != null && String(_hr).trim().toLowerCase() === 'none') {
+                localStorage.setItem('heise_reasoning', 'off');
+            }
+        } catch (e) { /* ignore */ }
+    </script>
+    <!-- Application Scripts -->
+    <script src="js/storage.js?v=magmirror1"></script>
+    <script src="js/news-sources-registry.js"></script>
+    <script src="js/news-scraper.js?v=heiseixcat1"></script>
+    <script src="js/ki-stats.js?v=tokchart1"></script>
+    <script src="js/ai-summarizer.js?v=altblk1"></script>
+    <script src="js/heise-comments.js?v=forumicon1"></script>
+    <script src="js/youtube-related.js"></script>
+    <script src="js/app.js?v=heiseMag20260407d"></script>
+    
+</body>
+</html>
