@@ -144,6 +144,7 @@
     "reddit_error": "Reddit search failed.",
     "reddit_no_title": "No article title for Reddit search.",
     "reddit_found": "Reddit: {count} thread(s)",
+    "reddit_found_ai": "Reddit (AI): {count} thread(s) — search: {queries}",
     "news_count_loaded": "{count} articles loaded",
     "load_more_btn": "Load more",
     "load_more_title": "Show more articles in batches",

@@ -8,7 +8,7 @@
 class NewsStorage {
     constructor() {
         this.dbName = 'HeiseNewsDashboard';
-        this.dbVersion = 3;
+        this.dbVersion = 4;
         this.db = null;
     }
 
@@ -50,6 +50,11 @@ class NewsStorage {
                 // Per-article UI flags (favorite/hidden)
                 if (!db.objectStoreNames.contains('articleFlags')) {
                     db.createObjectStore('articleFlags', { keyPath: 'articleKey' });
+                }
+
+                // Reddit threads per article
+                if (!db.objectStoreNames.contains('redditThreads')) {
+                    db.createObjectStore('redditThreads', { keyPath: 'articleKey' });
                 }
 
                 // Settings store: user preferences
@@ -414,6 +419,64 @@ class NewsStorage {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['youtubeRelated'], 'readwrite');
             const store = transaction.objectStore('youtubeRelated');
+            const request = store.delete(articleKey);
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * @param {string} articleKey
+     * @param {Array<{ title: string, url: string }>} threads
+     * @param {string[]} [aiQueries]
+     */
+    async saveRedditThreads(articleKey, threads, aiQueries) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['redditThreads'], 'readwrite');
+            const store = transaction.objectStore('redditThreads');
+            const data = {
+                articleKey,
+                threads: threads || [],
+                cachedAt: new Date().toISOString()
+            };
+            if (Array.isArray(aiQueries) && aiQueries.length > 0) {
+                data.aiQueries = aiQueries;
+            }
+            const request = store.put(data);
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /** @returns {Promise<{ threads: Array<{ title: string, url: string }>, cachedAt: string, aiQueries?: string[] } | null>} */
+    async getRedditThreadsWithMeta(articleKey) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['redditThreads'], 'readonly');
+            const store = transaction.objectStore('redditThreads');
+            const request = store.get(articleKey);
+            request.onsuccess = () => {
+                const r = request.result;
+                if (!r || !Array.isArray(r.threads)) {
+                    resolve(null);
+                    return;
+                }
+                const out = {
+                    threads: r.threads,
+                    cachedAt: r.cachedAt || new Date(0).toISOString()
+                };
+                if (Array.isArray(r.aiQueries) && r.aiQueries.length > 0) {
+                    out.aiQueries = r.aiQueries;
+                }
+                resolve(out);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async deleteRedditThreads(articleKey) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['redditThreads'], 'readwrite');
+            const store = transaction.objectStore('redditThreads');
             const request = store.delete(articleKey);
             request.onsuccess = () => resolve(true);
             request.onerror = () => reject(request.error);

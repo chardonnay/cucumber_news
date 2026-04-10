@@ -35,9 +35,15 @@ The model is instructed to produce a summary; *concrete alternative URLs* are fe
 
 This keeps “more sources” grounded in real publisher URLs when the dev server is available.
 
-=== Reddit search
+=== Reddit search (AI-enhanced)
 
-The dashboard can query `GET /api/reddit-search` (JSON proxy) to suggest related Reddit threads for a headline — useful for discussion context alongside news.
+The dashboard queries `GET /api/reddit-search?q=…&ai=1` to find related Reddit threads.
+When `ai=1` is set and LM Studio is running, the server asks the loaded model to generate 2–3 short English search queries optimized for Reddit (translating German headlines, extracting key terms, using Reddit-typical terminology).
+Each AI query is sent to Reddit's search API; results are merged and deduplicated.
+
+If the AI is unavailable (LM Studio not running, model timeout, etc.) the endpoint falls back to the deterministic keyword approach (stopword removal + first-N-token query).
+
+The response includes `ai_enhanced: true` and `ai_queries: [...]` so the client can display which search terms were used.
 
 === YouTube suggestions
 

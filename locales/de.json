@@ -144,6 +144,7 @@
     "reddit_error": "Reddit-Suche fehlgeschlagen.",
     "reddit_no_title": "Kein Artikeltitel für die Reddit-Suche.",
     "reddit_found": "Reddit: {count} Thread(s)",
+    "reddit_found_ai": "Reddit (KI): {count} Thread(s) — Suche: {queries}",
     "news_count_loaded": "{count} Nachrichten geladen",
     "load_more_btn": "Mehr laden",
     "load_more_title": "Weitere Artikel in Blöcken anzeigen",

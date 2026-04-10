@@ -76,6 +76,8 @@ REDDIT_SEARCH_UA = (
 URL_CHECK_TIMEOUT = 14
 
 _LM_REASONING_ALLOWED = frozenset({"off", "low", "medium", "high", "on"})
+_LM_REDDIT_QUERY_TIMEOUT = 12
+_lm_model_cache: dict[str, object] = {"model": "", "t": 0.0}
 
 # Words dropped when building Reddit search + relevance scoring (DE/EN noise).
 _REDDIT_STOPWORDS = frozenset(
@@ -233,6 +235,291 @@ def _reddit_post_matches_headline(headline_tokens: list[str], post_title: str) -
         if len(w) >= 6:
             return True
     return False
+
+
+def _extract_lm_response_text(data: object) -> str:
+    """Extract assistant message text from LM Studio REST v1 or OpenAI-compatible response."""
+    if not isinstance(data, dict):
+        return ""
+    output = data.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("type", "")).lower() == "reasoning":
+                continue
+            content = item.get("content") or item.get("message") or item.get("text") or ""
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict):
+                        t = part.get("text", "")
+                        if isinstance(t, str) and t.strip():
+                            return t.strip()
+                    elif isinstance(part, str) and part.strip():
+                        return part.strip()
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        msg = (choices[0] or {}).get("message") or {}
+        content = msg.get("content", "")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+    return ""
+
+
+def _lm_get_model_name(lm_target: str) -> str:
+    """Get the first loaded model id from LM Studio (cached 5 min)."""
+    now = time.time()
+    cached_model = str(_lm_model_cache.get("model") or "")
+    cached_t = float(_lm_model_cache.get("t") or 0.0)
+    if cached_model and (now - cached_t) < 300:
+        return cached_model
+    parsed = urlparse(lm_target)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        if parsed.scheme == "https":
+            conn = http.client.HTTPSConnection(host, port, timeout=6)
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=6)
+        try:
+            conn.request("GET", "/v1/models", headers={"Accept": "application/json"})
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(body)
+            models = data.get("data") or []
+            if models and isinstance(models[0], dict):
+                mid = str(models[0].get("id", "")).strip()
+                if mid:
+                    _lm_model_cache["model"] = mid
+                    _lm_model_cache["t"] = now
+                    return mid
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return ""
+
+
+_REDDIT_AI_SYSTEM_PROMPT = (
+    "You are a Reddit search query optimizer. Given a news article headline "
+    "(possibly in German or another language), generate 2-3 short English search "
+    "queries optimized for finding relevant Reddit discussions.\n\n"
+    "Rules:\n"
+    "- Translate non-English terms to English\n"
+    "- Keep product names, company names, and proper nouns as-is\n"
+    "- Each query should be 2-5 words\n"
+    "- Use terminology commonly found on Reddit\n"
+    "- Cover different angles of the topic\n\n"
+    'Return ONLY a JSON object: {"queries": ["query1", "query2"]}\n'
+    "No markdown fences, no explanations, just the raw JSON."
+)
+
+
+def _lm_call_reddit_chat(
+    model: str, headline: str, lm_target: str, reasoning: str | None
+) -> list[str]:
+    """Single LM Studio chat call; returns parsed query list or empty."""
+    body_obj: dict[str, object] = {
+        "model": model,
+        "input": f"News headline: {headline}",
+        "system_prompt": _REDDIT_AI_SYSTEM_PROMPT,
+        "temperature": 0.3,
+        "max_output_tokens": 300,
+        "stream": False,
+        "store": False,
+    }
+    if reasoning is not None:
+        body_obj["reasoning"] = reasoning
+    body = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
+    parsed = urlparse(lm_target)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if parsed.scheme == "https":
+        conn = http.client.HTTPSConnection(host, port, timeout=_LM_REDDIT_QUERY_TIMEOUT)
+    else:
+        conn = http.client.HTTPConnection(host, port, timeout=_LM_REDDIT_QUERY_TIMEOUT)
+    try:
+        conn.request(
+            "POST",
+            "/api/v1/chat",
+            body=body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+        )
+        resp = conn.getresponse()
+        status = resp.status
+        resp_body = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(resp_body)
+    finally:
+        conn.close()
+
+    if status >= 400:
+        err_msg = ""
+        err_obj = data.get("error") if isinstance(data, dict) else None
+        if isinstance(err_obj, dict):
+            err_msg = str(err_obj.get("message", ""))
+        raise ValueError(f"HTTP {status}: {err_msg}")
+
+    text = _extract_lm_response_text(data)
+    if not text:
+        return []
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start < 0 or end <= start:
+        return []
+    result = json.loads(text[start:end])
+    queries = result.get("queries", [])
+    return [q.strip() for q in queries if isinstance(q, str) and q.strip()]
+
+
+def _lm_optimize_reddit_queries(headline: str, lm_target: str, reasoning: str = "off") -> list[str]:
+    """Ask LM Studio to generate optimized Reddit search queries from a headline."""
+    model = _lm_get_model_name(lm_target)
+    if not model:
+        return []
+
+    r = reasoning if reasoning in _LM_REASONING_ALLOWED else "off"
+
+    try:
+        out = _lm_call_reddit_chat(model, headline, lm_target, r)
+        if out:
+            print(f"[reddit-ai] AI queries for '{headline[:60]}…': {out}", file=sys.stderr)
+            return out
+    except (ValueError, json.JSONDecodeError) as e:
+        err_str = str(e).lower()
+        if "reasoning" in err_str:
+            print(f"[reddit-ai] reasoning='{r}' rejected, retrying without reasoning field", file=sys.stderr)
+            try:
+                out = _lm_call_reddit_chat(model, headline, lm_target, None)
+                if out:
+                    print(f"[reddit-ai] AI queries (no-reasoning retry) for '{headline[:60]}…': {out}", file=sys.stderr)
+                    return out
+            except Exception as e2:
+                print(f"[reddit-ai] retry also failed: {e2}", file=sys.stderr)
+        else:
+            print(f"[reddit-ai] LM query failed: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"[reddit-ai] LM query failed: {e}", file=sys.stderr)
+
+    print("[reddit-ai] LM returned no usable response", file=sys.stderr)
+    return []
+
+
+def build_reddit_search_payload_ai(
+    query: str, limit: int, lm_target: str, reasoning: str = "off"
+) -> dict[str, object]:
+    """
+    AI-enhanced Reddit search: asks LM Studio for optimized queries, searches Reddit
+    with each, merges results. Falls back to standard search if AI is unavailable.
+    """
+    if not query or not isinstance(query, str):
+        return {"ok": False, "error": "empty_query", "results": [], "query": "", "query_search": ""}
+
+    headline_norm = _reddit_normalize_article_headline(query)
+    if not headline_norm:
+        return {"ok": False, "error": "empty_query", "results": [], "query": "", "query_search": ""}
+
+    ai_queries = _lm_optimize_reddit_queries(headline_norm, lm_target, reasoning)
+    if not ai_queries:
+        return build_reddit_search_payload(query, limit)
+
+    try:
+        lim = int(limit)
+    except (TypeError, ValueError):
+        lim = 5
+    lim = max(1, min(5, lim))
+
+    seen_permalinks: set[str] = set()
+    results: list[dict[str, str]] = []
+    used_queries: list[str] = []
+    fetch_n = min(50, max(25, lim * 10))
+
+    for qi, search_q in enumerate(ai_queries[:3]):
+        if not search_q or len(results) >= lim:
+            break
+        if qi > 0:
+            time.sleep(1.0)
+        used_queries.append(search_q)
+        encoded = quote_plus(search_q[:350])
+        url = (
+            f"https://www.reddit.com/search.json?q={encoded}"
+            f"&limit={fetch_n}&sort=relevance&type=link&raw_json=1"
+        )
+        try:
+            req = Request(
+                url,
+                headers={
+                    "User-Agent": REDDIT_SEARCH_UA,
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "de,en-US;q=0.9,en;q=0.8",
+                },
+                method="GET",
+            )
+            with urlopen(req, timeout=REDDIT_SEARCH_TIMEOUT) as resp:
+                resp_body = resp.read()
+            text = resp_body.decode("utf-8", errors="replace")
+            data = json.loads(text)
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as e:
+            print(f"[reddit-ai] Reddit fetch FAILED for '{search_q}': {e}", file=sys.stderr)
+            continue
+
+        children = (data.get("data") or {}).get("children") or []
+        added = 0
+        print(
+            f"[reddit-ai] query #{qi+1} '{search_q}' → {len(children)} candidates",
+            file=sys.stderr,
+        )
+        for ch in children:
+            if len(results) >= lim:
+                break
+            if not isinstance(ch, dict) or ch.get("kind") != "t3":
+                continue
+            d = ch.get("data") or {}
+            if not isinstance(d, dict):
+                continue
+            title = (d.get("title") or "").strip()
+            permalink = (d.get("permalink") or "").strip()
+            if not title or not permalink:
+                continue
+            if permalink in seen_permalinks:
+                continue
+            seen_permalinks.add(permalink)
+            if permalink.startswith("/"):
+                full_url = "https://www.reddit.com" + permalink
+            elif permalink.startswith("http"):
+                full_url = permalink
+            else:
+                full_url = "https://www.reddit.com/" + permalink.lstrip("/")
+            results.append({"title": title, "url": full_url})
+            added += 1
+        if added:
+            print(f"[reddit-ai] → kept {added} results (total {len(results)})", file=sys.stderr)
+        if len(results) >= lim:
+            break
+
+    if not results:
+        print(
+            "[reddit-ai] AI queries returned no results, falling back to keyword search",
+            file=sys.stderr,
+        )
+        fallback = build_reddit_search_payload(query, limit)
+        fallback["ai_queries"] = used_queries
+        fallback["ai_enhanced"] = True
+        return fallback
+
+    print(
+        f"[reddit-ai] Returning {len(results)} results from AI queries",
+        file=sys.stderr,
+    )
+    return {
+        "ok": True,
+        "results": results[:lim],
+        "query": headline_norm,
+        "query_search": " | ".join(used_queries),
+        "ai_enhanced": True,
+        "ai_queries": used_queries,
+    }
 
 
 def check_remote_article_url(target: str) -> dict[str, object]:
@@ -1689,7 +1976,19 @@ def make_handler(lm_target: str) -> type:
                     lim = int((qs.get("limit") or ["5"])[0])
                 except (TypeError, ValueError):
                     lim = 5
-                payload = build_reddit_search_payload(query, lim)
+                use_ai = (qs.get("ai") or [""])[0].strip() == "1"
+                reasoning = (qs.get("reasoning") or ["off"])[0].strip().lower()
+                if use_ai:
+                    payload = build_reddit_search_payload_ai(query, lim, lm_target, reasoning)
+                else:
+                    payload = build_reddit_search_payload(query, lim)
+                n_res = len(payload.get("results") or [])
+                print(
+                    f"[reddit] → ok={payload.get('ok')}, results={n_res}, "
+                    f"ai={payload.get('ai_enhanced', False)}, "
+                    f"search='{payload.get('query_search', '')[:80]}'",
+                    file=sys.stderr,
+                )
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 cors_headers(self)
@@ -1821,7 +2120,7 @@ def main() -> int:
         f"GET /api/verge-comments?url=… → stub (link to #comments; Coral counts not in RSS)\n"
         f"GET /api/check-url?url=… → HTTP probe for KI alternative links (drops obvious 404/410)\n"
         f"GET /api/search-news?q=…&limit=…&mkt=… → Bing News RSS (real article URLs for alternative links)\n"
-        f"GET /api/reddit-search?q=…&limit=… → Reddit thread search (JSON proxy)\n"
+        f"GET /api/reddit-search?q=…&limit=…&ai=1 → Reddit thread search (ai=1: LM Studio optimized queries)\n"
         f"GET /api/youtube-search?q=… → YouTube Data API v3 search (requires YOUTUBE_API_KEY env var)\n"
         f"The app auto-detects this server via GET /.well-known/lmstudio-dev-server\n",
         file=sys.stderr,

@@ -163,6 +163,7 @@ class App {
         this._i18nRedditError = 'Reddit search failed.';
         this._i18nRedditNoTitle = 'No article title for Reddit search.';
         this._i18nRedditFound = '{count} Reddit thread(s)';
+        this._i18nRedditFoundAi = 'Reddit (KI): {count} Thread(s) — Suche: {queries}';
         this._i18nNewsCountLoaded = '{count} Nachrichten geladen';
 
         // Initialize
@@ -1840,6 +1841,9 @@ class App {
                 if (newsLoc.reddit_found) {
                     this._i18nRedditFound = newsLoc.reddit_found;
                 }
+                if (newsLoc.reddit_found_ai) {
+                    this._i18nRedditFoundAi = newsLoc.reddit_found_ai;
+                }
                 if (newsLoc.news_count_loaded) {
                     this._i18nNewsCountLoaded = newsLoc.news_count_loaded;
                 }
@@ -3178,27 +3182,55 @@ class App {
             return;
         }
         try {
+            const maxAgeMs = this.summarizer.getSummaryCacheMaxAgeMs();
             await Promise.all(
                 items.map(async (item) => {
                     const url = App.articlePrimaryUrl(item);
                     if (!url || !item.id) {
                         return;
                     }
-                    const cached = await this.summarizer.getCachedSummaryForDisplay(url);
-                    if (cached == null || !cached.summary?.trim()) {
-                        return;
-                    }
+
                     const summaryDiv = document.getElementById(`summary-${item.id}`);
                     if (!summaryDiv) {
                         return;
                     }
                     const toggleBtn = summaryDiv.closest('.news-card')?.querySelector('.summary-toggle');
-                    if (!toggleBtn) {
-                        return;
+
+                    const cached = await this.summarizer.getCachedSummaryForDisplay(url);
+                    let panelOpened = false;
+                    if (cached != null && cached.summary?.trim() && toggleBtn) {
+                        this.renderAiSummaryOnCard(summaryDiv, cached);
+                        summaryDiv.classList.add('active');
+                        toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                        panelOpened = true;
                     }
-                    this.renderAiSummaryOnCard(summaryDiv, cached);
-                    summaryDiv.classList.add('active');
-                    toggleBtn.textContent = 'Zusammenfassung ausblenden';
+
+                    if (this.storage && this.storage.db) {
+                        const articleKey = App.articleFlagKey(item);
+                        if (!articleKey) {
+                            return;
+                        }
+                        try {
+                            const rd = await this.storage.getRedditThreadsWithMeta(articleKey);
+                            if (rd && Array.isArray(rd.threads) && rd.threads.length > 0) {
+                                const cachedAtMs = new Date(rd.cachedAt || 0).getTime();
+                                const ageOk =
+                                    maxAgeMs === Infinity ||
+                                    (Number.isFinite(cachedAtMs) && Date.now() - cachedAtMs <= maxAgeMs);
+                                if (ageOk) {
+                                    this.renderRedditThreadsOnCard(summaryDiv, rd.threads);
+                                    if (!panelOpened) {
+                                        summaryDiv.classList.add('active');
+                                        if (toggleBtn) {
+                                            toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (re) {
+                            console.warn('hydrateRedditThreads:', re);
+                        }
+                    }
                 })
             );
         } catch (e) {
@@ -3411,7 +3443,11 @@ class App {
     /**
      * @param {HTMLElement} summaryDiv — `.news-summary`
      */
-    clearSummaryAltLinks(summaryDiv) {
+    /**
+     * @param {HTMLElement} summaryDiv
+     * @param {{ keepReddit?: boolean }} [opts]
+     */
+    clearSummaryAltLinks(summaryDiv, opts) {
         const block = summaryDiv.querySelector('.summary-alt-links-block');
         const toolbar = summaryDiv.querySelector('.summary-alt-links-toolbar');
         const countEl = summaryDiv.querySelector('.summary-alt-links-count');
@@ -3442,7 +3478,9 @@ class App {
             list.hidden = true;
             list.classList.remove('summary-alt-links-list--expanded');
         }
-        this.clearSummaryRedditBlock(summaryDiv);
+        if (!(opts && opts.keepReddit)) {
+            this.clearSummaryRedditBlock(summaryDiv);
+        }
     }
 
     /**
@@ -3532,13 +3570,19 @@ class App {
                 this.showStatus(this._i18nRedditError, true);
                 return;
             }
-            const params = new URLSearchParams({ q: title, limit: '5' });
+            const reasoning = this.summarizer ? this.summarizer.getLmReasoningLevel() : 'off';
+            const params = new URLSearchParams({ q: title, limit: '5', ai: '1', reasoning });
             const r = await fetch(`${origin}/api/reddit-search?${params}`, {
                 method: 'GET',
                 cache: 'no-store',
                 credentials: 'same-origin'
             });
             const data = await r.json();
+            console.info(
+                '[reddit] response: ok=%s, results=%d, ai=%s, search=%s',
+                data?.ok, (data?.results || []).length,
+                data?.ai_enhanced || false, data?.query_search || ''
+            );
             if (!data || data.ok !== true) {
                 this.clearSummaryRedditBlock(summaryDiv);
                 const err = data && data.error ? String(data.error) : '';
@@ -3558,8 +3602,26 @@ class App {
                 this.showStatus(this._i18nRedditNone, true);
                 return;
             }
+            const aiQueries = Array.isArray(data.ai_queries) ? data.ai_queries : [];
+
+            const cacheKey = App.articleFlagKey(item);
+            if (cacheKey && this.storage && this.storage.db) {
+                this.storage.saveRedditThreads(cacheKey, results, aiQueries).catch(
+                    (err) => console.warn('saveRedditThreads:', err)
+                );
+            }
+
+            let statusMsg;
             const foundTpl = String(this._i18nRedditFound || '{count}');
-            this.showStatus(foundTpl.replace(/\{count\}/g, String(results.length)));
+            if (aiQueries.length > 0) {
+                const aiTpl = String(this._i18nRedditFoundAi || '{count}');
+                statusMsg = aiTpl
+                    .replace(/\{count\}/g, String(results.length))
+                    .replace(/\{queries\}/g, aiQueries.join(', '));
+            } else {
+                statusMsg = foundTpl.replace(/\{count\}/g, String(results.length));
+            }
+            this.showStatus(statusMsg);
         } catch (e) {
             console.error('searchRedditForArticle:', e);
             this.clearSummaryRedditBlock(summaryDiv);
@@ -3917,12 +3979,12 @@ class App {
                     summary && typeof summary === 'object' && typeof summary.summary === 'string'
                         ? summary.summary
                         : String(summary);
-                this.clearSummaryAltLinks(summaryDiv);
+                this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`);
                 this.updateKiStatus('err');
                 button.textContent = 'Zusammenfassung erneut versuchen';
             } else if (!display) {
-                this.clearSummaryAltLinks(summaryDiv);
+                this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML =
                     '<span style="color: var(--primary-color);">Zusammenfassung leer — bitte „Neu erstellen“ oder Modell prüfen.</span>';
                 this.updateKiStatus('err');
@@ -3936,7 +3998,7 @@ class App {
             summaryDiv.classList.add('active');
         } catch (error) {
             console.error('Error toggling summary:', error);
-            this.clearSummaryAltLinks(summaryDiv);
+            this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">Fehler beim Laden der Zusammenfassung: ${this.escapeHtml(error.message || String(error))}</span>`);
             summaryDiv.classList.add('active');
             button.textContent = 'Zusammenfassung erneut versuchen';
@@ -4006,12 +4068,12 @@ class App {
                     summary && typeof summary === 'object' && typeof summary.summary === 'string'
                         ? summary.summary
                         : String(summary);
-                this.clearSummaryAltLinks(summaryDiv);
+                this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML = `<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`;
                 this.updateKiStatus('err');
                 toggleBtn.textContent = 'Zusammenfassung anzeigen';
             } else if (!display) {
-                this.clearSummaryAltLinks(summaryDiv);
+                this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML =
                     '<span style="color: var(--primary-color);">Zusammenfassung leer — bitte „Neu erstellen“ oder Modell prüfen.</span>';
                 this.updateKiStatus('err');
@@ -4023,7 +4085,7 @@ class App {
             }
         } catch (error) {
             console.error('refreshSummary:', error);
-            this.clearSummaryAltLinks(summaryDiv);
+            this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">Fehler: ${this.escapeHtml(error.message || String(error))}</span>`);
             this.updateKiStatus('err');
             toggleBtn.textContent = 'Zusammenfassung anzeigen';
@@ -4060,7 +4122,7 @@ class App {
                 summary && typeof summary === 'object' && typeof summary.summary === 'string'
                     ? summary.summary
                     : String(summary);
-            this.clearSummaryAltLinks(summaryDiv);
+            this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`);
             if (toggleBtn) {
                 toggleBtn.textContent = 'Zusammenfassung erneut versuchen';
