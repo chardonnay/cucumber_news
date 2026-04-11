@@ -779,17 +779,277 @@ class AISummarizer {
         return `${this.getLmRestRoot()}/v1/models`;
     }
 
-    buildLmRestGetHeaders() {
+    /**
+     * @param {string} [tokenOverride] If set, used instead of `localStorage` (e.g. unsaved KI settings modal).
+     * @param {string} [requestUrlForNgrokHint] If set, used to detect ngrok (unsaved server URL in settings UI).
+     */
+    buildLmRestGetHeaders(tokenOverride, requestUrlForNgrokHint) {
         const h = { Accept: 'application/json' };
-        const token = this.getLmApiToken();
+        let token = '';
+        if (tokenOverride !== undefined) {
+            token = String(tokenOverride || '').trim();
+        } else {
+            token = this.getLmApiToken();
+        }
         if (token) {
             h.Authorization = `Bearer ${token}`;
         }
-        const base = this.getEffectiveServerUrlForHints();
-        if (String(base).includes('ngrok')) {
+        const probe =
+            requestUrlForNgrokHint != null && String(requestUrlForNgrokHint).trim()
+                ? String(requestUrlForNgrokHint)
+                : this.getEffectiveServerUrlForHints();
+        if (String(probe).includes('ngrok')) {
             h['ngrok-skip-browser-warning'] = 'true';
         }
         return h;
+    }
+
+    /**
+     * Resolves GET /v1/models URL for LM Studio (OpenAI-style list) from persisted or explicit settings.
+     * @param {{
+     *   kiApiMode?: string,
+     *   lmRestRoot?: string,
+     *   apiBaseUrl?: string,
+     *   restSameOrigin?: boolean,
+     *   pageOrigin?: string
+     * }} opts
+     * @returns {string} Empty if models cannot be requested (e.g. file: + same-origin).
+     */
+    static getModelsListUrlFromSettings(opts) {
+        const mode = opts && opts.kiApiMode === 'openai' ? 'openai' : 'lm_rest_v1';
+        const restSo =
+            mode === 'lm_rest_v1' &&
+            (opts.restSameOrigin === true ||
+                opts.restSameOrigin === 1 ||
+                opts.restSameOrigin === '1');
+        if (restSo) {
+            const origin =
+                (opts.pageOrigin && String(opts.pageOrigin)) ||
+                (typeof window !== 'undefined' &&
+                window.location &&
+                window.location.origin &&
+                window.location.protocol !== 'file:'
+                    ? window.location.origin
+                    : '');
+            if (origin) {
+                return `${origin}/v1/models`;
+            }
+            return '';
+        }
+        if (mode === 'lm_rest_v1') {
+            const root = AISummarizer.normalizeLmRestServerRoot(opts.lmRestRoot || '');
+            return `${root}/v1/models`;
+        }
+        const base = AISummarizer.normalizeOpenAiApiBase(opts.apiBaseUrl || '');
+        return `${base}/models`;
+    }
+
+    /**
+     * @param {object} raw LM Studio native, OpenAI-style `data[]`, or hybrid.
+     * @returns {{ id: string, raw: object, displayName: string, type: string, loaded: boolean, paramsString: string, quantLabel: string, architecture: string, maxContextLength: number, publisher: string } | null}
+     */
+    static normalizeModelListEntry(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const id = String(raw.id ?? raw.model ?? raw.key ?? '').trim();
+        if (!id) {
+            return null;
+        }
+        const type = typeof raw.type === 'string' ? raw.type : '';
+        if (type === 'embedding') {
+            return null;
+        }
+        const displayName = String(raw.display_name ?? raw.displayName ?? raw.id ?? '').trim() || id;
+        const loaded = Array.isArray(raw.loaded_instances) && raw.loaded_instances.length > 0;
+        const paramsString = raw.params_string != null ? String(raw.params_string).trim() : '';
+        let quantLabel = '';
+        if (raw.quantization && typeof raw.quantization === 'object') {
+            const qn = raw.quantization.name;
+            quantLabel = qn != null ? String(qn).trim() : '';
+        }
+        const architecture = raw.architecture != null ? String(raw.architecture).trim() : '';
+        const maxContextLength =
+            typeof raw.max_context_length === 'number' && Number.isFinite(raw.max_context_length)
+                ? raw.max_context_length
+                : 0;
+        const publisher = raw.publisher != null ? String(raw.publisher).trim() : '';
+        return {
+            id,
+            raw,
+            displayName,
+            type,
+            loaded,
+            paramsString,
+            quantLabel,
+            architecture,
+            maxContextLength,
+            publisher
+        };
+    }
+
+    /**
+     * Short label for `<option>` text (metadata in parentheses).
+     * @param {{ id: string, displayName: string, paramsString: string, quantLabel: string, loaded: boolean }} m
+     * @param {{ loadedMark?: string }} [fmt]
+     * @returns {string}
+     */
+    static formatModelOptionLabel(m, fmt) {
+        if (!m) {
+            return '';
+        }
+        const parts = [];
+        if (m.paramsString) {
+            parts.push(m.paramsString);
+        }
+        if (m.quantLabel) {
+            parts.push(m.quantLabel);
+        }
+        const extra = parts.length ? ` (${parts.join(', ')})` : '';
+        const base = `${m.displayName || m.id}${extra}`;
+        if (m.loaded && fmt && fmt.loadedMark) {
+            return `${fmt.loadedMark} ${base}`;
+        }
+        return base;
+    }
+
+    /**
+     * Tooltip / `title` text with extra fields (Publisher, architecture, context, format).
+     * @param {{ id: string, raw: object, displayName: string, publisher: string, architecture: string, maxContextLength: number, loaded: boolean }} m
+     * @returns {string}
+     */
+    static getModelTitleTooltip(m) {
+        if (!m || !m.raw || typeof m.raw !== 'object') {
+            return m ? m.id : '';
+        }
+        const r = m.raw;
+        const bits = [];
+        if (m.publisher) {
+            bits.push(`Publisher: ${m.publisher}`);
+        }
+        if (m.architecture) {
+            bits.push(`Architecture: ${m.architecture}`);
+        }
+        if (m.maxContextLength > 0) {
+            bits.push(`Max context: ${m.maxContextLength} tokens`);
+        }
+        if (r.format != null && String(r.format).trim()) {
+            bits.push(`Format: ${r.format}`);
+        }
+        if (r.capabilities && typeof r.capabilities === 'object') {
+            const cap = r.capabilities;
+            if (cap.vision === true) {
+                bits.push('Vision: yes');
+            }
+            if (cap.trained_for_tool_use === true) {
+                bits.push('Tool use: yes');
+            }
+        }
+        if (m.loaded) {
+            bits.push('Loaded in LM Studio: yes');
+        }
+        return bits.length ? bits.join(' | ') : m.id;
+    }
+
+    /**
+     * Fetch model list for KI settings UI. Uses same endpoints as {@link resolveLmRestModelId}.
+     * @param {AbortSignal} signal
+     * @param {{
+     *   kiApiMode?: string,
+     *   lmRestRoot?: string,
+     *   apiBaseUrl?: string,
+     *   restSameOrigin?: boolean,
+     *   lmApiToken?: string,
+     *   pageOrigin?: string
+     * }} [opts] Explicit settings (e.g. modal fields before Save). Omits use persisted `localStorage`.
+     * @returns {Promise<{ ok: true, models: object[] } | { ok: false, error: string }>}
+     */
+    async fetchAvailableModels(signal, opts) {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const url = AISummarizer.getModelsListUrlFromSettings({
+            kiApiMode: o.kiApiMode ?? this.getKiApiMode(),
+            lmRestRoot: o.lmRestRoot ?? this.getLmRestRoot(),
+            apiBaseUrl: o.apiBaseUrl ?? this.getApiBase(),
+            restSameOrigin: o.restSameOrigin ?? this.isLmRestSameOrigin(),
+            pageOrigin: o.pageOrigin
+        });
+        if (!url) {
+            return {
+                ok: false,
+                error:
+                    'Models list URL could not be built (same-origin REST needs http(s) page origin, not file://).'
+            };
+        }
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'GET',
+                headers: this.buildLmRestGetHeaders(o.lmApiToken, url),
+                signal,
+                mode: 'cors',
+                credentials: 'omit'
+            });
+        } catch (e) {
+            const msg = e && e.message ? String(e.message) : 'Network error';
+            return { ok: false, error: msg };
+        }
+        const rawText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(rawText.trim());
+        } catch {
+            return {
+                ok: false,
+                error: `GET models returned non-JSON (HTTP ${response.status}).`
+            };
+        }
+        if (!response.ok) {
+            const detail = data.error?.message || data.message || rawText.slice(0, 200);
+            return {
+                ok: false,
+                error: `GET models failed (HTTP ${response.status}): ${detail}`
+            };
+        }
+        const list = Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.models)
+              ? data.models
+              : [];
+        const models = [];
+        for (const row of list) {
+            const n = AISummarizer.normalizeModelListEntry(row);
+            if (n) {
+                models.push(n);
+            }
+        }
+        models.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+        return { ok: true, models };
+    }
+
+    /**
+     * @param {Array<object>} list Raw entries from GET /v1/models
+     * @returns {string} First usable model id, or empty string.
+     */
+    static pickFirstModelIdFromRawList(list) {
+        if (!Array.isArray(list) || list.length === 0) {
+            return '';
+        }
+        const normalized = [];
+        for (const row of list) {
+            const n = AISummarizer.normalizeModelListEntry(row);
+            if (n) {
+                normalized.push(n);
+            }
+        }
+        const use = normalized.length ? normalized.map((x) => x.raw) : list;
+        const first = use.find((x) => {
+            if (!x || typeof x !== 'object') {
+                return false;
+            }
+            const id = String(x.id ?? x.model ?? x.key ?? '').trim();
+            return Boolean(id);
+        });
+        return first ? String(first.id ?? first.model ?? first.key ?? '').trim() : '';
     }
 
     /**
@@ -824,7 +1084,7 @@ class AISummarizer {
         try {
             response = await fetch(url, {
                 method: 'GET',
-                headers: this.buildLmRestGetHeaders(),
+                headers: this.buildLmRestGetHeaders(undefined, url),
                 signal,
                 mode: 'cors',
                 credentials: 'omit'
@@ -832,7 +1092,7 @@ class AISummarizer {
         } catch (e) {
             const msg = e && e.message ? String(e.message) : 'Netzwerkfehler';
             throw new Error(
-                `Modell konnte nicht ermittelt werden (${msg}). Tragen Sie unter „Modellname“ ein geladenes LM-Studio-Modell ein (z. B. qwen/qwen3.5-35b-a3b) oder nutzen Sie den Dev-Server mit „REST über dieselbe Origin“, damit GET /v1/models zum LM-Server durchgereicht wird.`
+                `Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein geladenes LM-Studio-Modell oder nutzen Sie „Keine spezifische Wahl …“ mit Dev-Server („REST über dieselbe Origin“), damit GET /v1/models zum LM-Server durchgereicht wird.`
             );
         }
 
@@ -858,8 +1118,7 @@ class AISummarizer {
             : Array.isArray(data?.models)
               ? data.models
               : [];
-        const first = list.find((x) => x && (typeof x.id === 'string' || typeof x.model === 'string'));
-        const id = first ? String(first.id || first.model || '').trim() : '';
+        const id = AISummarizer.pickFirstModelIdFromRawList(list);
         if (!id) {
             throw new Error(
                 'LM Studio meldet keine Modelle (leere Liste unter GET /v1/models). Laden Sie ein Modell oder tragen Sie den Namen in den Einstellungen ein.'

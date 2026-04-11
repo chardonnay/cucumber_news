@@ -1536,6 +1536,24 @@
             color: var(--text-primary);
         }
 
+        .lm-model-row {
+            display: flex;
+            gap: 0.5rem;
+            align-items: stretch;
+        }
+
+        .lm-model-row .lm-model-select-wrap {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .lm-model-row .lm-model-refresh-btn {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            padding-left: 0.85rem;
+            padding-right: 0.85rem;
+        }
+
         .modal-actions {
             display: flex;
             gap: 1rem;
@@ -2309,8 +2327,14 @@
             </div>
 
             <div class="setting-group">
-                <label for="lmModel" class="setting-label">Modellname (wie in LM Studio geladen)</label>
-                <input type="text" id="lmModel" class="setting-input" placeholder="z. B. qwen/qwen3.5-35b-a3b — leer = erstes Modell aus GET /v1/models (Dev-Server: same-origin)" autocomplete="off">
+                <label for="lmModel" class="setting-label" id="lmModelLabel">Modell</label>
+                <p id="lmModelHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <div class="lm-model-row">
+                    <div class="lm-model-select-wrap">
+                        <select id="lmModel" class="setting-input" aria-describedby="lmModelHint" autocomplete="off"></select>
+                    </div>
+                    <button type="button" class="btn-secondary lm-model-refresh-btn" id="lmModelRefreshBtn" title="Modelle neu laden">↻</button>
+                </div>
             </div>
 
             <div class="setting-group">

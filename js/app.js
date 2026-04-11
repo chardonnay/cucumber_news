@@ -75,6 +75,7 @@ class App {
             serverUrlHint: document.getElementById('serverUrlHint'),
             restSameOrigin: document.getElementById('restSameOrigin'),
             lmModel: document.getElementById('lmModel'),
+            lmModelRefreshBtn: document.getElementById('lmModelRefreshBtn'),
             summaryLangMode: document.getElementById('summaryLangMode'),
             summaryCacheDays: document.getElementById('summaryCacheDays'),
             summaryConcurrency: document.getElementById('summaryConcurrency'),
@@ -147,6 +148,17 @@ class App {
         this._i18nKiStatsChartTotalLegend = '';
         this._i18nKiStatsTokensUnavailable = '';
         this._i18nKiStatsChartYTitle = '';
+        this._i18nLmModelHintDefault = '';
+        this._i18nLmModelAutomatic = 'No specific choice — server decides';
+        this._i18nLmModelLoading = 'Loading model list…';
+        this._i18nLmModelLoadErrorTpl = 'Could not load model list: {error}';
+        this._i18nLmModelRefreshTitle = 'Reload model list';
+        this._i18nLmModelRefreshAria = 'Reload model list';
+        this._i18nLmModelLoadedPrefix = '●';
+        this._i18nLmModelNotInListTpl = '{id} (not in server list)';
+        this._i18nLmModelActiveSuffix = ' — currently in use';
+        this._i18nLmModelFileError =
+            '“REST via same page origin” does not work with file://. Use http(s) or disable the option.';
         this._i18nAltLinksCount = '{count} alternative sources';
         this._i18nAltLinksBtnShow = 'Show alternative links';
         this._i18nAltLinksBtnHide = 'Hide alternative links';
@@ -351,6 +363,8 @@ class App {
             categorySelectNoneBtn.addEventListener('click', () => this.setAllCategoriesChecked(false));
         }
 
+        // Disabled: No automatic refresh when tab becomes visible again
+        /*
         this._onDocumentVisibilityChange = () => {
             if (typeof document === 'undefined') {
                 return;
@@ -379,6 +393,7 @@ class App {
             }, 400);
         };
         document.addEventListener('visibilitychange', this._onDocumentVisibilityChange);
+        */
 
         const sortRateLimitRetryBtn = document.getElementById('sortRateLimitRetryBtn');
         if (sortRateLimitRetryBtn) {
@@ -474,6 +489,21 @@ class App {
         }
         if (this.elements.apiBaseUrl) {
             this.elements.apiBaseUrl.addEventListener('input', () => this.onApiBaseUrlUserInput());
+            this.elements.apiBaseUrl.addEventListener('blur', () => {
+                if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
+                    void this.populateModelDropdown();
+                }
+            });
+        }
+        if (this.elements.lmApiToken) {
+            this.elements.lmApiToken.addEventListener('blur', () => {
+                if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
+                    void this.populateModelDropdown();
+                }
+            });
+        }
+        if (this.elements.lmModelRefreshBtn) {
+            this.elements.lmModelRefreshBtn.addEventListener('click', () => void this.populateModelDropdown());
         }
 
         // Aktualisierungsintervall (Header)
@@ -2105,6 +2135,53 @@ class App {
                 if (ki.batch_summarize_progress_refresh) {
                     this._i18nBatchSummarizeProgressRefresh = ki.batch_summarize_progress_refresh;
                 }
+                const lml = document.getElementById('lmModelLabel');
+                if (lml && ki.model) {
+                    lml.textContent = ki.model;
+                }
+                if (ki.model_hint_default) {
+                    this._i18nLmModelHintDefault = ki.model_hint_default;
+                }
+                if (ki.model_automatic) {
+                    this._i18nLmModelAutomatic = ki.model_automatic;
+                }
+                if (ki.model_loading) {
+                    this._i18nLmModelLoading = ki.model_loading;
+                }
+                if (ki.model_load_error) {
+                    this._i18nLmModelLoadErrorTpl = ki.model_load_error;
+                }
+                if (ki.model_refresh_title) {
+                    this._i18nLmModelRefreshTitle = ki.model_refresh_title;
+                }
+                if (ki.model_refresh_aria) {
+                    this._i18nLmModelRefreshAria = ki.model_refresh_aria;
+                }
+                if (ki.model_loaded_prefix) {
+                    this._i18nLmModelLoadedPrefix = ki.model_loaded_prefix;
+                }
+                if (ki.model_not_in_server_list) {
+                    this._i18nLmModelNotInListTpl = ki.model_not_in_server_list;
+                }
+                if (ki.model_role_active_suffix) {
+                    this._i18nLmModelActiveSuffix = ki.model_role_active_suffix;
+                }
+                if (ki.model_file_sameorigin_error) {
+                    this._i18nLmModelFileError = ki.model_file_sameorigin_error;
+                }
+                const lmhIdle = document.getElementById('lmModelHint');
+                if (lmhIdle && ki.model_hint_default) {
+                    lmhIdle.textContent = ki.model_hint_default;
+                }
+                const mrb = document.getElementById('lmModelRefreshBtn');
+                if (mrb) {
+                    if (ki.model_refresh_title) {
+                        mrb.setAttribute('title', ki.model_refresh_title);
+                    }
+                    if (ki.model_refresh_aria) {
+                        mrb.setAttribute('aria-label', ki.model_refresh_aria);
+                    }
+                }
                 const scl = document.querySelector('label[for="summaryConcurrency"]');
                 if (scl && ki.summary_concurrency_label) {
                     scl.textContent = ki.summary_concurrency_label;
@@ -3388,8 +3465,18 @@ class App {
                 return 'unknown';
             }
 
-            // Test: GET /v1/models (OpenAI-kompatibel oder LM Studio v1)
-            const url = apiMode === 'openai' ? `${baseUrl}/v1/models` : `${baseUrl}/api/v1/models`;
+            // Test: GET …/models (same URL logic as AISummarizer model discovery)
+            const url = AISummarizer.getModelsListUrlFromSettings({
+                kiApiMode: apiMode,
+                apiBaseUrl: baseUrl,
+                lmRestRoot: this.settings?.lmRestRoot || '',
+                restSameOrigin: this.settings?.restSameOrigin === true,
+                pageOrigin: typeof window !== 'undefined' && window.location ? window.location.origin : ''
+            });
+            if (!url) {
+                console.warn('KI-Server: keine Modell-URL (z. B. file:// + same-origin).');
+                return 'unknown';
+            }
 
             const resp = await fetch(url, { method: 'GET', headers: this._getAuthHeaders() });
             if (resp.ok && resp.status === 200) {
@@ -4431,6 +4518,180 @@ class App {
         }
     }
 
+    /**
+     * Loads GET /v1/models (or OpenAI-compatible `…/v1/models`) into the KI settings model `<select>`.
+     * @param {string} [presetSavedModel] When opening the modal, pass the stored model id so the selection is correct before `<option>` elements exist.
+     */
+    async populateModelDropdown(presetSavedModel) {
+        const sel = this.elements.lmModel;
+        if (!sel) {
+            return;
+        }
+        let savedModel =
+            presetSavedModel !== undefined && presetSavedModel !== null
+                ? String(presetSavedModel).trim()
+                : String(sel.value || '').trim();
+        if (!savedModel) {
+            try {
+                savedModel = (localStorage.getItem('heise_lm_model') || '').trim();
+            } catch (_) {
+                savedModel = '';
+            }
+        }
+        if (!savedModel && this.settings?.lmModel) {
+            savedModel = String(this.settings.lmModel).trim();
+        }
+        const hintEl = document.getElementById('lmModelHint');
+        const refreshBtn = this.elements.lmModelRefreshBtn;
+
+        const mode = this.elements.kiApiMode?.value === 'openai' ? 'openai' : 'lm_rest_v1';
+        const rawUrl = (this.elements.apiBaseUrl?.value || '').trim();
+        let lmRestRoot = 'http://127.0.0.1:1234';
+        let apiBaseUrl = 'http://127.0.0.1:1234/v1';
+        if (mode === 'lm_rest_v1') {
+            lmRestRoot = AISummarizer.normalizeLmRestServerRoot(rawUrl || lmRestRoot);
+            apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(`${lmRestRoot}/v1`);
+        } else {
+            apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(rawUrl || apiBaseUrl);
+            lmRestRoot = AISummarizer.normalizeLmRestServerRoot(apiBaseUrl);
+        }
+        const restSameOrigin = this.elements.restSameOrigin?.checked === true;
+        const token = this.elements.lmApiToken ? (this.elements.lmApiToken.value || '').trim() : '';
+
+        const listUrl = AISummarizer.getModelsListUrlFromSettings({
+            kiApiMode: mode,
+            lmRestRoot,
+            apiBaseUrl,
+            restSameOrigin,
+            pageOrigin: typeof window !== 'undefined' && window.location ? window.location.origin : ''
+        });
+
+        if (!listUrl) {
+            sel.innerHTML = '';
+            const auto = document.createElement('option');
+            auto.value = '';
+            auto.textContent = this._i18nLmModelAutomatic;
+            sel.appendChild(auto);
+            sel.disabled = true;
+            sel.value = '';
+            if (refreshBtn) {
+                refreshBtn.disabled = true;
+            }
+            if (hintEl) {
+                hintEl.textContent = this._i18nLmModelFileError;
+            }
+            return;
+        }
+
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+        }
+        sel.disabled = true;
+        if (hintEl) {
+            hintEl.textContent = this._i18nLmModelLoading;
+        }
+
+        const ac = new AbortController();
+        const to = setTimeout(() => ac.abort(), 25000);
+        /** @type {{ ok: true, models: object[] } | { ok: false, error: string }} */
+        let result;
+        try {
+            result = await this.summarizer.fetchAvailableModels(ac.signal, {
+                kiApiMode: mode,
+                lmRestRoot,
+                apiBaseUrl,
+                restSameOrigin,
+                lmApiToken: token
+            });
+        } finally {
+            clearTimeout(to);
+        }
+
+        const loadedMark = this._i18nLmModelLoadedPrefix || '●';
+
+        const appendAutomatic = () => {
+            const o = document.createElement('option');
+            o.value = '';
+            o.textContent = this._i18nLmModelAutomatic;
+            sel.appendChild(o);
+        };
+
+        sel.innerHTML = '';
+
+        if (!result.ok) {
+            appendAutomatic();
+            const tpl = this._i18nLmModelLoadErrorTpl || '{error}';
+            if (hintEl) {
+                hintEl.textContent = tpl.replace(/\{error\}/g, String(result.error));
+            }
+            if (savedModel) {
+                const o = document.createElement('option');
+                o.value = savedModel;
+                const ntpl = this._i18nLmModelNotInListTpl || '{id}';
+                o.textContent = ntpl.replace(/\{id\}/g, savedModel);
+                o.setAttribute('title', savedModel);
+                sel.appendChild(o);
+                sel.value = savedModel;
+            } else {
+                sel.value = '';
+            }
+            sel.disabled = false;
+            return;
+        }
+
+        let resolvedId = '';
+        try {
+            resolvedId = (sessionStorage.getItem('heise_lm_resolved_model_id') || '').trim();
+        } catch (_) {
+            /* ignore */
+        }
+
+        appendAutomatic();
+        const models = result.models || [];
+        const idSet = new Set(models.map((m) => m.id));
+
+        for (const m of models) {
+            const o = document.createElement('option');
+            o.value = m.id;
+            o.textContent = AISummarizer.formatModelOptionLabel(m, { loadedMark });
+            const tip = AISummarizer.getModelTitleTooltip(m);
+            const activeExplicit = Boolean(savedModel && savedModel === m.id);
+            const activeAuto = Boolean(!savedModel && resolvedId && resolvedId === m.id);
+            let fullTitle = tip;
+            if (activeExplicit || activeAuto) {
+                fullTitle += this._i18nLmModelActiveSuffix || '';
+            }
+            o.setAttribute('title', fullTitle);
+            if (activeExplicit || activeAuto) {
+                o.setAttribute('data-active', 'true');
+            }
+            sel.appendChild(o);
+        }
+
+        if (savedModel && !idSet.has(savedModel)) {
+            const o = document.createElement('option');
+            o.value = savedModel;
+            const ntpl = this._i18nLmModelNotInListTpl || '{id}';
+            o.textContent = ntpl.replace(/\{id\}/g, savedModel);
+            o.setAttribute('title', savedModel);
+            sel.appendChild(o);
+        }
+
+        sel.disabled = false;
+        if (hintEl) {
+            hintEl.textContent = this._i18nLmModelHintDefault || '';
+        }
+
+        if (savedModel) {
+            sel.value = savedModel;
+            if (sel.value !== savedModel) {
+                sel.value = '';
+            }
+        } else {
+            sel.value = '';
+        }
+    }
+
     openSettingsModal() {
         let mode = 'lm_rest_v1';
         try {
@@ -4473,7 +4734,6 @@ class App {
         } catch (_) {
             model = this.settings?.lmModel || '';
         }
-        this.elements.lmModel.value = model;
 
         let token = '';
         try {
@@ -4634,6 +4894,7 @@ class App {
         this.updateRestSameOriginUi();
 
         this.elements.settingsModal.classList.add('active');
+        void this.populateModelDropdown(model);
     }
 
     onKiApiModeChange() {
@@ -4649,11 +4910,17 @@ class App {
         this.updateRestSameOriginVisibility();
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
+            void this.populateModelDropdown();
+        }
     }
 
     onRestSameOriginChange() {
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
+            void this.populateModelDropdown();
+        }
     }
 
     onApiBaseUrlUserInput() {
@@ -5570,6 +5837,7 @@ sanitizeHtml(html) {
 
     // Cleanup on page unload
     destroy() {
+        /* Disabled: No visibilitychange listener anymore */
         if (this._onDocumentVisibilityChange && typeof document !== 'undefined') {
             document.removeEventListener('visibilitychange', this._onDocumentVisibilityChange);
             this._onDocumentVisibilityChange = null;

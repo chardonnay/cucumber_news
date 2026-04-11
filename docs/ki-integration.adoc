@@ -11,6 +11,10 @@ image::docs/images/diagram-ki-integration.png[AI integration data flow,width=800
 
 Enable *REST via same page origin* in settings when using `scripts/dev_server.py` so the browser does not call LM Studio cross-origin (avoids `OPTIONS` preflight failures on many LM Studio builds).
 
+=== Model selection (settings)
+
+When a valid server URL is configured, the app loads the model list via `GET /v1/models` (same-origin proxy with `dev_server`, or direct to LM Studio). You can pick a specific model or choose *No specific choice — server decides* (empty `model` setting): the client then resolves the first suitable LLM from the list (cached per tab in `sessionStorage`). Hover a list entry to see metadata returned by LM Studio (publisher, architecture, max context, format, loaded instance). Models currently loaded in LM Studio are marked with a bullet prefix in the dropdown label.
+
 === Summary language
 
 * *Site* (`summaryLangMode: site`) — output language is inferred from the article URL (e.g. English for `theverge.com`, German for typical `.de` publishers).
