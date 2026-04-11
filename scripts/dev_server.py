@@ -1697,6 +1697,29 @@ def cors_headers(handler: SimpleHTTPRequestHandler) -> None:
     handler.send_header("Content-Security-Policy", csp_content())
 
 
+def send_lm_upstream_error(
+    handler: SimpleHTTPRequestHandler,
+    lm_target: str,
+    exc: BaseException,
+) -> None:
+    """Return 502 JSON when the LM Studio HTTP proxy cannot reach the upstream."""
+    payload = {
+        "error": (
+            f"Cannot reach LM Studio at {lm_target}. "
+            "Start LM Studio with the local server enabled, or use --target to match your setup."
+        ),
+        "upstream": lm_target,
+        "detail": str(exc),
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    handler.send_response(502)
+    cors_headers(handler)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def make_handler(lm_target: str) -> type:
     class DevHandler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -2033,6 +2056,9 @@ def make_handler(lm_target: str) -> type:
                             self.send_header(key, val)
                     self.end_headers()
                     self.wfile.write(resp_body)
+                except (OSError, http.client.HTTPException) as e:
+                    print(f"[lm-proxy] GET /v1/models → {lm_target}: {e}", file=sys.stderr)
+                    send_lm_upstream_error(self, lm_target, e)
                 finally:
                     conn.close()
                 return
@@ -2081,6 +2107,9 @@ def make_handler(lm_target: str) -> type:
                         self.send_header(key, val)
                 self.end_headers()
                 self.wfile.write(resp_body)
+            except (OSError, http.client.HTTPException) as e:
+                print(f"[lm-proxy] POST /api/v1/chat → {lm_target}: {e}", file=sys.stderr)
+                send_lm_upstream_error(self, lm_target, e)
             finally:
                 conn.close()
 
