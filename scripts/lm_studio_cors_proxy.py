@@ -40,7 +40,12 @@ _LM_REASONING_ALLOWED = frozenset({"off", "low", "medium", "high", "on"})
 
 
 def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
-    """Fix invalid `reasoning` in POST JSON (e.g. legacy 'none') before forwarding to LM Studio."""
+    """
+    Fix invalid `reasoning` in POST JSON before forwarding to LM Studio.
+    Legacy value `none` is treated like `off`.
+    Some models reject any `reasoning` key (including `"off"`) if they do not expose
+    reasoning configuration — omit the field when disabled or invalid.
+    """
     if not body:
         return body
     try:
@@ -54,7 +59,10 @@ def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
         s = "off"
     if s not in _LM_REASONING_ALLOWED:
         s = "off"
-    data["reasoning"] = s
+    if s == "off":
+        del data["reasoning"]
+    else:
+        data["reasoning"] = s
     try:
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError):

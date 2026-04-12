@@ -23,6 +23,36 @@ const IT_ADMINISTRATOR_BRAND_LOGO_URL = 'https://www.it-administrator.de/favicon
 /** Accent color themes (must match `data-color-theme` in index.html). */
 const COLOR_THEME_IDS = ['heise', 'ocean', 'forest', 'violet', 'amber', 'rose', 'slate', 'midnight'];
 
+/** Default surface colors (must match `:root` / `[data-theme="dark"]` in index.html). */
+const THEME_DEFAULT_SURFACE = {
+    light: {
+        bgPrimary: '#e8eaed',
+        bgSecondary: '#dee1e6',
+        bgCard: '#ffffff',
+        borderColor: '#c0c0c0'
+    },
+    dark: {
+        bgPrimary: '#1a1a1a',
+        bgSecondary: '#242424',
+        bgCard: '#2d2d2d',
+        borderColor: '#404040'
+    }
+};
+
+/** Default header bar colors (must match `:root` / `[data-theme="dark"]` --header-* in index.html). */
+const THEME_DEFAULT_HEADER = {
+    light: {
+        headerSurface: '#ffffff',
+        headerText: '#1a1a1a',
+        headerBorder: '#e5e5e5'
+    },
+    dark: {
+        headerSurface: '#252525',
+        headerText: '#f5f5f5',
+        headerBorder: '#404040'
+    }
+};
+
 class App {
     constructor() {
         this.storage = new NewsStorage();
@@ -81,6 +111,7 @@ class App {
             summaryConcurrency: document.getElementById('summaryConcurrency'),
             kiRequestTimeoutSeconds: document.getElementById('kiRequestTimeoutSeconds'),
             reasoningSelect: document.getElementById('reasoningSelect'),
+            reasoningEnabledCheckbox: document.getElementById('reasoningEnabledCheckbox'),
             alternativeLinksCount: document.getElementById('alternativeLinksCount'),
             alternativeLinksDisplayMode: document.getElementById('alternativeLinksDisplayMode'),
             alternativeLinksBlacklist: document.getElementById('alternativeLinksBlacklist'),
@@ -110,7 +141,26 @@ class App {
             newsSourceSelect: document.getElementById('newsSourceSelect'),
             colorThemeSelect: document.getElementById('colorThemeSelect'),
             headerColorThemeWrap: document.getElementById('headerColorThemeWrap'),
-            youtubeModal: document.getElementById('youtubeModal')
+            youtubeModal: document.getElementById('youtubeModal'),
+            themeModeSelect: document.getElementById('themeModeSelect'),
+            settingsColorThemeSelect: document.getElementById('settingsColorThemeSelect'),
+            themeBrightnessLight: document.getElementById('themeBrightnessLight'),
+            themeBrightnessDark: document.getElementById('themeBrightnessDark'),
+            themeResetDefaultsBtn: document.getElementById('themeResetDefaultsBtn'),
+            themeLightBgPrimary: document.getElementById('themeLightBgPrimary'),
+            themeLightBgSecondary: document.getElementById('themeLightBgSecondary'),
+            themeLightBgCard: document.getElementById('themeLightBgCard'),
+            themeLightBorder: document.getElementById('themeLightBorder'),
+            themeDarkBgPrimary: document.getElementById('themeDarkBgPrimary'),
+            themeDarkBgSecondary: document.getElementById('themeDarkBgSecondary'),
+            themeDarkBgCard: document.getElementById('themeDarkBgCard'),
+            themeDarkBorder: document.getElementById('themeDarkBorder'),
+            themeLightHeaderSurface: document.getElementById('themeLightHeaderSurface'),
+            themeLightHeaderText: document.getElementById('themeLightHeaderText'),
+            themeLightHeaderBorder: document.getElementById('themeLightHeaderBorder'),
+            themeDarkHeaderSurface: document.getElementById('themeDarkHeaderSurface'),
+            themeDarkHeaderText: document.getElementById('themeDarkHeaderText'),
+            themeDarkHeaderBorder: document.getElementById('themeDarkHeaderBorder')
         };
 
         // Timer reference
@@ -311,6 +361,7 @@ class App {
 
             // Set up event listeners
             this.setupEventListeners();
+            this.bindPreferredColorSchemeListener();
 
             this.applyColorTheme();
             // Apply theme
@@ -417,6 +468,8 @@ class App {
         if (this.elements.colorThemeSelect) {
             this.elements.colorThemeSelect.addEventListener('change', () => void this.persistColorTheme());
         }
+
+        this.wireThemeSettingsListeners();
 
         // Refresh button
         this.elements.refreshBtn.addEventListener('click', () => this.fetchNews(true));
@@ -1271,6 +1324,63 @@ class App {
                 /* ignore */
             }
 
+            this.settings.theme = App.normalizeThemePreference(this.settings.theme);
+            try {
+                const lt = localStorage.getItem('theme');
+                if (lt === 'light' || lt === 'dark' || lt === 'system') {
+                    this.settings.theme = lt;
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                localStorage.setItem('theme', this.settings.theme);
+            } catch (_) {
+                /* ignore */
+            }
+
+            this.settings.themeCustomColors = App.normalizeThemeCustomColors(this.settings.themeCustomColors);
+            this.settings.themeCustomHeaderColors = App.normalizeThemeCustomHeaderColors(
+                this.settings.themeCustomHeaderColors
+            );
+            this.settings.themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(
+                this.settings.themeSurfaceBrightness
+            );
+            try {
+                const tj = localStorage.getItem('heise_theme_custom_colors');
+                if (tj) {
+                    const parsed = JSON.parse(tj);
+                    const merged = App.normalizeThemeCustomColors(parsed);
+                    this.settings.themeCustomColors = App.normalizeThemeCustomColors({
+                        light: { ...this.settings.themeCustomColors.light, ...merged.light },
+                        dark: { ...this.settings.themeCustomColors.dark, ...merged.dark }
+                    });
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                const hj = localStorage.getItem('heise_theme_custom_header_colors');
+                if (hj) {
+                    const parsed = JSON.parse(hj);
+                    const merged = App.normalizeThemeCustomHeaderColors(parsed);
+                    this.settings.themeCustomHeaderColors = App.normalizeThemeCustomHeaderColors({
+                        light: { ...this.settings.themeCustomHeaderColors.light, ...merged.light },
+                        dark: { ...this.settings.themeCustomHeaderColors.dark, ...merged.dark }
+                    });
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                const bj = localStorage.getItem('heise_theme_surface_brightness');
+                if (bj) {
+                    this.settings.themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(JSON.parse(bj));
+                }
+            } catch (_) {
+                /* ignore */
+            }
+
             this.scraper.configureSource(this.settings.newsSource);
             try {
                 localStorage.setItem('heise_news_source', this.settings.newsSource);
@@ -1356,6 +1466,188 @@ class App {
     static normalizeColorTheme(raw) {
         const s = String(raw || '').trim();
         return COLOR_THEME_IDS.includes(s) ? s : 'slate';
+    }
+
+    /** @param {unknown} raw */
+    static normalizeThemePreference(raw) {
+        const s = String(raw || 'system').trim().toLowerCase();
+        return s === 'light' || s === 'dark' || s === 'system' ? s : 'system';
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ light: Record<string, string>, dark: Record<string, string> }}
+     */
+    static normalizeThemeCustomColors(raw) {
+        const keys = new Set(['bgPrimary', 'bgSecondary', 'bgCard', 'borderColor']);
+        const pick = (o) => {
+            const out = {};
+            if (!o || typeof o !== 'object') {
+                return out;
+            }
+            for (const k of Object.keys(o)) {
+                if (!keys.has(k)) {
+                    continue;
+                }
+                const hx = App.normalizeHexColor(o[k]);
+                if (hx) {
+                    out[k] = hx;
+                }
+            }
+            return out;
+        };
+        const light = raw && typeof raw === 'object' && raw.light ? pick(raw.light) : {};
+        const dark = raw && typeof raw === 'object' && raw.dark ? pick(raw.dark) : {};
+        return { light, dark };
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ light: Record<string, string>, dark: Record<string, string> }}
+     */
+    static normalizeThemeCustomHeaderColors(raw) {
+        const keys = new Set(['headerSurface', 'headerText', 'headerBorder']);
+        const pick = (o) => {
+            const out = {};
+            if (!o || typeof o !== 'object') {
+                return out;
+            }
+            for (const k of Object.keys(o)) {
+                if (!keys.has(k)) {
+                    continue;
+                }
+                const hx = App.normalizeHexColor(o[k]);
+                if (hx) {
+                    out[k] = hx;
+                }
+            }
+            return out;
+        };
+        const light = raw && typeof raw === 'object' && raw.light ? pick(raw.light) : {};
+        const dark = raw && typeof raw === 'object' && raw.dark ? pick(raw.dark) : {};
+        return { light, dark };
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ light: number, dark: number }}
+     */
+    static normalizeThemeSurfaceBrightness(raw) {
+        const clamp = (n) => Math.min(130, Math.max(70, n));
+        const d = 100;
+        let light = d;
+        let dark = d;
+        if (raw && typeof raw === 'object') {
+            if (raw.light != null && raw.light !== '') {
+                const n = parseInt(String(raw.light), 10);
+                if (Number.isFinite(n)) {
+                    light = clamp(n);
+                }
+            }
+            if (raw.dark != null && raw.dark !== '') {
+                const n = parseInt(String(raw.dark), 10);
+                if (Number.isFinite(n)) {
+                    dark = clamp(n);
+                }
+            }
+        }
+        return { light, dark };
+    }
+
+    /** @param {unknown} raw @returns {string | null} */
+    static normalizeHexColor(raw) {
+        const s = String(raw || '').trim();
+        const m = /^#?([0-9a-fA-F]{6})$/.exec(s);
+        if (!m) {
+            return null;
+        }
+        return `#${m[1].toLowerCase()}`;
+    }
+
+    /** @param {string} hex */
+    static hexToRgb(hex) {
+        const h = App.normalizeHexColor(hex);
+        if (!h) {
+            return null;
+        }
+        const n = parseInt(h.slice(1), 16);
+        return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    }
+
+    /** @param {number} r @param {number} g @param {number} b */
+    static rgbToHex(r, g, b) {
+        const c = (x) => Math.max(0, Math.min(255, Math.round(x)));
+        return `#${[c(r), c(g), c(b)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+    }
+
+    /**
+     * @param {string} a
+     * @param {string} b
+     * @param {number} t 0..1
+     */
+    static mixHex(a, b, t) {
+        const A = App.hexToRgb(a);
+        const B = App.hexToRgb(b);
+        if (!A || !B) {
+            return App.normalizeHexColor(a) || '#000000';
+        }
+        const u = Math.max(0, Math.min(1, t));
+        return App.rgbToHex(A.r + (B.r - A.r) * u, A.g + (B.g - A.g) * u, A.b + (B.b - A.b) * u);
+    }
+
+    /**
+     * @param {string} hex
+     * @param {number} percent 70–130 (100 = unchanged)
+     */
+    static adjustSurfaceBrightness(hex, percent) {
+        const h = App.normalizeHexColor(hex);
+        if (!h) {
+            return hex;
+        }
+        const p = Math.min(130, Math.max(70, percent));
+        const t = (p - 100) / 100;
+        if (Math.abs(t) < 0.001) {
+            return h;
+        }
+        const toward = t > 0 ? '#ffffff' : '#000000';
+        const amt = Math.min(1, Math.abs(t) * 1.85);
+        return App.mixHex(h, toward, amt);
+    }
+
+    /**
+     * @param {{ themeCustomColors: { light: Record<string, string>, dark: Record<string, string> }, themeSurfaceBrightness: { light: number, dark: number }, themeCustomHeaderColors?: { light: Record<string, string>, dark: Record<string, string> } }} palette
+     * @param {'light' | 'dark'} mode
+     */
+    static resolveThemeSurfaceForMode(palette, mode) {
+        const defs = THEME_DEFAULT_SURFACE[mode];
+        const cust = palette.themeCustomColors[mode] || {};
+        const merged = {
+            bgPrimary: cust.bgPrimary || defs.bgPrimary,
+            bgSecondary: cust.bgSecondary || defs.bgSecondary,
+            bgCard: cust.bgCard || defs.bgCard,
+            borderColor: cust.borderColor || defs.borderColor
+        };
+        const br = palette.themeSurfaceBrightness[mode];
+        return {
+            bgPrimary: App.adjustSurfaceBrightness(merged.bgPrimary, br),
+            bgSecondary: App.adjustSurfaceBrightness(merged.bgSecondary, br),
+            bgCard: App.adjustSurfaceBrightness(merged.bgCard, br),
+            borderColor: App.adjustSurfaceBrightness(merged.borderColor, br)
+        };
+    }
+
+    /**
+     * @param {{ themeCustomHeaderColors: { light: Record<string, string>, dark: Record<string, string> } }} palette
+     * @param {'light' | 'dark'} mode
+     */
+    static resolveThemeHeaderForMode(palette, mode) {
+        const defs = THEME_DEFAULT_HEADER[mode];
+        const cust = (palette.themeCustomHeaderColors && palette.themeCustomHeaderColors[mode]) || {};
+        return {
+            headerSurface: cust.headerSurface || defs.headerSurface,
+            headerText: cust.headerText || defs.headerText,
+            headerBorder: cust.headerBorder || defs.headerBorder
+        };
     }
 
     /** @param {unknown} raw */
@@ -1618,6 +1910,9 @@ class App {
         if (this.elements.colorThemeSelect) {
             this.elements.colorThemeSelect.value = id;
         }
+        if (this.elements.settingsColorThemeSelect) {
+            this.elements.settingsColorThemeSelect.value = id;
+        }
     }
 
     async persistColorTheme() {
@@ -1641,6 +1936,10 @@ class App {
         } catch (e) {
             console.warn('persistColorTheme:', e);
         }
+        if (this.elements.settingsColorThemeSelect) {
+            this.elements.settingsColorThemeSelect.value = id;
+        }
+        this.applyThemeSurfaceVariables();
     }
 
     /**
@@ -2287,6 +2586,17 @@ class App {
                         }
                     }
                 }
+                
+                // Reasoning enabled toggle
+                const reLabel = document.querySelector('legend[for="reasoningEnabledCheckbox"]');
+                if (reLabel && ki.reasoning_enabled_label) {
+                    reLabel.textContent = ki.reasoning_enabled_label;
+                }
+                const reHint = document.getElementById('reasoningEnabledHint');
+                if (reHint && ki.reasoning_enabled_hint) {
+                    reHint.textContent = ki.reasoning_enabled_hint;
+                }
+                
                 const okb = document.getElementById('openKiStatsBtn');
                 if (okb && ki.open_stats_btn) {
                     okb.textContent = ki.open_stats_btn;
@@ -2294,6 +2604,108 @@ class App {
                 if (okb && ki.open_stats_title) {
                     okb.setAttribute('title', ki.open_stats_title);
                     okb.setAttribute('aria-label', ki.open_stats_title);
+                }
+
+                const th0 = document.getElementById('themeSettingsHeading');
+                if (th0 && ki.theme_section_title) {
+                    th0.textContent = ki.theme_section_title;
+                }
+                const thi0 = document.getElementById('themeSettingsHint');
+                if (thi0 && ki.theme_section_hint) {
+                    thi0.textContent = ki.theme_section_hint;
+                }
+                const tml = document.getElementById('themeModeSelectLabel');
+                if (tml && ki.theme_mode_label) {
+                    tml.textContent = ki.theme_mode_label;
+                }
+                const tms = document.getElementById('themeModeSelect');
+                if (tms) {
+                    const tmOpts = [
+                        ['system', ki.theme_mode_system],
+                        ['light', ki.theme_mode_light],
+                        ['dark', ki.theme_mode_dark]
+                    ];
+                    for (const [val, text] of tmOpts) {
+                        if (!text) {
+                            continue;
+                        }
+                        const o = tms.querySelector(`option[value="${val}"]`);
+                        if (o) {
+                            o.textContent = text;
+                        }
+                    }
+                }
+                const sct = document.getElementById('settingsColorThemeLabel');
+                if (sct && ki.theme_accent_label) {
+                    sct.textContent = ki.theme_accent_label;
+                }
+                const scts = document.getElementById('settingsColorThemeSelect');
+                if (scts && headerLoc) {
+                    COLOR_THEME_IDS.forEach((tid) => {
+                        const opt = scts.querySelector(`option[value="${tid}"]`);
+                        const key = `color_theme_${tid}`;
+                        if (opt && headerLoc[key]) {
+                            opt.textContent = headerLoc[key];
+                        }
+                    });
+                }
+                const legL = document.getElementById('themeFieldsetLightLegend');
+                if (legL && ki.theme_fieldset_light) {
+                    legL.textContent = ki.theme_fieldset_light;
+                }
+                const legD = document.getElementById('themeFieldsetDarkLegend');
+                if (legD && ki.theme_fieldset_dark) {
+                    legD.textContent = ki.theme_fieldset_dark;
+                }
+                const legHL = document.getElementById('themeFieldsetHeaderLightLegend');
+                if (legHL && ki.theme_fieldset_header_light) {
+                    legHL.textContent = ki.theme_fieldset_header_light;
+                }
+                const legHD = document.getElementById('themeFieldsetHeaderDarkLegend');
+                if (legHD && ki.theme_fieldset_header_dark) {
+                    legHD.textContent = ki.theme_fieldset_header_dark;
+                }
+                const thlHint = document.getElementById('themeHeaderLightHint');
+                if (thlHint && ki.theme_header_hint_light) {
+                    thlHint.textContent = ki.theme_header_hint_light;
+                }
+                const thdHint = document.getElementById('themeHeaderDarkHint');
+                if (thdHint && ki.theme_header_hint_dark) {
+                    thdHint.textContent = ki.theme_header_hint_dark;
+                }
+                const tbl = document.getElementById('themeBrightnessLightLabel');
+                if (tbl && ki.theme_brightness_label) {
+                    tbl.textContent = ki.theme_brightness_label;
+                }
+                const tbd = document.getElementById('themeBrightnessDarkLabel');
+                if (tbd && ki.theme_brightness_label_dark) {
+                    tbd.textContent = ki.theme_brightness_label_dark;
+                }
+                const themeColorLabelPairs = [
+                    ['themeLightBgPrimaryLabel', 'theme_light_bg_primary'],
+                    ['themeLightBgSecondaryLabel', 'theme_light_bg_secondary'],
+                    ['themeLightBgCardLabel', 'theme_light_bg_card'],
+                    ['themeLightBorderLabel', 'theme_light_border'],
+                    ['themeDarkBgPrimaryLabel', 'theme_dark_bg_primary'],
+                    ['themeDarkBgSecondaryLabel', 'theme_dark_bg_secondary'],
+                    ['themeDarkBgCardLabel', 'theme_dark_bg_card'],
+                    ['themeDarkBorderLabel', 'theme_dark_border'],
+                    ['themeLightHeaderSurfaceLabel', 'theme_header_label_bg'],
+                    ['themeLightHeaderTextLabel', 'theme_header_label_text'],
+                    ['themeLightHeaderBorderLabel', 'theme_header_label_border'],
+                    ['themeDarkHeaderSurfaceLabel', 'theme_header_label_bg'],
+                    ['themeDarkHeaderTextLabel', 'theme_header_label_text'],
+                    ['themeDarkHeaderBorderLabel', 'theme_header_label_border']
+                ];
+                for (const [id, k] of themeColorLabelPairs) {
+                    const node = document.getElementById(id);
+                    if (node && ki[k]) {
+                        node.textContent = ki[k];
+                    }
+                }
+                const trb = document.getElementById('themeResetDefaultsBtn');
+                if (trb && ki.theme_reset_defaults) {
+                    trb.textContent = ki.theme_reset_defaults;
                 }
             }
 
@@ -4502,20 +4914,342 @@ class App {
     toggleTheme() {
         const currentTheme = document.documentElement.getAttribute('data-theme');
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        
+
         document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
+        try {
+            localStorage.setItem('theme', newTheme);
+        } catch (_) {
+            /* ignore */
+        }
+        if (this.settings) {
+            this.settings.theme = newTheme;
+        }
+        this.applyThemeSurfaceVariables();
     }
 
     applyTheme() {
-        let theme = this.settings?.theme || 'system';
-        
+        const theme = App.normalizeThemePreference(this.settings?.theme);
+
         if (theme === 'system') {
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
         } else {
             document.documentElement.setAttribute('data-theme', theme);
         }
+        this.applyThemeSurfaceVariables();
+    }
+
+    /** Applies --bg-* / --border-color and --header-* from settings (or optional modal-built palette). */
+    applyThemeSurfaceVariables(palette) {
+        const pal =
+            palette ||
+            this.buildThemeSurfacePaletteFromSettings();
+        const mode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        const surf = App.resolveThemeSurfaceForMode(pal, mode);
+        const hdr = App.resolveThemeHeaderForMode(pal, mode);
+        const root = document.documentElement.style;
+        root.setProperty('--bg-primary', surf.bgPrimary);
+        root.setProperty('--bg-secondary', surf.bgSecondary);
+        root.setProperty('--bg-card', surf.bgCard);
+        root.setProperty('--border-color', surf.borderColor);
+        root.setProperty('--header-surface', hdr.headerSurface);
+        root.setProperty('--header-text', hdr.headerText);
+        root.setProperty('--header-border', hdr.headerBorder);
+    }
+
+    /**
+     * @returns {{ themeCustomColors: { light: Object, dark: Object }, themeCustomHeaderColors: { light: Object, dark: Object }, themeSurfaceBrightness: { light: number, dark: number } }}
+     */
+    buildThemeSurfacePaletteFromSettings() {
+        const themeCustomColors = App.normalizeThemeCustomColors(this.settings?.themeCustomColors);
+        const themeCustomHeaderColors = App.normalizeThemeCustomHeaderColors(this.settings?.themeCustomHeaderColors);
+        const themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+        return { themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness };
+    }
+
+    /** Read theme modal controls (live preview in Settings). */
+    buildThemeSurfacePaletteFromModal() {
+        const el = this.elements;
+        let bl = 100;
+        let bd = 100;
+        if (el.themeBrightnessLight) {
+            const n = parseInt(el.themeBrightnessLight.value, 10);
+            if (Number.isFinite(n)) {
+                bl = n;
+            }
+        }
+        if (el.themeBrightnessDark) {
+            const n = parseInt(el.themeBrightnessDark.value, 10);
+            if (Number.isFinite(n)) {
+                bd = n;
+            }
+        }
+        const themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness({ light: bl, dark: bd });
+        const themeCustomColors = this.gatherThemeCustomColorsFromModalForSave();
+        const themeCustomHeaderColors = this.gatherThemeCustomHeaderColorsFromModalForSave();
+        return { themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness };
+    }
+
+    populateThemeSettingsModal() {
+        const el = this.elements;
+        if (!el.themeModeSelect) {
+            return;
+        }
+        const themePref = App.normalizeThemePreference(this.settings?.theme);
+        el.themeModeSelect.value = themePref;
+
+        const ct = App.normalizeColorTheme(this.settings?.colorTheme);
+        if (el.settingsColorThemeSelect) {
+            el.settingsColorThemeSelect.value = ct;
+        }
+
+        const tc = App.normalizeThemeCustomColors(this.settings?.themeCustomColors);
+        const tch = App.normalizeThemeCustomHeaderColors(this.settings?.themeCustomHeaderColors);
+        const br = App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+
+        const mergeMode = (mode) => ({ ...THEME_DEFAULT_SURFACE[mode], ...tc[mode] });
+        const mergeHeader = (mode) => ({ ...THEME_DEFAULT_HEADER[mode], ...tch[mode] });
+        const L = mergeMode('light');
+        const D = mergeMode('dark');
+        const HL = mergeHeader('light');
+        const HD = mergeHeader('dark');
+
+        if (el.themeLightBgPrimary) {
+            el.themeLightBgPrimary.value = L.bgPrimary;
+        }
+        if (el.themeLightBgSecondary) {
+            el.themeLightBgSecondary.value = L.bgSecondary;
+        }
+        if (el.themeLightBgCard) {
+            el.themeLightBgCard.value = L.bgCard;
+        }
+        if (el.themeLightBorder) {
+            el.themeLightBorder.value = L.borderColor;
+        }
+        if (el.themeDarkBgPrimary) {
+            el.themeDarkBgPrimary.value = D.bgPrimary;
+        }
+        if (el.themeDarkBgSecondary) {
+            el.themeDarkBgSecondary.value = D.bgSecondary;
+        }
+        if (el.themeDarkBgCard) {
+            el.themeDarkBgCard.value = D.bgCard;
+        }
+        if (el.themeDarkBorder) {
+            el.themeDarkBorder.value = D.borderColor;
+        }
+        if (el.themeBrightnessLight) {
+            el.themeBrightnessLight.value = String(br.light);
+        }
+        if (el.themeBrightnessDark) {
+            el.themeBrightnessDark.value = String(br.dark);
+        }
+        if (el.themeLightHeaderSurface) {
+            el.themeLightHeaderSurface.value = HL.headerSurface;
+        }
+        if (el.themeLightHeaderText) {
+            el.themeLightHeaderText.value = HL.headerText;
+        }
+        if (el.themeLightHeaderBorder) {
+            el.themeLightHeaderBorder.value = HL.headerBorder;
+        }
+        if (el.themeDarkHeaderSurface) {
+            el.themeDarkHeaderSurface.value = HD.headerSurface;
+        }
+        if (el.themeDarkHeaderText) {
+            el.themeDarkHeaderText.value = HD.headerText;
+        }
+        if (el.themeDarkHeaderBorder) {
+            el.themeDarkHeaderBorder.value = HD.headerBorder;
+        }
+        this.syncThemeModalBrightnessHints();
+    }
+
+    syncThemeModalBrightnessHints() {
+        const el = this.elements;
+        const hintL = document.getElementById('themeBrightnessLightHint');
+        const hintD = document.getElementById('themeBrightnessDarkHint');
+        if (el.themeBrightnessLight && hintL) {
+            hintL.textContent = `${el.themeBrightnessLight.value}%`;
+        }
+        if (el.themeBrightnessDark && hintD) {
+            hintD.textContent = `${el.themeBrightnessDark.value}%`;
+        }
+    }
+
+    applyThemeAppearancePreviewFromModal() {
+        if (!this.elements.themeModeSelect) {
+            return;
+        }
+        const pref = App.normalizeThemePreference(this.elements.themeModeSelect.value);
+        if (pref === 'system') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', pref);
+        }
+        const accent = App.normalizeColorTheme(this.elements.settingsColorThemeSelect?.value);
+        document.documentElement.setAttribute('data-color-theme', accent);
+        if (this.elements.colorThemeSelect) {
+            this.elements.colorThemeSelect.value = accent;
+        }
+        const pal = this.buildThemeSurfacePaletteFromModal();
+        this.applyThemeSurfaceVariables(pal);
+    }
+
+    restoreThemeAppearanceFromPersistedSettings() {
+        this.applyTheme();
+        this.applyColorTheme();
+        this.applyThemeSurfaceVariables();
+    }
+
+    gatherThemeCustomColorsFromModalForSave() {
+        const el = this.elements;
+        const readHex = (input) => (input ? App.normalizeHexColor(input.value) : null);
+        const out = { light: {}, dark: {} };
+        const dl = THEME_DEFAULT_SURFACE.light;
+        const dd = THEME_DEFAULT_SURFACE.dark;
+        const maybe = (key, val, def, bucket) => {
+            if (val && val !== def) {
+                bucket[key] = val;
+            }
+        };
+        maybe('bgPrimary', readHex(el.themeLightBgPrimary), dl.bgPrimary, out.light);
+        maybe('bgSecondary', readHex(el.themeLightBgSecondary), dl.bgSecondary, out.light);
+        maybe('bgCard', readHex(el.themeLightBgCard), dl.bgCard, out.light);
+        maybe('borderColor', readHex(el.themeLightBorder), dl.borderColor, out.light);
+        maybe('bgPrimary', readHex(el.themeDarkBgPrimary), dd.bgPrimary, out.dark);
+        maybe('bgSecondary', readHex(el.themeDarkBgSecondary), dd.bgSecondary, out.dark);
+        maybe('bgCard', readHex(el.themeDarkBgCard), dd.bgCard, out.dark);
+        maybe('borderColor', readHex(el.themeDarkBorder), dd.borderColor, out.dark);
+        return App.normalizeThemeCustomColors(out);
+    }
+
+    gatherThemeCustomHeaderColorsFromModalForSave() {
+        const el = this.elements;
+        const readHex = (input) => (input ? App.normalizeHexColor(input.value) : null);
+        const out = { light: {}, dark: {} };
+        const dl = THEME_DEFAULT_HEADER.light;
+        const dd = THEME_DEFAULT_HEADER.dark;
+        const maybe = (key, val, def, bucket) => {
+            if (val && val !== def) {
+                bucket[key] = val;
+            }
+        };
+        maybe('headerSurface', readHex(el.themeLightHeaderSurface), dl.headerSurface, out.light);
+        maybe('headerText', readHex(el.themeLightHeaderText), dl.headerText, out.light);
+        maybe('headerBorder', readHex(el.themeLightHeaderBorder), dl.headerBorder, out.light);
+        maybe('headerSurface', readHex(el.themeDarkHeaderSurface), dd.headerSurface, out.dark);
+        maybe('headerText', readHex(el.themeDarkHeaderText), dd.headerText, out.dark);
+        maybe('headerBorder', readHex(el.themeDarkHeaderBorder), dd.headerBorder, out.dark);
+        return App.normalizeThemeCustomHeaderColors(out);
+    }
+
+    wireThemeSettingsListeners() {
+        const el = this.elements;
+        const on = (node, ev, fn) => {
+            if (node) {
+                node.addEventListener(ev, fn);
+            }
+        };
+        on(el.themeModeSelect, 'change', () => this.applyThemeAppearancePreviewFromModal());
+        on(el.settingsColorThemeSelect, 'change', () => this.applyThemeAppearancePreviewFromModal());
+        const surf = () => this.applyThemeAppearancePreviewFromModal();
+        on(el.themeBrightnessLight, 'input', () => {
+            this.syncThemeModalBrightnessHints();
+            surf();
+        });
+        on(el.themeBrightnessDark, 'input', () => {
+            this.syncThemeModalBrightnessHints();
+            surf();
+        });
+        [
+            el.themeLightBgPrimary,
+            el.themeLightBgSecondary,
+            el.themeLightBgCard,
+            el.themeLightBorder,
+            el.themeDarkBgPrimary,
+            el.themeDarkBgSecondary,
+            el.themeDarkBgCard,
+            el.themeDarkBorder,
+            el.themeLightHeaderSurface,
+            el.themeLightHeaderText,
+            el.themeLightHeaderBorder,
+            el.themeDarkHeaderSurface,
+            el.themeDarkHeaderText,
+            el.themeDarkHeaderBorder
+        ].forEach((inp) => on(inp, 'input', () => surf()));
+
+        on(el.themeResetDefaultsBtn, 'click', () => {
+            const L = THEME_DEFAULT_SURFACE.light;
+            const D = THEME_DEFAULT_SURFACE.dark;
+            const HL = THEME_DEFAULT_HEADER.light;
+            const HD = THEME_DEFAULT_HEADER.dark;
+            if (el.themeLightBgPrimary) {
+                el.themeLightBgPrimary.value = L.bgPrimary;
+            }
+            if (el.themeLightBgSecondary) {
+                el.themeLightBgSecondary.value = L.bgSecondary;
+            }
+            if (el.themeLightBgCard) {
+                el.themeLightBgCard.value = L.bgCard;
+            }
+            if (el.themeLightBorder) {
+                el.themeLightBorder.value = L.borderColor;
+            }
+            if (el.themeDarkBgPrimary) {
+                el.themeDarkBgPrimary.value = D.bgPrimary;
+            }
+            if (el.themeDarkBgSecondary) {
+                el.themeDarkBgSecondary.value = D.bgSecondary;
+            }
+            if (el.themeDarkBgCard) {
+                el.themeDarkBgCard.value = D.bgCard;
+            }
+            if (el.themeDarkBorder) {
+                el.themeDarkBorder.value = D.borderColor;
+            }
+            if (el.themeBrightnessLight) {
+                el.themeBrightnessLight.value = '100';
+            }
+            if (el.themeBrightnessDark) {
+                el.themeBrightnessDark.value = '100';
+            }
+            if (el.themeLightHeaderSurface) {
+                el.themeLightHeaderSurface.value = HL.headerSurface;
+            }
+            if (el.themeLightHeaderText) {
+                el.themeLightHeaderText.value = HL.headerText;
+            }
+            if (el.themeLightHeaderBorder) {
+                el.themeLightHeaderBorder.value = HL.headerBorder;
+            }
+            if (el.themeDarkHeaderSurface) {
+                el.themeDarkHeaderSurface.value = HD.headerSurface;
+            }
+            if (el.themeDarkHeaderText) {
+                el.themeDarkHeaderText.value = HD.headerText;
+            }
+            if (el.themeDarkHeaderBorder) {
+                el.themeDarkHeaderBorder.value = HD.headerBorder;
+            }
+            this.syncThemeModalBrightnessHints();
+            this.applyThemeAppearancePreviewFromModal();
+        });
+    }
+
+    bindPreferredColorSchemeListener() {
+        if (typeof window === 'undefined' || !window.matchMedia) {
+            return;
+        }
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        this._prefColorSchemeMq = mq;
+        this._onPrefColorSchemeChange = () => {
+            if (App.normalizeThemePreference(this.settings?.theme) === 'system') {
+                this.applyTheme();
+            }
+        };
+        mq.addEventListener('change', this._onPrefColorSchemeChange);
     }
 
     /**
@@ -4817,6 +5551,12 @@ class App {
         }
         if (this.elements.reasoningSelect) {
             this.elements.reasoningSelect.value = reasoningUi;
+        }
+        
+        // Checkbox für Reasoning aktivieren/deaktivieren
+        if (this.elements.reasoningEnabledCheckbox) {
+            const reasoningIsOff = reasoningUi === 'off';
+            this.elements.reasoningEnabledCheckbox.checked = !reasoningIsOff;
         }
 
         let altLinksCount = 5;
@@ -5499,12 +6239,14 @@ class App {
             this.elements.newsSourcesFilterInput.value = '';
         }
         this.filterNewsSourcesSettingsList();
+        this.populateThemeSettingsModal();
         if (this.elements.dashboardSettingsModal) {
             this.elements.dashboardSettingsModal.classList.add('active');
         }
     }
 
     closeDashboardSettingsModal() {
+        this.restoreThemeAppearanceFromPersistedSettings();
         if (this.elements.dashboardSettingsModal) {
             this.elements.dashboardSettingsModal.classList.remove('active');
         }
@@ -5568,9 +6310,40 @@ class App {
         const nextMagazinesJson = JSON.stringify(nextMagazines);
         const magazinesChanged = prevMagazinesJson !== nextMagazinesJson;
 
+        const themePrefSaved = this.elements.themeModeSelect
+            ? App.normalizeThemePreference(this.elements.themeModeSelect.value)
+            : App.normalizeThemePreference(this.settings?.theme);
+        const colorThemeSaved = this.elements.settingsColorThemeSelect
+            ? App.normalizeColorTheme(this.elements.settingsColorThemeSelect.value)
+            : App.normalizeColorTheme(this.settings?.colorTheme);
+        const themeCustomColorsSaved = this.gatherThemeCustomColorsFromModalForSave();
+        const themeCustomHeaderColorsSaved = this.gatherThemeCustomHeaderColorsFromModalForSave();
+        const themeSurfaceBrightnessSaved =
+            this.elements.themeBrightnessLight && this.elements.themeBrightnessDark
+                ? App.normalizeThemeSurfaceBrightness({
+                      light: parseInt(this.elements.themeBrightnessLight.value, 10),
+                      dark: parseInt(this.elements.themeBrightnessDark.value, 10)
+                  })
+                : App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+
+        try {
+            localStorage.setItem('theme', themePrefSaved);
+            localStorage.setItem('heise_color_theme', colorThemeSaved);
+            localStorage.setItem('heise_theme_custom_colors', JSON.stringify(themeCustomColorsSaved));
+            localStorage.setItem('heise_theme_custom_header_colors', JSON.stringify(themeCustomHeaderColorsSaved));
+            localStorage.setItem('heise_theme_surface_brightness', JSON.stringify(themeSurfaceBrightnessSaved));
+        } catch (_) {
+            /* ignore */
+        }
+
         const prev = this.settings.newsSource;
         this.settings.enabledNewsSources = enabled;
         this.settings.enabledHeiseMagazines = nextMagazines;
+        this.settings.theme = themePrefSaved;
+        this.settings.colorTheme = colorThemeSaved;
+        this.settings.themeCustomColors = themeCustomColorsSaved;
+        this.settings.themeCustomHeaderColors = themeCustomHeaderColorsSaved;
+        this.settings.themeSurfaceBrightness = themeSurfaceBrightnessSaved;
         try {
             localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabled));
             localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(nextMagazines));
@@ -5580,11 +6353,18 @@ class App {
         try {
             await this.storage.saveSettings({
                 enabledNewsSources: enabled,
-                enabledHeiseMagazines: nextMagazines
+                enabledHeiseMagazines: nextMagazines,
+                theme: themePrefSaved,
+                colorTheme: colorThemeSaved,
+                themeCustomColors: themeCustomColorsSaved,
+                themeCustomHeaderColors: themeCustomHeaderColorsSaved,
+                themeSurfaceBrightness: themeSurfaceBrightnessSaved
             });
         } catch (e) {
             console.warn('saveDashboardSettings:', e);
         }
+        this.applyTheme();
+        this.applyColorTheme();
         App.syncHeiseMagazineFeedMirror(nextMagazines);
 
         this.rebuildNewsSourceSelect();
@@ -5645,6 +6425,13 @@ class App {
         const reasoningLevel = this.elements.reasoningSelect
             ? AISummarizer.normalizeLmReasoningParam(this.elements.reasoningSelect.value)
             : AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
+        
+        // Reasoning deaktivieren wenn Checkbox unchecked ist
+        const reasoningEnabled = this.elements.reasoningEnabledCheckbox 
+            ? this.elements.reasoningEnabledCheckbox.checked 
+            : (this.settings?.reasoning !== 'off');
+        
+        const reasoningLevelForStorage = reasoningEnabled ? reasoningLevel : 'off';
 
         let alternativeLinksCount = 5;
         if (this.elements.alternativeLinksCount) {
@@ -5679,7 +6466,7 @@ class App {
             localStorage.setItem('heise_summary_cache_days', String(summaryCacheDays));
             localStorage.setItem('heise_summary_concurrency', String(summaryConcurrencySaved));
             localStorage.setItem('heise_ki_request_timeout_sec', String(summaryRequestTimeoutSaved));
-            localStorage.setItem('heise_reasoning', reasoningLevel);
+            localStorage.setItem('heise_reasoning', reasoningLevelForStorage);
 
             try {
                 localStorage.setItem('heise_alternative_links_count', String(alternativeLinksCount));
@@ -5731,8 +6518,6 @@ class App {
         const settings = {
             ...this.settings,
             selectedCategories,
-            theme: localStorage.getItem('theme') || 'system',
-            colorTheme: App.normalizeColorTheme(this.settings?.colorTheme),
             kiApiMode: mode,
             apiBaseUrl,
             lmRestRoot,
@@ -5742,7 +6527,7 @@ class App {
             summaryConcurrency: summaryConcurrencySaved,
             summaryRequestTimeoutSeconds: summaryRequestTimeoutSaved,
             lmModel,
-            reasoning: reasoningLevel,
+            reasoning: reasoningLevelForStorage,
             alternativeLinksCount,
             alternativeLinksDisplayMode: alternativeLinksDisplayModeSaved,
             alternativeLinksDomainBlacklist: alternativeLinksDomainBlacklistSaved,
@@ -5766,6 +6551,9 @@ class App {
             } catch (_) {
                 /* ignore */
             }
+
+            this.applyTheme();
+            this.applyColorTheme();
 
             this.closeSettingsModal();
             this.showStatus(

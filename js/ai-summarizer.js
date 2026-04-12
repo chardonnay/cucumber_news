@@ -1809,10 +1809,16 @@ Output rules:
             /** Reasoning models may spend the whole budget on `type: "reasoning"`; need headroom for a final `message` */
             max_output_tokens: MAX_SUMMARY_OUTPUT_TOKENS,
             stream: false,
-            store: false,
-            /** LM Studio enum: off | low | medium | high | on */
-            reasoning: this.getLmReasoningLevel()
+            store: false
         };
+        
+        /** Reasoning level for LM Studio enum: off | low | medium | high | on */
+        const reasoningLevel = this.getLmReasoningLevel();
+        
+        // Only include reasoning field if it's not 'off' (disabled)
+        if (reasoningLevel !== 'off') {
+            baseBody.reasoning = reasoningLevel;
+        }
 
         try {
             if (typeof localStorage !== 'undefined' && localStorage.getItem('heise_ki_debug') === '1') {
@@ -1822,7 +1828,9 @@ Output rules:
             /* ignore */
         }
 
-        const { reasoning: _r0, ...strippedBody } = baseBody;
+        // Create a copy of baseBody without reasoning field for fallback
+        const strippedBody = { ...baseBody };
+        delete strippedBody.reasoning;
 
         const doLmRestFetch = async (body) => {
             const bodyJson = JSON.stringify(body);
@@ -1866,11 +1874,18 @@ Output rules:
         try {
             let { response, data } = await doLmRestFetch(baseBody);
 
-            if (!response.ok) {
+            // If API rejected reasoning field (model doesn't support it), retry without reasoning
+            if (!response.ok && response.status === 400) {
                 const detail = data.error?.message || data.message || JSON.stringify(data);
-                if (response.status === 400 && /reasoning/i.test(String(detail))) {
-                    console.warn('KI: LM REST lehnte reasoning-Parameter ab, wiederhole ohne reasoning-Feld.');
-                    ({ response, data } = await doLmRestFetch(strippedBody));
+                if (/reasoning/i.test(String(detail))) {
+                    // Only retry if reasoning was originally included in the request
+                    if ('reasoning' in baseBody) {
+                        console.warn('KI: LM REST lehnte reasoning-Parameter ab (Modell unterstützt kein Reasoning), wiederhole ohne Feld.');
+                        ({ response, data } = await doLmRestFetch(strippedBody));
+                    } else {
+                        // Reasoning was already excluded, so the error is unexpected
+                        console.error('KI: LM REST lehnte Anfrage ab, obwohl reasoning deaktiviert war:', detail);
+                    }
                 }
                 if (!response.ok) {
                     const detail2 = data.error?.message || data.message || JSON.stringify(data);
@@ -2072,9 +2087,16 @@ Output rules:
             temperature: 0.5,
             max_output_tokens: MAX_SUMMARY_OUTPUT_TOKENS,
             stream: false,
-            store: false,
-            reasoning: this.getLmReasoningLevel()
+            store: false
         };
+        
+        /** Reasoning level for LM Studio enum: off | low | medium | high | on */
+        const reasoningLevel = this.getLmReasoningLevel();
+        
+        // Only include reasoning field if it's not 'off' (disabled)
+        if (reasoningLevel !== 'off') {
+            baseBody.reasoning = reasoningLevel;
+        }
 
         try {
             if (typeof localStorage !== 'undefined' && localStorage.getItem('heise_ki_debug') === '1') {

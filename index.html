@@ -19,10 +19,10 @@
             --header-border: #e5e5e5;
             --text-primary: #1a1a1a;
             --text-secondary: #4b5563;
-            --bg-primary: #ffffff;
-            --bg-secondary: #fff7f2;
+            --bg-primary: #e8eaed;
+            --bg-secondary: #dee1e6;
             --bg-card: #ffffff;
-            --border-color: #e5e5e5;
+            --border-color: #c0c0c0;
             --shadow: 0 4px 24px rgba(26, 26, 26, 0.06);
             --shadow-card-hover: 0 12px 40px rgba(26, 26, 26, 0.1);
             --radius-sm: 10px;
@@ -1519,6 +1519,117 @@
             margin-bottom: 1.5rem;
         }
 
+        /* Toggle Switch for Reasoning */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 26px;
+            vertical-align: middle;
+        }
+
+        .toggle-switch input {
+            display: none;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border-color);
+            transition: .3s;
+            border-radius: 34px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--primary-color);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+
+        .theme-settings-group .settings-section-title {
+            margin: 0 0 0.35rem;
+            font-size: 1.05rem;
+            color: var(--text-primary);
+        }
+
+        .theme-settings-fieldset {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 1rem 1rem;
+            margin: 1rem 0;
+            background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-card));
+        }
+
+        .theme-settings-fieldset legend {
+            padding: 0 0.35rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .theme-brightness-range {
+            display: block;
+            width: 100%;
+            max-width: 22rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .theme-color-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .theme-color-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .theme-color-label {
+            flex: 1 1 auto;
+            min-width: 6rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .theme-color-input {
+            width: 3rem;
+            height: 2rem;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            flex-shrink: 0;
+            background: var(--header-surface);
+        }
+
+        .theme-settings-actions {
+            margin-top: 0.75rem;
+        }
+
         .setting-label {
             display: block;
             font-weight: 600;
@@ -1777,6 +1888,8 @@
 
         .modal.modal--sources {
             max-width: 34rem;
+            max-height: min(90vh, 48rem);
+            overflow-y: auto;
         }
 
         .settings-section-title {
@@ -2262,6 +2375,121 @@
     <div class="modal-overlay" id="dashboardSettingsModal" role="dialog" aria-labelledby="dashboardSettingsTitle" aria-modal="true">
         <div class="modal modal--sources">
             <h2 id="dashboardSettingsTitle">Einstellungen — Newsquellen</h2>
+
+            <div class="setting-group theme-settings-group" id="themeSettingsGroup">
+                <h3 id="themeSettingsHeading" class="settings-section-title">Darstellung &amp; Farben</h3>
+                <p id="themeSettingsHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;"></p>
+                <label for="themeModeSelect" id="themeModeSelectLabel" class="setting-label">Erscheinungsbild</label>
+                <select id="themeModeSelect" class="setting-input" aria-describedby="themeSettingsHint">
+                    <option value="system">System</option>
+                    <option value="light">Hell</option>
+                    <option value="dark">Dunkel</option>
+                </select>
+                <label for="settingsColorThemeSelect" id="settingsColorThemeLabel" class="setting-label">Akzentfarbe</label>
+                <select id="settingsColorThemeSelect" class="setting-input" aria-describedby="themeSettingsHint">
+                    <option value="heise">Orange (CRM)</option>
+                    <option value="ocean">Ozean-Blau</option>
+                    <option value="forest">Wald-Grün</option>
+                    <option value="violet">Violett</option>
+                    <option value="amber">Bernstein</option>
+                    <option value="rose">Rose</option>
+                    <option value="slate">Schiefer</option>
+                    <option value="midnight">Mitternacht</option>
+                </select>
+
+                <fieldset class="theme-settings-fieldset">
+                    <legend id="themeFieldsetLightLegend">Hellmodus — Oberfläche</legend>
+                    <label for="themeBrightnessLight" id="themeBrightnessLightLabel" class="setting-label">Helligkeit der Flächen</label>
+                    <input type="range" id="themeBrightnessLight" class="setting-input theme-brightness-range" min="70" max="130" value="100" step="1" aria-describedby="themeBrightnessLightHint">
+                    <p id="themeBrightnessLightHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
+                    <div class="theme-color-grid">
+                        <div class="theme-color-row">
+                            <label for="themeLightBgPrimary" id="themeLightBgPrimaryLabel" class="theme-color-label">Hintergrund</label>
+                            <input type="color" id="themeLightBgPrimary" class="theme-color-input" value="#e8eaed" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeLightBgSecondary" id="themeLightBgSecondaryLabel" class="theme-color-label">Sekundär</label>
+                            <input type="color" id="themeLightBgSecondary" class="theme-color-input" value="#dee1e6" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeLightBgCard" id="themeLightBgCardLabel" class="theme-color-label">Karten</label>
+                            <input type="color" id="themeLightBgCard" class="theme-color-input" value="#ffffff" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeLightBorder" id="themeLightBorderLabel" class="theme-color-label">Rahmen</label>
+                            <input type="color" id="themeLightBorder" class="theme-color-input" value="#c0c0c0" aria-describedby="themeSettingsHint">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="theme-settings-fieldset">
+                    <legend id="themeFieldsetDarkLegend">Dunkelmodus — Oberfläche</legend>
+                    <label for="themeBrightnessDark" id="themeBrightnessDarkLabel" class="setting-label">Helligkeit der Flächen</label>
+                    <input type="range" id="themeBrightnessDark" class="setting-input theme-brightness-range" min="70" max="130" value="100" step="1" aria-describedby="themeBrightnessDarkHint">
+                    <p id="themeBrightnessDarkHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
+                    <div class="theme-color-grid">
+                        <div class="theme-color-row">
+                            <label for="themeDarkBgPrimary" id="themeDarkBgPrimaryLabel" class="theme-color-label">Hintergrund</label>
+                            <input type="color" id="themeDarkBgPrimary" class="theme-color-input" value="#1a1a1a" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeDarkBgSecondary" id="themeDarkBgSecondaryLabel" class="theme-color-label">Sekundär</label>
+                            <input type="color" id="themeDarkBgSecondary" class="theme-color-input" value="#242424" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeDarkBgCard" id="themeDarkBgCardLabel" class="theme-color-label">Karten</label>
+                            <input type="color" id="themeDarkBgCard" class="theme-color-input" value="#2d2d2d" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeDarkBorder" id="themeDarkBorderLabel" class="theme-color-label">Rahmen</label>
+                            <input type="color" id="themeDarkBorder" class="theme-color-input" value="#404040" aria-describedby="themeSettingsHint">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="theme-settings-fieldset">
+                    <legend id="themeFieldsetHeaderLightLegend">Hellmodus — Kopfzeile</legend>
+                    <p id="themeHeaderLightHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.5rem;"></p>
+                    <div class="theme-color-grid">
+                        <div class="theme-color-row">
+                            <label for="themeLightHeaderSurface" id="themeLightHeaderSurfaceLabel" class="theme-color-label">Hintergrund</label>
+                            <input type="color" id="themeLightHeaderSurface" class="theme-color-input" value="#ffffff" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeLightHeaderText" id="themeLightHeaderTextLabel" class="theme-color-label">Text</label>
+                            <input type="color" id="themeLightHeaderText" class="theme-color-input" value="#1a1a1a" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeLightHeaderBorder" id="themeLightHeaderBorderLabel" class="theme-color-label">Rahmen</label>
+                            <input type="color" id="themeLightHeaderBorder" class="theme-color-input" value="#e5e5e5" aria-describedby="themeSettingsHint">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="theme-settings-fieldset">
+                    <legend id="themeFieldsetHeaderDarkLegend">Dunkelmodus — Kopfzeile</legend>
+                    <p id="themeHeaderDarkHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.5rem;"></p>
+                    <div class="theme-color-grid">
+                        <div class="theme-color-row">
+                            <label for="themeDarkHeaderSurface" id="themeDarkHeaderSurfaceLabel" class="theme-color-label">Hintergrund</label>
+                            <input type="color" id="themeDarkHeaderSurface" class="theme-color-input" value="#252525" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeDarkHeaderText" id="themeDarkHeaderTextLabel" class="theme-color-label">Text</label>
+                            <input type="color" id="themeDarkHeaderText" class="theme-color-input" value="#f5f5f5" aria-describedby="themeSettingsHint">
+                        </div>
+                        <div class="theme-color-row">
+                            <label for="themeDarkHeaderBorder" id="themeDarkHeaderBorderLabel" class="theme-color-label">Rahmen</label>
+                            <input type="color" id="themeDarkHeaderBorder" class="theme-color-input" value="#404040" aria-describedby="themeSettingsHint">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="theme-settings-actions">
+                    <button type="button" class="btn-secondary" id="themeResetDefaultsBtn">Standard wiederherstellen</button>
+                </div>
+            </div>
+
             <h3 id="dashboardSourcesSectionTitle" class="settings-section-title">Websites im Pulldown „Quelle“</h3>
             <p id="dashboardSourcesHint" class="modal-hint" style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 0.75rem;"></p>
             <div class="news-sources-filter-row">
@@ -2434,6 +2662,21 @@
             </p>
         </div>
 
+        <div class="setting-group">
+            <fieldset>
+                <legend class="setting-label">Reasoning aktivieren</legend>
+                <div class="setting-input">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="reasoningEnabledCheckbox" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <p id="reasoningEnabledHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary);">
+                        Reasoning-Funktion aktivieren (für LLMs, die dieses Feature unterstützen).
+                    </p>
+                </div>
+            </fieldset>
+        </div>
+
             <div class="modal-actions">
                 <button type="button" class="btn-secondary" id="openKiStatsBtn" title="Statistik">Statistik …</button>
                 <span class="modal-actions__spacer" aria-hidden="true"></span>
@@ -2593,7 +2836,7 @@
     <script src="js/ai-summarizer.js?v=altblk1"></script>
     <script src="js/heise-comments.js?v=forumicon1"></script>
     <script src="js/youtube-related.js"></script>
-    <script src="js/app.js?v=heiseMag20260410a"></script>
+    <script src="js/app.js?v=themeHeaderBar20260412b"></script>
     
 </body>
 </html>

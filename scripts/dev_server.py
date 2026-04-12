@@ -330,7 +330,8 @@ def _lm_call_reddit_chat(
         "stream": False,
         "store": False,
     }
-    if reasoning is not None:
+    # Omit key when "off": LM Studio may error on any `reasoning` for models without it.
+    if reasoning is not None and str(reasoning).strip().lower() != "off":
         body_obj["reasoning"] = reasoning
     body = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
     parsed = urlparse(lm_target)
@@ -799,8 +800,10 @@ def bing_news_rss_search(query: str, limit: int, mkt: str) -> dict[str, object]:
 
 def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
     """
-    Ensure JSON `reasoning` matches LM Studio's enum before forwarding to /api/v1/chat.
-    Fixes stale clients that still send the invalid value 'none'.
+    Normalize JSON `reasoning` before forwarding to /api/v1/chat.
+    Maps legacy `none` to omitting the field (same as `off`).
+    Some LM Studio models reject any `reasoning` parameter (including `"off"`) if they
+    do not expose reasoning configuration — omit the field when disabled or invalid.
     """
     if not body:
         return body
@@ -815,7 +818,10 @@ def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
         s = "off"
     if s not in _LM_REASONING_ALLOWED:
         s = "off"
-    data["reasoning"] = s
+    if s == "off":
+        del data["reasoning"]
+    else:
+        data["reasoning"] = s
     try:
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError):

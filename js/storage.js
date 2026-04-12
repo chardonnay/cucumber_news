@@ -262,6 +262,12 @@ class NewsStorage {
             /** Heise magazine subsection feed ids (ix, ct, …) merged into heise.de when non-empty. */
             enabledHeiseMagazines: [],
             theme: 'system',
+            /** Per-mode surface overrides (optional hex per key); merged with built-in defaults in App.applyThemeSurfaceVariables */
+            themeCustomColors: { light: {}, dark: {} },
+            /** Optional overrides for --header-surface, --header-text, --header-border per mode */
+            themeCustomHeaderColors: { light: {}, dark: {} },
+            /** Surface brightness 70–130 (100 = default); applied to bg/secondary/card/border per mode */
+            themeSurfaceBrightness: { light: 100, dark: 100 },
             /** Accent palette: heise | ocean | forest | violet | amber | rose | slate | midnight */
             colorTheme: 'slate',
             /** OpenAI-compatible API base including /v1, e.g. http://127.0.0.1:1234/v1 */
