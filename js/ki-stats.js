@@ -317,12 +317,10 @@ class KiStats {
             return [];
         }
 
-        /** @type {Map<string, { summaryCount: number, tokenSum: number, tokenCount: number, durationSum: number }>} */
+        /** @type {Map<string, { summaryCount: number, tokenSum: number, tokenCount: number, durationSum: number, durationCount: number }>} */
         const perBucket = new Map();
         
         for (const e of entries) {
-            if (!e.durationMs || e.durationMs <= 0) continue;
-            
             const d = new Date(e.t);
             let bucketKey = '';
             
@@ -337,7 +335,7 @@ class KiStats {
             
             let agg = perBucket.get(bucketKey);
             if (!agg) {
-                agg = { summaryCount: 0, tokenSum: 0, tokenCount: 0, durationSum: 0 };
+                agg = { summaryCount: 0, tokenSum: 0, tokenCount: 0, durationSum: 0, durationCount: 0 };
                 perBucket.set(bucketKey, agg);
             }
             
@@ -347,7 +345,11 @@ class KiStats {
                 agg.tokenSum += tt;
                 agg.tokenCount += 1;
             }
-            agg.durationSum += e.durationMs;
+            // Only add duration when it's a positive number
+            if (Number.isFinite(e.durationMs) && e.durationMs > 0) {
+                agg.durationSum += e.durationMs;
+                agg.durationCount += 1;
+            }
         }
 
         let keys = [...perBucket.keys()].sort();
@@ -363,7 +365,7 @@ class KiStats {
             const avgTokens =
                 agg && agg.tokenCount > 0 ? Math.round(agg.tokenSum / agg.tokenCount) : null;
             const avgDurationMs =
-                agg && agg.summaryCount > 0 ? Math.round(agg.durationSum / agg.summaryCount) : null;
+                agg && agg.durationCount > 0 ? Math.round(agg.durationSum / agg.durationCount) : null;
             return {
                 key,
                 label: KiStats._formatBucketLabel(key, resolution, loc),

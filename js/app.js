@@ -6164,10 +6164,11 @@ class App {
             );
         }
 
-        // Y-axis title
+        // Y-axis title (i18n)
         const yMid = (yTop + yBot) / 2;
+        const rawYTitle = this._i18nKiStatsChartYTitle || '% of max';
         parts.push(
-            `<text transform="rotate(-90 ${18} ${yMid})" x="18" y="${yMid}" text-anchor="middle" font-size="11" fill="${muted}">% of max</text>`
+            `<text transform="rotate(-90 ${18} ${yMid})" x="18" y="${yMid}" text-anchor="middle" font-size="11" fill="${muted}">${esc(rawYTitle)}</text>`
         );
 
         // Axes frame
@@ -6184,31 +6185,49 @@ class App {
             xPositions.push(padL + (i * innerW) / (n - 1 || 1));
         }
 
-        // Draw curves using SVG polylines
+        // Draw curves using SVG polylines (segments for gaps, include zeros)
         const drawLine = (vals, color, maxVal) => {
-            if (!vals.some((v) => v > 0)) return '';
-            const points = vals.map((val, i) => {
-                if (!val || val <= 0) return null;
-                const x = xPositions[i];
-                const y = yFor(val, maxVal);
-                return `${x},${y}`;
-            }).filter((p) => p !== null);
-            if (points.length < 2) return '';
-            return `<polyline fill="none" stroke="${color}" stroke-width="3" points="${points.join(' ')}"/>`;
+            if (!vals.some((v) => Number.isFinite(v) && v >= 0)) return '';
+            
+            /** @type {string[]} */
+            const segments = [];
+            let currentSegmentPoints = [];
+            
+            for (let i = 0; i < vals.length; i++) {
+                const val = vals[i];
+                if (Number.isFinite(val) && val >= 0) {
+                    // Valid value: add to current segment
+                    const x = xPositions[i];
+                    const y = yFor(val, maxVal);
+                    currentSegmentPoints.push(`${x},${y}`);
+                } else {
+                    // Invalid/gap: emit current segment if length >= 2, reset
+                    if (currentSegmentPoints.length >= 2) {
+                        segments.push(`<polyline fill="none" stroke="${color}" stroke-width="3" points="${currentSegmentPoints.join(' ')}"/>`);
+                    }
+                    currentSegmentPoints = [];
+                }
+            }
+            // Emit final segment if length >= 2
+            if (currentSegmentPoints.length >= 2) {
+                segments.push(`<polyline fill="none" stroke="${color}" stroke-width="3" points="${currentSegmentPoints.join(' ')}"/>`);
+            }
+            
+            return segments.join('');
         };
 
         const valsTotal = buckets.map((b) => b.totalTokens);
-        const valsAvgTok = buckets.map((b) => (b.avgTokens != null && b.avgTokens > 0 ? b.avgTokens : NaN));
-        const valsAvgDur = buckets.map((b) => (b.avgDurationMs != null && b.avgDurationMs > 0 ? b.avgDurationMs : NaN));
+        const valsAvgTok = buckets.map((b) => (Number.isFinite(b.avgTokens) && b.avgTokens >= 0 ? b.avgTokens : NaN));
+        const valsAvgDur = buckets.map((b) => (Number.isFinite(b.avgDurationMs) && b.avgDurationMs >= 0 ? b.avgDurationMs : NaN));
 
         parts.push(drawLine(valsTotal, colTotal, maxTotal));
         parts.push(drawLine(valsAvgTok, colAvgTok, maxAvgTok));
         parts.push(drawLine(valsAvgDur, colAvgDur, maxAvgDur));
 
-        // Data points with tooltips
+        // Data points with tooltips (include zeros)
         const drawPoints = (vals, color, formatter, maxVal, tooltipFn) => {
             return vals.map((val, i) => {
-                if (!val || val <= 0) return '';
+                if (!Number.isFinite(val) || val < 0) return '';
                 const x = xPositions[i];
                 const y = yFor(val, maxVal);
                 return `<circle cx="${x}" cy="${y}" r="4" fill="${color}"><title>${tooltipFn({ ...buckets[i], avgDurationMs: buckets[i].avgDurationMs || 0 })}</title></circle>`;
