@@ -1,5 +1,5 @@
 /**
- * Cucumber NewsScraper — comment statistics UI (Heise/Golem via dev_server; stubs for other sources).
+ * Cucumber NewsScraper — comment statistics UI (Heise, Telepolis, Golem via dev_server; stubs for other sources).
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Daniel Mengel
@@ -48,7 +48,7 @@ const COMMENTS_I18N_FALLBACK = {
             'The Verge: Kommentare (Coral) laden nur auf der Artikelseite; keine öffentliche Zähl-API — Link springt zur Kommentarsektion.',
         article_open_link: 'Zum Artikel',
         warn_no_discussion_url:
-            'Für diesen Artikel liefert heise.de keinen Forum-Link in den Metadaten (z. B. manche Bestenlisten). Grün/rot-Statistik entfällt.'
+            'Für diesen Artikel liefern heise.de bzw. telepolis.de keinen Forum-Link in den Metadaten (z. B. manche Bestenlisten). Grün/rot-Statistik entfällt.'
     },
     en: {
         loading: 'Comments …',
@@ -91,9 +91,47 @@ const COMMENTS_I18N_FALLBACK = {
             'The Verge: Coral comments load on the article page only; there is no public comment-count API — link jumps to the comments section.',
         article_open_link: 'Open article',
         warn_no_discussion_url:
-            'heise.de did not provide a forum link in metadata for this article (e.g. some best-of lists). Green/red stats are unavailable.'
+            'heise.de or telepolis.de did not provide a forum link in metadata for this article (e.g. some best-of lists). Green/red stats are unavailable.'
     }
 };
+
+/**
+ * Article URL for comment UI and prefetch (aligned with news cards: prefer `url`, else `link`).
+ * @param {{ url?: string, link?: string }|null|undefined} item
+ * @returns {string}
+ */
+function articleUrlFromFeedItem(item) {
+    if (!item) {
+        return '';
+    }
+    const u = item.url != null && String(item.url).trim() ? String(item.url).trim() : '';
+    if (u) {
+        return u;
+    }
+    return item.link != null && String(item.link).trim() ? String(item.link).trim() : '';
+}
+
+/**
+ * Whether stats are loaded via GET /api/heise-comments (shared Heise + Telepolis forum stack).
+ * @param {string} u
+ * @returns {boolean}
+ */
+function isHeiseCommentsApiArticleUrl(u) {
+    const s = String(u || '').trim();
+    if (!s) {
+        return false;
+    }
+    return (
+        s.startsWith('https://www.heise.de/') ||
+        s.startsWith('https://heise.de/') ||
+        s.startsWith('https://www.telepolis.de/') ||
+        s.startsWith('https://telepolis.de/') ||
+        s.startsWith('http://www.heise.de/') ||
+        s.startsWith('http://heise.de/') ||
+        s.startsWith('http://www.telepolis.de/') ||
+        s.startsWith('http://telepolis.de/')
+    );
+}
 
 function resolveLocalesJsonUrl(file) {
     try {
@@ -232,15 +270,17 @@ const HeiseComments = {
     async fetchStats(articleUrl) {
         const u = String(articleUrl || '').trim();
         let apiPath = '/api/heise-comments';
-        if (u.startsWith('https://www.golem.de/')) {
+        if (u.startsWith('https://www.golem.de/') || u.startsWith('https://golem.de/')) {
             apiPath = '/api/golem-comments';
-        } else if (u.startsWith('https://www.computerbase.de/')) {
+        } else if (u.startsWith('https://www.computerbase.de/') || u.startsWith('https://computerbase.de/')) {
             apiPath = '/api/computerbase-comments';
         } else if (u.startsWith('https://t3n.de/')) {
             apiPath = '/api/t3n-comments';
-        } else if (u.startsWith('https://www.theverge.com/')) {
+        } else if (u.startsWith('https://www.theverge.com/') || u.startsWith('https://theverge.com/')) {
             apiPath = '/api/verge-comments';
-        } else if (!u.startsWith('https://www.heise.de/')) {
+        } else if (isHeiseCommentsApiArticleUrl(u)) {
+            apiPath = '/api/heise-comments';
+        } else {
             return { ok: false, error: 'not_heise' };
         }
         const hit = this._cache.get(u);
@@ -710,13 +750,16 @@ sanitizeHtml(html) {
      */
     async prefetchForItems(items, onProgress, concurrency = 4) {
         const targets = (items || []).filter((i) => {
-            const u = i && i.url ? String(i.url) : '';
+            const u = articleUrlFromFeedItem(i);
             return (
-                u.startsWith('https://www.heise.de/') ||
+                isHeiseCommentsApiArticleUrl(u) ||
                 u.startsWith('https://www.golem.de/') ||
+                u.startsWith('https://golem.de/') ||
                 u.startsWith('https://www.computerbase.de/') ||
+                u.startsWith('https://computerbase.de/') ||
                 u.startsWith('https://t3n.de/') ||
-                u.startsWith('https://www.theverge.com/')
+                u.startsWith('https://www.theverge.com/') ||
+                u.startsWith('https://theverge.com/')
             );
         });
         const total = targets.length;
@@ -726,7 +769,7 @@ sanitizeHtml(html) {
             const batch = targets.slice(i, i + concurrency);
             await Promise.all(
                 batch.map(async (item) => {
-                    const data = await this.fetchStats(String(item.url).trim());
+                    const data = await this.fetchStats(articleUrlFromFeedItem(item));
                     if (this.isForumRateLimited(data)) {
                         rateLimited = true;
                     }

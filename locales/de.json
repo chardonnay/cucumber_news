@@ -113,7 +113,7 @@
     "rss_stub_note": "Für diese Quelle liefert der Feed keine Kommentarzahlen für die API — Diskussion siehe Artikelseite.",
     "rss_stub_verge": "The Verge: Kommentare (Coral) laden nur auf der Artikelseite; keine öffentliche Zähl-API — Link springt zur Kommentarsektion.",
     "article_open_link": "Zum Artikel",
-    "warn_no_discussion_url": "Für diesen Artikel liefert heise.de keinen Forum-Link in den Metadaten (z. B. manche Bestenlisten). Grün/rot-Statistik entfällt."
+    "warn_no_discussion_url": "Für diesen Artikel liefern heise.de bzw. telepolis.de keinen Forum-Link in den Metadaten (z. B. manche Bestenlisten). Grün/rot-Statistik entfällt."
   },
   "batch": {
     "btn_all": "🤖 Alle Zusammenfassungen",
@@ -181,9 +181,9 @@
     "label_date": "Datum",
     "label_from": "Von",
     "label_to": "Bis",
-    "hint": "Kommentar-Sortierungen laden Metadaten über den Dev-Server (u. a. /api/heise-comments, /api/golem-comments, Stubs für ComputerBase/t3n/The Verge) — kann etwas dauern.",
+    "hint": "Kommentar-Sortierungen laden Metadaten über den Dev-Server (u. a. /api/heise-comments für heise.de und telepolis.de, /api/golem-comments, Stubs für ComputerBase/t3n/The Verge) — kann etwas dauern.",
     "apply": "Anwenden",
-    "rate_limit_banner": "Kommentar-Metadaten: Rate-Limit (heise.de). Sortierung kann unvollständig sein — bitte später erneut „Anwenden“ oder einzelne Karten neu laden.",
+    "rate_limit_banner": "Kommentar-Metadaten: Rate-Limit (Heise-Foren: heise.de, Telepolis). Sortierung kann unvollständig sein — bitte später erneut „Anwenden“ oder einzelne Karten neu laden.",
     "rate_limit_retry": "Erneut laden",
     "toggle_title": "Sortierung ein- oder ausklappen",
     "options": {
@@ -293,9 +293,13 @@
     "avg_tokens": "Ø Tokens pro Artikel",
     "avg_duration": "Ø Verarbeitungszeit",
     "chart_caption": "X-Achse: Kalendermonate (chronologisch, bis zu 24). Je Monat zwei Balken: Ø Tokens pro Artikel (nur Einträge mit Token-Zählung) und Tokens insgesamt (Summe im Monat). Unabhängige Normierung je Reihe — hohe Gesamtsumme bei niedrigem Mittelwert bedeutet viele Anfragen; hoher Mittelwert — ausführlichere Antworten. Tooltips: Zahlenwerte.",
+    "chart_caption_new": "Dreigliedriger Diagramm: Gesamttokens (blau), Ø Tokens pro Artikel (grün), Ø Verarbeitungszeit (orange). Unabhängige Normierung je Kennzahl — vergleichen Sie Trends über Zeit.",
     "chart_y_title": "Anteil am Maximum je Kennzahl (%)",
     "chart_legend_avg_tokens": "Ø Tokens / Artikel",
     "chart_legend_total_tokens": "Tokens gesamt (Monat)",
+    "chart_total_tokens": "Tokens insgesamt",
+    "chart_avg_tokens": "Ø Tokens pro Artikel",
+    "chart_avg_duration": "Ø Verarbeitungszeit",
     "chart_tokens_none": "Keine Tokenwerte in diesen Buckets",
     "empty": "Noch keine Daten — erzeugen Sie KI-Zusammenfassungen für Artikel.",
     "token_na": "—",

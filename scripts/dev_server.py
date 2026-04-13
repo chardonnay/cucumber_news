@@ -45,6 +45,8 @@ DEFAULT_PORT = 8080
 DEFAULT_BIND = "127.0.0.1"
 HEISE_ORIGIN = "https://www.heise.de"
 HEISE_PREFIX = HEISE_ORIGIN + "/"
+TELEPOLIS_ORIGIN = "https://www.telepolis.de"
+TELEPOLIS_PREFIX = TELEPOLIS_ORIGIN + "/"
 TELEPOLIS_FEED_URL = "https://www.telepolis.de/news-atom.xml"
 # url -> {"t": float, "xml": str}
 _heise_feed_cache_by_url: dict[str, dict[str, object]] = {}
@@ -877,9 +879,51 @@ def _heise_abs(url_or_path: str) -> str:
     return HEISE_ORIGIN + (s if s.startswith("/") else "/" + s)
 
 
-def _normalize_forum_thread_url(discussion_url: str) -> str:
+def _telepolis_abs(url_or_path: str) -> str:
+    """Convert relative URL to absolute Telepolis URL."""
+    s = (url_or_path or "").strip()
+    if not s:
+        return ""
+    if s.startswith("http://") or s.startswith("https://"):
+        return s
+    if s.startswith("//"):
+        return "https:" + s
+    return TELEPOLIS_ORIGIN + (s if s.startswith("/") else "/" + s)
+
+
+def _canonicalize_heise_comments_article_url(article_url: str) -> str:
+    """Normalize Heise/Telepolis article URL variants to https://www.* for fetching and allowlisting."""
+    s = (article_url or "").strip()
+    if not s:
+        return s
+    low = s.lower()
+    tele_prefixes = (
+        "https://www.telepolis.de/",
+        "https://telepolis.de/",
+        "http://www.telepolis.de/",
+        "http://telepolis.de/",
+    )
+    for pfx in tele_prefixes:
+        if low.startswith(pfx):
+            return TELEPOLIS_ORIGIN + "/" + s[len(pfx) :].lstrip("/")
+    heise_prefixes = (
+        "https://www.heise.de/",
+        "https://heise.de/",
+        "http://www.heise.de/",
+        "http://heise.de/",
+    )
+    for pfx in heise_prefixes:
+        if low.startswith(pfx):
+            return HEISE_ORIGIN + "/" + s[len(pfx) :].lstrip("/")
+    return s
+
+
+def _normalize_forum_thread_url(discussion_url: str, source: str = "heise") -> str:
     """Map .../forum-N/comment/ to .../forum-N/ (thread overview with tree list)."""
-    u = _heise_abs(discussion_url)
+    if source == "telepolis":
+        u = _telepolis_abs(discussion_url)
+    else:
+        u = _heise_abs(discussion_url)
     u = u.rstrip("/")
     if u.endswith("/comment"):
         u = u[: -len("/comment")]
@@ -1587,9 +1631,10 @@ def build_golem_comments_payload(article_url: str) -> dict:
 
 
 def build_heise_comments_payload(article_url: str) -> dict:
-    err = None
-    if not article_url.startswith(HEISE_PREFIX):
-        return {"ok": False, "error": "Only https://www.heise.de/ article URLs are allowed."}
+    article_url = _canonicalize_heise_comments_article_url(article_url)
+    if not (article_url.startswith(HEISE_PREFIX) or article_url.startswith(TELEPOLIS_PREFIX)):
+        return {"ok": False, "error": "Only heise.de and telepolis.de article URLs are allowed."}
+    is_telepolis = article_url.startswith(TELEPOLIS_PREFIX)
 
     try:
         status, art_html = _http_get_text(article_url)
@@ -1608,7 +1653,10 @@ def build_heise_comments_payload(article_url: str) -> dict:
 
     comment_count = _parse_int_loose(na.get("commentCount"))
     discussion_raw = na.get("discussionUrl")
-    discussion_url = _heise_abs(str(discussion_raw)) if discussion_raw else None
+    if is_telepolis:
+        discussion_url = _telepolis_abs(str(discussion_raw)) if discussion_raw else None
+    else:
+        discussion_url = _heise_abs(str(discussion_raw)) if discussion_raw else None
 
     forum_out: dict | None = None
     warnings: list[str] = []
@@ -1616,7 +1664,9 @@ def build_heise_comments_payload(article_url: str) -> dict:
     if not discussion_url:
         warnings.append("No discussionUrl in JSON-LD; forum stats omitted.")
     else:
-        forum_page = _normalize_forum_thread_url(discussion_raw or "")
+        forum_page = _normalize_forum_thread_url(
+            discussion_raw or "", source="telepolis" if is_telepolis else "heise"
+        )
         try:
             _st, forum_html = _http_get_text(forum_page)
         except (HTTPError, URLError, TimeoutError, OSError) as e:
@@ -2142,7 +2192,7 @@ def main() -> int:
         f"Open: {url}/index.html\n"
         f"POST /api/v1/chat → {lm_target}/api/v1/chat\n"
         f"GET /v1/models → {lm_target}/v1/models (model list for same-origin KI)\n"
-        f"GET /api/heise-comments?url=… → Heise article + forum comment stats (server-side fetch)\n"
+        f"GET /api/heise-comments?url=… → Heise or Telepolis article + forum comment stats (server-side fetch)\n"
         f"GET /api/heise-feed?url=… → Heise Atom/RSS (CORS proxy; url must be https://www.heise.de/…/*.xml)\n"
         f"GET /api/telepolis-feed → Telepolis news-atom.xml (CORS proxy)\n"
         f"GET /api/golem-feed → Golem RSS (browser CORS proxy; same cache as /api/golem-comments)\n"

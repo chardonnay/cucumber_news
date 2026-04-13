@@ -1800,6 +1800,25 @@
             background: color-mix(in srgb, var(--primary-color) 5%, var(--header-surface));
         }
 
+        .btn-period {
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-xs);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-period-active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .btn-period:hover:not(.btn-period-active) {
+            border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+            background: color-mix(in srgb, var(--primary-color) 5%, var(--header-surface));
+        }
+
         /* Status Bar */
         .status-bar {
             position: fixed;
@@ -2342,7 +2361,7 @@
                     </span>
                 </div>
                 <p id="sort-hint" class="sort-hint">
-                    Kommentar-Sortierungen laden Metadaten über den Dev-Server (<code>/api/heise-comments</code>) — kann etwas dauern.
+                    Kommentar-Sortierungen laden Metadaten über den Dev-Server (<code>/api/heise-comments</code> für heise.de und telepolis.de) — kann etwas dauern.
                 </p>
                 <p id="sortRateLimitBanner" class="sort-rate-limit-banner" hidden role="status">
                     <span id="sortRateLimitBannerText" class="sort-rate-limit-banner__text"></span>
@@ -2712,6 +2731,12 @@
                     </div>
                 </div>
                 <p id="kiStatsTokenHint" class="modal-hint ki-stats-token-hint" hidden></p>
+                <!-- Time range selector buttons -->
+                <div class="ki-stats-period-controls" style="display: flex; justify-content: center; gap: 8px; margin-bottom: 12px;">
+                    <button type="button" class="btn-secondary btn-period" data-period="day">Woche</button>
+                    <button type="button" class="btn-secondary btn-period btn-period-active" data-period="month">Monat</button>
+                    <button type="button" class="btn-secondary btn-period" data-period="year">Jahr</button>
+                </div>
                 <figure class="ki-stats-chart-wrap">
                     <figcaption id="kiStatsChartCaption" class="ki-stats-chart-caption"></figcaption>
                     <div class="ki-stats-chart-inner ki-stats-chart-inner--full">
@@ -2834,7 +2859,7 @@
     <script src="js/news-scraper.js?v=heiseixcat1"></script>
     <script src="js/ki-stats.js?v=tokchart1"></script>
     <script src="js/ai-summarizer.js?v=altblk1"></script>
-    <script src="js/heise-comments.js?v=forumicon1"></script>
+    <script src="js/heise-comments.js?v=telepolis-comments1"></script>
     <script src="js/youtube-related.js"></script>
     <script src="js/app.js?v=themeHeaderBar20260412b"></script>
     

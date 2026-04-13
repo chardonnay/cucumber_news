@@ -113,7 +113,7 @@
     "rss_stub_note": "This source does not expose comment counts via the feed API — see the article page for discussion.",
     "rss_stub_verge": "The Verge: Coral comments load on the article page only; there is no public comment-count API — link jumps to the comments section.",
     "article_open_link": "Open article",
-    "warn_no_discussion_url": "heise.de did not provide a forum link in metadata for this article (e.g. some best-of lists). Green/red stats are unavailable."
+    "warn_no_discussion_url": "heise.de or telepolis.de did not provide a forum link in metadata for this article (e.g. some best-of lists). Green/red stats are unavailable."
   },
   "batch": {
     "btn_all": "🤖 Summarize all",
@@ -181,9 +181,9 @@
     "label_date": "Date",
     "label_from": "From",
     "label_to": "To",
-    "hint": "Comment-based sorts load metadata via the dev server (e.g. /api/heise-comments, /api/golem-comments, stubs for ComputerBase/t3n/The Verge) — may take a while.",
+    "hint": "Comment-based sorts load metadata via the dev server (e.g. /api/heise-comments for heise.de and telepolis.de, /api/golem-comments, stubs for ComputerBase/t3n/The Verge) — may take a while.",
     "apply": "Apply",
-    "rate_limit_banner": "Comment metadata: rate limit (heise.de). Sorting may be incomplete — click \"Apply\" again later or reload individual cards.",
+    "rate_limit_banner": "Comment metadata: rate limit (Heise forums: heise.de, Telepolis). Sorting may be incomplete — click \"Apply\" again later or reload individual cards.",
     "rate_limit_retry": "Reload",
     "toggle_title": "Show or hide sorting options",
     "options": {
