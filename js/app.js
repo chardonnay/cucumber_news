@@ -198,6 +198,10 @@ class App {
         this._i18nKiStatsChartTotalLegend = '';
         this._i18nKiStatsTokensUnavailable = '';
         this._i18nKiStatsChartYTitle = '';
+        this._i18nKiStatsChartTotalTokens = '';
+        this._i18nKiStatsChartAvgTokens = '';
+        this._i18nKiStatsChartAvgDuration = '';
+        this._i18nKiStatsChartNewTpl = '';
         this._i18nLmModelHintDefault = '';
         this._i18nLmModelAutomatic = 'No specific choice — server decides';
         this._i18nLmModelLoading = 'Loading model list…';
@@ -494,6 +498,14 @@ class App {
         }
         if (this.elements.clearKiStatsBtn) {
             this.elements.clearKiStatsBtn.addEventListener('click', () => this.confirmClearKiStats());
+        }
+
+        // Add event listeners for period selector buttons
+        const periodBtns = document.querySelectorAll('.btn-period');
+        if (periodBtns) {
+            periodBtns.forEach((btn) => {
+                btn.addEventListener('click', () => this.switchKiStatsPeriod(btn));
+            });
         }
 
         if (this.elements.dashboardSettingsBtn) {
@@ -2756,6 +2768,9 @@ class App {
                 if (ks.chart_caption) {
                     this._i18nKiStatsChartTpl = ks.chart_caption;
                 }
+                if (ks.chart_caption_new) {
+                    this._i18nKiStatsChartNewTpl = ks.chart_caption_new;
+                }
                 if (ks.chart_legend_avg_tokens) {
                     this._i18nKiStatsChartAvgLegend = ks.chart_legend_avg_tokens;
                 }
@@ -2770,6 +2785,15 @@ class App {
                 }
                 if (ks.clear_confirm) {
                     this._i18nKiStatsClearConfirm = ks.clear_confirm;
+                }
+                if (ks.chart_total_tokens) {
+                    this._i18nKiStatsChartTotalTokens = ks.chart_total_tokens;
+                }
+                if (ks.chart_avg_tokens) {
+                    this._i18nKiStatsChartAvgTokens = ks.chart_avg_tokens;
+                }
+                if (ks.chart_avg_duration) {
+                    this._i18nKiStatsChartAvgDuration = ks.chart_avg_duration;
                 }
             }
 
@@ -5837,15 +5861,17 @@ class App {
         }
 
         const cap = document.getElementById('kiStatsChartCaption');
-        if (cap && this._i18nKiStatsChartTpl) {
-            cap.textContent = this._i18nKiStatsChartTpl;
+        if (cap && this._i18nKiStatsChartNewTpl) {
+            cap.textContent = this._i18nKiStatsChartNewTpl;
         }
 
+        // Use the new three-lines chart with support for week/month/year
+        const period = this._kiStatsPeriod || 'month';
         const buckets =
-            typeof KiStats !== 'undefined' && KiStats.getChartBucketsAvgVsTotalTokens
-                ? KiStats.getChartBucketsAvgVsTotalTokens('month', localeTag)
+            typeof KiStats !== 'undefined' && KiStats.getChartBucketsThreeLines
+                ? KiStats.getChartBucketsThreeLines(period, localeTag)
                 : [];
-        this.renderKiStatsOverviewChart(buckets, localeTag);
+        this.renderKiStatsThreeLinesChart(buckets, localeTag);
     }
 
     /**
@@ -6013,6 +6039,201 @@ class App {
         svg.innerHTML = parts.join('');
     }
 
+    /**
+     * New chart: three lines showing total tokens, avg tokens per article, and avg duration.
+     * @param {Array<{ label: string, avgTokens: number|null, totalTokens: number, tokenSamples: number, avgDurationMs: number|null }>} buckets
+     * @param {string} localeTag
+     */
+    renderKiStatsThreeLinesChart(buckets, localeTag) {
+        const svg = document.getElementById('kiStatsChartSvg');
+        if (!svg) {
+            return;
+        }
+        if (!buckets || buckets.length === 0) {
+            svg.innerHTML = '';
+            return;
+        }
+
+        const W = 720;
+        const H = 360;
+        const padL = 58;
+        const padR = 18;
+        const padT = 40;
+        const padB = 64;
+        const n = buckets.length;
+
+        const esc = (s) => this._escapeXmlForSvg(s);
+        
+        // Read translations
+        const rawTotal = this._i18nKiStatsChartTotalTokens || 'Total tokens';
+        const rawAvgTok = this._i18nKiStatsChartAvgTokens || 'Avg. tokens / article';
+        const rawAvgDur = this._i18nKiStatsChartAvgDuration || 'Avg. duration';
+        const tTotal = esc(rawTotal);
+        const tAvgTok = esc(rawAvgTok);
+        const tAvgDur = esc(rawAvgDur);
+        
+        const na = this._i18nKiStatsTokenNa || '—';
+        
+        const fmtTok = (v) =>
+            Number.isFinite(v) ? Math.round(v).toLocaleString(localeTag || undefined) : '0';
+        const fmtDur = (v) => {
+            if (!Number.isFinite(v)) return na;
+            const mins = Math.floor(v / 60000);
+            const secs = ((v % 60000) / 1000).toFixed(1);
+            return `${mins}:${secs.toString().padStart(5, '0')} min`;
+        };
+        
+        const tipTotal = (b) => esc(`${rawTotal}: ${fmtTok(b.totalTokens)}`);
+        const tipAvgTok = (b) => {
+            if (b.avgTokens != null && b.avgTokens >= 0) {
+                return esc(`${rawAvgTok}: ${fmtTok(b.avgTokens)}`);
+            }
+            return esc(`${rawAvgTok}: ${na}`);
+        };
+        const tipAvgDur = (b) => esc(`${rawAvgDur}: ${fmtDur(b.avgDurationMs || 0)}`);
+
+        /** Color palette */
+        const colTotal = '#2563eb'; // blue-600
+        const colAvgTok = '#10b981'; // emerald-500
+        const colAvgDur = '#f59e0b'; // amber-500
+        const gridStroke = 'rgba(14, 165, 233, 0.35)';
+        const axisStroke = 'rgba(56, 189, 248, 0.65)';
+
+        let muted = '#475569';
+        try {
+            const m = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+            if (m) {
+                muted = m;
+            }
+        } catch (_) {
+            /* ignore */
+        }
+
+        // Find max values for scaling
+        const eps = 1e-9;
+        const maxTotal = Math.max(...buckets.map((b) => b.totalTokens), eps);
+        
+        // For avg tokens and duration, only consider entries with data
+        const avgTokVals = buckets.map((b) => (b.avgTokens != null && b.avgTokens > 0 ? b.avgTokens : eps));
+        const maxAvgTok = Math.max(...avgTokVals);
+        
+        const avgDurVals = buckets.map((b) => (b.avgDurationMs != null && b.avgDurationMs > 0 ? b.avgDurationMs : eps));
+        const maxAvgDur = Math.max(...avgDurVals);
+
+        const yTop = padT + 36;
+        const yBot = H - padB;
+        const plotH = yBot - yTop;
+        const innerW = W - padL - padR;
+        const xStep = innerW / (n - 1 || 1);
+        
+        // Helper to map value to Y coordinate
+        const yFor = (val, max) => yBot - (val / max) * plotH;
+        
+        const parts = [];
+        parts.push(`<rect width="${W}" height="${H}" fill="none"/>`);
+
+        // Legend
+        const legY = 20;
+        const legItems = [
+            { c: colTotal, t: tTotal },
+            { c: colAvgTok, t: tAvgTok },
+            { c: colAvgDur, t: tAvgDur }
+        ];
+        let legW = 0;
+        legItems.forEach((it) => {
+            legW += 18 + it.t.length * 6.2 + 36;
+        });
+        let lx = Math.max(padL, (W - legW) / 2);
+        legItems.forEach((it) => {
+            parts.push(`<rect x="${lx}" y="${legY - 9}" width="11" height="11" rx="2" fill="${it.c}"/>`);
+            parts.push(
+                `<text x="${lx + 16}" y="${legY}" font-size="12" font-weight="500" fill="${muted}">${it.t}</text>`
+            );
+            lx += 18 + it.t.length * 6.2 + 36;
+        });
+
+        // Horizontal grid lines (0%, 25%, 50%, 75%, 100%)
+        for (let g = 0; g <= 4; g++) {
+            const pct = (g / 4) * 100;
+            const y = yBot - (plotH * g) / 4;
+            parts.push(
+                `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="${gridStroke}" stroke-width="1"/>`
+            );
+            parts.push(
+                `<text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="${muted}">${Math.round(pct)}%</text>`
+            );
+        }
+
+        // Y-axis title
+        const yMid = (yTop + yBot) / 2;
+        parts.push(
+            `<text transform="rotate(-90 ${18} ${yMid})" x="18" y="${yMid}" text-anchor="middle" font-size="11" fill="${muted}">% of max</text>`
+        );
+
+        // Axes frame
+        parts.push(
+            `<line x1="${padL}" y1="${yTop}" x2="${padL}" y2="${yBot}" stroke="${axisStroke}" stroke-width="1.5"/>`
+        );
+        parts.push(
+            `<line x1="${padL}" y1="${yBot}" x2="${W - padR}" y2="${yBot}" stroke="${axisStroke}" stroke-width="1.5"/>`
+        );
+
+        // Calculate X positions
+        const xPositions = [];
+        for (let i = 0; i < n; i++) {
+            xPositions.push(padL + (i * innerW) / (n - 1 || 1));
+        }
+
+        // Draw curves using SVG polylines
+        const drawLine = (vals, color, maxVal) => {
+            if (!vals.some((v) => v > 0)) return '';
+            const points = vals.map((val, i) => {
+                if (!val || val <= 0) return null;
+                const x = xPositions[i];
+                const y = yFor(val, maxVal);
+                return `${x},${y}`;
+            }).filter((p) => p !== null);
+            if (points.length < 2) return '';
+            return `<polyline fill="none" stroke="${color}" stroke-width="3" points="${points.join(' ')}"/>`;
+        };
+
+        const valsTotal = buckets.map((b) => b.totalTokens);
+        const valsAvgTok = buckets.map((b) => (b.avgTokens != null && b.avgTokens > 0 ? b.avgTokens : NaN));
+        const valsAvgDur = buckets.map((b) => (b.avgDurationMs != null && b.avgDurationMs > 0 ? b.avgDurationMs : NaN));
+
+        parts.push(drawLine(valsTotal, colTotal, maxTotal));
+        parts.push(drawLine(valsAvgTok, colAvgTok, maxAvgTok));
+        parts.push(drawLine(valsAvgDur, colAvgDur, maxAvgDur));
+
+        // Data points with tooltips
+        const drawPoints = (vals, color, formatter, maxVal, tooltipFn) => {
+            return vals.map((val, i) => {
+                if (!val || val <= 0) return '';
+                const x = xPositions[i];
+                const y = yFor(val, maxVal);
+                return `<circle cx="${x}" cy="${y}" r="4" fill="${color}"><title>${tooltipFn({ ...buckets[i], avgDurationMs: buckets[i].avgDurationMs || 0 })}</title></circle>`;
+            }).join('');
+        };
+
+        parts.push(drawPoints(valsTotal, colTotal, fmtTok, maxTotal, (b) => tipTotal(b)));
+        parts.push(drawPoints(valsAvgTok, colAvgTok, fmtTok, maxAvgTok, (b) => tipAvgTok(b)));
+        parts.push(drawPoints(valsAvgDur, colAvgDur, fmtDur, maxAvgDur, (b) => tipAvgDur(b)));
+
+        // X-axis labels
+        const labelY = yBot + 18;
+        for (let i = 0; i < n; i++) {
+            const cx = xPositions[i];
+            const lab = esc(buckets[i].label);
+            parts.push(
+                `<text transform="rotate(-32 ${cx} ${labelY})" x="${cx}" y="${labelY}" text-anchor="end" font-size="10" fill="${muted}">${lab}</text>`
+            );
+        }
+
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.innerHTML = parts.join('');
+    }
+
     confirmClearKiStats() {
         const msg = this._i18nKiStatsClearConfirm || 'Clear all statistics?';
         if (typeof window !== 'undefined' && window.confirm && !window.confirm(msg)) {
@@ -6021,6 +6242,24 @@ class App {
         if (typeof KiStats !== 'undefined' && KiStats.clear) {
             KiStats.clear();
         }
+        this.refreshKiStatsPanel();
+    }
+
+    switchKiStatsPeriod(btn) {
+        const period = btn.getAttribute('data-period');
+        if (!period) return;
+        
+        // Update active button state
+        const allPeriodBtns = document.querySelectorAll('.btn-period');
+        if (allPeriodBtns) {
+            allPeriodBtns.forEach((b) => b.classList.remove('btn-period-active'));
+        }
+        btn.classList.add('btn-period-active');
+        
+        // Store period
+        this._kiStatsPeriod = period;
+        
+        // Refresh chart
         this.refreshKiStatsPanel();
     }
 

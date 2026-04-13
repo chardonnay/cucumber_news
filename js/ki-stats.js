@@ -298,6 +298,83 @@ class KiStats {
         }
         return key;
     }
+
+    /**
+     * Chart buckets für die neue Diagramm-Darstellung mit drei Kurven:
+     * - Gesamttokens (totalTokens)
+     * - Durchschnittliche Tokens pro Artikel (avgTokens)
+     * - Durchschnittliche Verarbeitungszeit (avgDurationMs)
+     * 
+     * @param {'day'|'month'|'year'} resolution
+     * @param {string} [locale]
+     * @returns {KiStatsChartBucket[]}
+     */
+    static getChartBucketsThreeLines(resolution, locale) {
+        const loc = locale && String(locale).trim() ? String(locale) : 'de-DE';
+        const entries = KiStats.loadEntries().filter((e) => e && typeof e.t === 'number');
+        
+        if (resolution !== 'day' && resolution !== 'month' && resolution !== 'year') {
+            return [];
+        }
+
+        /** @type {Map<string, { summaryCount: number, tokenSum: number, tokenCount: number, durationSum: number }>} */
+        const perBucket = new Map();
+        
+        for (const e of entries) {
+            if (!e.durationMs || e.durationMs <= 0) continue;
+            
+            const d = new Date(e.t);
+            let bucketKey = '';
+            
+            if (resolution === 'year') {
+                bucketKey = String(d.getFullYear());
+            } else if (resolution === 'month') {
+                bucketKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            } else {
+                // day
+                bucketKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+            
+            let agg = perBucket.get(bucketKey);
+            if (!agg) {
+                agg = { summaryCount: 0, tokenSum: 0, tokenCount: 0, durationSum: 0 };
+                perBucket.set(bucketKey, agg);
+            }
+            
+            agg.summaryCount += 1;
+            const tt = e.totalTokens;
+            if (typeof tt === 'number' && tt > 0) {
+                agg.tokenSum += tt;
+                agg.tokenCount += 1;
+            }
+            agg.durationSum += e.durationMs;
+        }
+
+        let keys = [...perBucket.keys()].sort();
+        const maxB = KiStats._maxBuckets(resolution);
+        if (keys.length > maxB) {
+            keys = keys.slice(-maxB);
+        }
+
+        return keys.map((key) => {
+            const agg = perBucket.get(key);
+            const tokenSamples = agg ? agg.tokenCount : 0;
+            const totalTokens = agg ? agg.tokenSum : 0;
+            const avgTokens =
+                agg && agg.tokenCount > 0 ? Math.round(agg.tokenSum / agg.tokenCount) : null;
+            const avgDurationMs =
+                agg && agg.summaryCount > 0 ? Math.round(agg.durationSum / agg.summaryCount) : null;
+            return {
+                key,
+                label: KiStats._formatBucketLabel(key, resolution, loc),
+                avgTokens,
+                totalTokens,
+                tokenSamples,
+                summaryCount: agg ? agg.summaryCount : 0,
+                avgDurationMs
+            };
+        });
+    }
 }
 
 window.KiStats = KiStats;
