@@ -432,9 +432,9 @@
             align-items: center;
         }
 
-        /* Main Container */
+        /* Main Container — wide enough so the news grid can grow to 5+ columns when space allows */
         .container {
-            max-width: 1400px;
+            max-width: min(100%, 120rem);
             margin: 0 auto;
             padding: clamp(1.5rem, 4vw, 5rem) 2rem;
             display: grid;
@@ -741,7 +741,7 @@
             color: var(--text-secondary);
         }
 
-        /* News Grid — column count follows viewport (min card width) */
+        /* News Grid — column count follows container width (auto-fill + min track width) */
         .news-grid {
             display: grid;
             gap: 1.5rem;
