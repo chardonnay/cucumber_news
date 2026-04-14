@@ -9,7 +9,7 @@ Serve the dashboard and proxy LM Studio REST in one process (recommended local s
 
 When you open the app from this server (e.g. http://127.0.0.1:8080/index.html) and enable
 in KI settings: REST mode + "REST via same page origin", the browser sends POST /api/v1/chat
-and GET /v1/models to the **same** origin — **no CORS preflight (OPTIONS)** is sent to LM Studio, so LM Studio
+and GET /api/v1/models (and GET /v1/models as fallback) to the **same** origin — **no CORS preflight (OPTIONS)** is sent to LM Studio, so LM Studio
 will not log: Unexpected endpoint or method. (OPTIONS /api/v1/chat).
 
 The proxy to LM Studio runs server-side (Python → http://127.0.0.1:1234), so no browser CORS.
@@ -1776,6 +1776,37 @@ def send_lm_upstream_error(
     handler.wfile.write(body)
 
 
+def proxy_lm_models_get(
+    handler: SimpleHTTPRequestHandler, lm_target: str, upstream_path: str
+) -> None:
+    """Forward GET for LM Studio model list (/v1/models or /api/v1/models)."""
+    conn = connect_upstream(lm_target)
+    try:
+        hdrs = {"User-Agent": FETCH_UA, "Accept": "application/json"}
+        auth = handler.headers.get("Authorization")
+        if auth:
+            hdrs["Authorization"] = auth
+        ng = handler.headers.get("ngrok-skip-browser-warning")
+        if ng:
+            hdrs["ngrok-skip-browser-warning"] = ng
+        conn.request("GET", upstream_path, headers=hdrs)
+        resp = conn.getresponse()
+        resp_body = resp.read()
+        handler.send_response(resp.status)
+        cors_headers(handler)
+        for key, val in resp.getheaders():
+            lk = key.lower()
+            if lk in ("content-type", "content-length", "transfer-encoding"):
+                handler.send_header(key, val)
+        handler.end_headers()
+        handler.wfile.write(resp_body)
+    except (OSError, http.client.HTTPException) as e:
+        print(f"[lm-proxy] GET {upstream_path} → {lm_target}: {e}", file=sys.stderr)
+        send_lm_upstream_error(handler, lm_target, e)
+    finally:
+        conn.close()
+
+
 def make_handler(lm_target: str) -> type:
     class DevHandler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -2092,37 +2123,16 @@ def make_handler(lm_target: str) -> type:
                 self.wfile.write(body)
                 return
             if path_only == "/v1/models":
-                conn = connect_upstream(lm_target)
-                try:
-                    hdrs = {"User-Agent": FETCH_UA, "Accept": "application/json"}
-                    auth = self.headers.get("Authorization")
-                    if auth:
-                        hdrs["Authorization"] = auth
-                    ng = self.headers.get("ngrok-skip-browser-warning")
-                    if ng:
-                        hdrs["ngrok-skip-browser-warning"] = ng
-                    conn.request("GET", "/v1/models", headers=hdrs)
-                    resp = conn.getresponse()
-                    resp_body = resp.read()
-                    self.send_response(resp.status)
-                    cors_headers(self)
-                    for key, val in resp.getheaders():
-                        lk = key.lower()
-                        if lk in ("content-type", "content-length", "transfer-encoding"):
-                            self.send_header(key, val)
-                    self.end_headers()
-                    self.wfile.write(resp_body)
-                except (OSError, http.client.HTTPException) as e:
-                    print(f"[lm-proxy] GET /v1/models → {lm_target}: {e}", file=sys.stderr)
-                    send_lm_upstream_error(self, lm_target, e)
-                finally:
-                    conn.close()
+                proxy_lm_models_get(self, lm_target, "/v1/models")
+                return
+            if path_only == "/api/v1/models":
+                proxy_lm_models_get(self, lm_target, "/api/v1/models")
                 return
             super().do_GET()
 
         def do_OPTIONS(self) -> None:
             path_only = self.path.split("?", 1)[0]
-            if path_only in ("/api/v1/chat", "/v1/models"):
+            if path_only in ("/api/v1/chat", "/v1/models", "/api/v1/models"):
                 self.send_response(204)
                 cors_headers(self)
                 self.end_headers()
@@ -2191,7 +2201,8 @@ def main() -> int:
         f"Serving project from: {ROOT}\n"
         f"Open: {url}/index.html\n"
         f"POST /api/v1/chat → {lm_target}/api/v1/chat\n"
-        f"GET /v1/models → {lm_target}/v1/models (model list for same-origin KI)\n"
+        f"GET /api/v1/models → {lm_target}/api/v1/models (native list incl. loaded state)\n"
+        f"GET /v1/models → {lm_target}/v1/models (OpenAI-style fallback)\n"
         f"GET /api/heise-comments?url=… → Heise or Telepolis article + forum comment stats (server-side fetch)\n"
         f"GET /api/heise-feed?url=… → Heise Atom/RSS (CORS proxy; url must be https://www.heise.de/…/*.xml)\n"
         f"GET /api/telepolis-feed → Telepolis news-atom.xml (CORS proxy)\n"

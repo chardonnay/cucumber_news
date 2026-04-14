@@ -118,6 +118,8 @@ class KiStats {
             completionTokens:
                 usage && typeof usage.completionTokens === 'number' ? usage.completionTokens : undefined
         };
+
+        // Robust localStorage handling with fallback strategy
         try {
             const raw = localStorage.getItem(KI_STATS_STORAGE_KEY);
             let list = [];
@@ -125,15 +127,39 @@ class KiStats {
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed)) {
                     list = parsed;
+                } else {
+                    console.warn('KiStats: Invalid stored format, starting fresh');
+                    list = [];
                 }
             }
             list.push(entry);
+            
+            // Safety limit to prevent localStorage overflow
             if (list.length > KI_STATS_MAX_ENTRIES) {
                 list = list.slice(-KI_STATS_MAX_ENTRIES);
             }
-            localStorage.setItem(KI_STATS_STORAGE_KEY, JSON.stringify(list));
+
+            const serialized = JSON.stringify(list);
+            try {
+                localStorage.setItem(KI_STATS_STORAGE_KEY, serialized);
+            } catch (storageError) {
+                // Fallback: In-memory cache if localStorage fails (private mode/full disk)
+                console.warn('KiStats: localStorage write failed, using memory fallback');
+                if (!KiStats._memoryFallback) {
+                    KiStats._memoryFallback = [];
+                }
+                KiStats._memoryFallback.push(entry);
+                if (KiStats._memoryFallback.length > KI_STATS_MAX_ENTRIES) {
+                    KiStats._memoryFallback = KiStats._memoryFallback.slice(-KI_STATS_MAX_ENTRIES);
+                }
+            }
         } catch (e) {
             console.warn('KiStats: persist failed', e);
+            // Memory fallback as last resort
+            if (!KiStats._memoryFallback) {
+                KiStats._memoryFallback = [];
+            }
+            KiStats._memoryFallback.push(entry);
         }
     }
 
@@ -143,7 +169,14 @@ class KiStats {
         } catch (e) {
             console.warn('KiStats: clear failed', e);
         }
+        // Also clear memory fallback
+        if (KiStats._memoryFallback) {
+            KiStats._memoryFallback = [];
+        }
     }
+
+    /** In-memory fallback when localStorage unavailable */
+    static _memoryFallback = null;
 
     /**
      * @returns {KiStatsEntry[]}
@@ -152,11 +185,28 @@ class KiStats {
         try {
             const raw = localStorage.getItem(KI_STATS_STORAGE_KEY);
             if (!raw) {
+                // Fall back to memory cache if localStorage unavailable
+                if (KiStats._memoryFallback && Array.isArray(KiStats._memoryFallback)) {
+                    return KiStats._memoryFallback;
+                }
                 return [];
             }
             const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? /** @type {KiStatsEntry[]} */ (parsed) : [];
+            if (Array.isArray(parsed)) {
+                return /** @type {KiStatsEntry[]} */ (parsed);
+            } else {
+                console.warn('KiStats: Invalid stored format');
+                // Fall back to memory cache
+                if (KiStats._memoryFallback && Array.isArray(KiStats._memoryFallback)) {
+                    return KiStats._memoryFallback;
+                }
+                return [];
+            }
         } catch {
+            // Fall back to memory cache
+            if (KiStats._memoryFallback && Array.isArray(KiStats._memoryFallback)) {
+                return KiStats._memoryFallback;
+            }
             return [];
         }
     }

@@ -90,6 +90,12 @@ class App {
         /** Article IDs that appeared since the previous fetch (cleared after 3s hover or highlight removal). */
         this._newArticleIds = new Set();
 
+        // Performance optimization: Filter cache to avoid O(n²) re-filtering
+        /** @type {Map<string, object[]>} Cache key: "categories|sortMode|dateFilter" */
+        this._filterCache = new Map();
+        /** Timestamp when cache was invalidated (newsItems change) */
+        this._filterCacheValidUntil = 0;
+
         /** Background KI run for new articles after refresh (avoid overlap with „Alle Zusammenfassungen“). */
         this._autoSummarizeNewInProgress = false;
         /** @type {Map<string, {isFavorite?: boolean, isHidden?: boolean}>} */
@@ -142,6 +148,7 @@ class App {
             reasoningEnabledCheckbox: document.getElementById('reasoningEnabledCheckbox'),
             alternativeLinksCount: document.getElementById('alternativeLinksCount'),
             alternativeLinksDisplayMode: document.getElementById('alternativeLinksDisplayMode'),
+            forumEntriesDiscoveryMode: document.getElementById('forumEntriesDiscoveryMode'),
             alternativeLinksBlacklist: document.getElementById('alternativeLinksBlacklist'),
             webSearchEngine: document.getElementById('webSearchEngine'),
             cancelSettings: document.getElementById('cancelSettings'),
@@ -621,78 +628,141 @@ class App {
             this.elements.newsSourceSelect.addEventListener('change', () => void this.onNewsSourceChange());
         }
 
-        // YouTube button handler for all cards
-        document.addEventListener('click', (e) => {
-            const btn = e.target.closest('.youtube-toggle');
-            if (!btn) return;
-            e.preventDefault();
-            const rawUrl = btn.getAttribute('data-url') || '';
-            let url = '';
-            try {
-                url = decodeURIComponent(rawUrl).trim();
-            } catch (_) {
-                url = rawUrl.trim();
-            }
-            if (!url) return;
+        // Event delegation on newsGrid for all card buttons (replaces multiple document listeners)
+        // Note: newsGrid may not exist yet at init time, so we set listener dynamically after render
+        this._newsCardClickHandler = (e) => {
+            const target = e.target;
 
-            // Resolve article metadata
-            const card = e.target.closest('.news-card');
-            const cardId = card ? card.dataset.id : '';
-            let item;
-            if (cardId) {
-                item = this.newsItems.find((n) => n && n.id === cardId);
-                if (!item) item = this.filteredNewsItems.find((n) => n && n.id === cardId);
-            }
-            if (!item) {
-                const normUrl = App.normalizeNewsUrl(url);
-                if (normUrl) {
-                    item = [...this.newsItems, ...this.filteredNewsItems].find((n) => {
-                        const nu = App.normalizeNewsUrl(n.url || n.link || '');
-                        return nu === normUrl;
-                    });
+            // YouTube button
+            const youtubeBtn = target.closest('.youtube-toggle');
+            if (youtubeBtn) {
+                e.preventDefault();
+                const rawUrl = youtubeBtn.getAttribute('data-url') || '';
+                let url = '';
+                try {
+                    url = decodeURIComponent(rawUrl).trim();
+                } catch (_) {
+                    url = rawUrl.trim();
                 }
+                if (!url) return;
+
+                // Resolve article metadata
+                const card = target.closest('.news-card');
+                const cardId = card ? card.dataset.id : '';
+                let item;
+                if (cardId) {
+                    item = this.newsItems.find((n) => n && n.id === cardId);
+                    if (!item) item = this.filteredNewsItems.find((n) => n && n.id === cardId);
+                }
+                if (!item) {
+                    const normUrl = App.normalizeNewsUrl(url);
+                    if (normUrl) {
+                        item = [...this.newsItems, ...this.filteredNewsItems].find((n) => {
+                            const nu = App.normalizeNewsUrl(n.url || n.link || '');
+                            return nu === normUrl;
+                        });
+                    }
+                }
+
+                const ctx = { url: item?.url || url, title: item?.title || '', description: item?.description || '' };
+                void this.openYoutubeModalForArticle(ctx);
+                return;
             }
 
-            const ctx = { url: item?.url || url, title: item?.title || '', description: item?.description || '' };
-            void this.openYoutubeModalForArticle(ctx);
-        });
+            // Web search button
+            const webSearchBtn = target.closest('.article-web-search-btn');
+            if (webSearchBtn) {
+                e.preventDefault();
+                const card = webSearchBtn.closest('.news-card');
+                const cardId = card && card.dataset ? card.dataset.id : '';
+                if (!cardId) return;
+                const item = this.resolveNewsItemForSummary(cardId, '');
+                const title = (item && item.title ? String(item.title) : '').trim();
+                if (!title) {
+                    this.showStatus('Kein Artikeltitel für die Websuche.', true);
+                    return;
+                }
+                const surl = App.buildWebSearchUrl(title, this.getWebSearchEngine());
+                if (surl) {
+                    window.open(surl, '_blank', 'noopener,noreferrer');
+                }
+                return;
+            }
 
-        document.addEventListener('click', (e) => {
-            const wbtn = e.target.closest('.article-web-search-btn');
-            if (!wbtn) {
+            // Reddit search button
+            const redditBtn = target.closest('.article-reddit-search-btn');
+            if (redditBtn) {
+                e.preventDefault();
+                const card = redditBtn.closest('.news-card');
+                const cardId = card && card.dataset ? card.dataset.id : '';
+                if (!cardId) return;
+                void this.searchRedditForArticle(cardId, redditBtn);
                 return;
             }
-            e.preventDefault();
-            const card = wbtn.closest('.news-card');
-            const cardId = card && card.dataset ? card.dataset.id : '';
-            if (!cardId) {
-                return;
-            }
-            const item = this.resolveNewsItemForSummary(cardId, '');
-            const title = (item && item.title ? String(item.title) : '').trim();
-            if (!title) {
-                this.showStatus('Kein Artikeltitel für die Websuche.', true);
-                return;
-            }
-            const surl = App.buildWebSearchUrl(title, this.getWebSearchEngine());
-            if (surl) {
-                window.open(surl, '_blank', 'noopener,noreferrer');
-            }
-        });
 
-        document.addEventListener('click', (e) => {
-            const rbtn = e.target.closest('.article-reddit-search-btn');
-            if (!rbtn) {
+            // Alternative links refresh button
+            const altLinksRefreshBtn = target.closest('.summary-alt-links-refresh-btn');
+            if (altLinksRefreshBtn) {
+                e.preventDefault();
+                const summaryDiv = altLinksRefreshBtn.closest('.news-summary');
+                if (summaryDiv) {
+                    void this.refreshAlternativeLinksForCard(summaryDiv, altLinksRefreshBtn);
+                }
                 return;
             }
-            e.preventDefault();
-            const card = rbtn.closest('.news-card');
-            const cardId = card && card.dataset ? card.dataset.id : '';
-            if (!cardId) {
+
+            // Alternative links toggle button
+            const altLinksToggleBtn = target.closest('.summary-alt-links-toggle-btn');
+            if (altLinksToggleBtn) {
+                e.preventDefault();
+                const summaryDiv = altLinksToggleBtn.closest('.news-summary');
+                const list = summaryDiv ? summaryDiv.querySelector('.summary-alt-links-list') : null;
+                if (!list || list.hidden === undefined) return;
+                const exp = altLinksToggleBtn.getAttribute('aria-expanded') === 'true';
+                const nextExpanded = !exp;
+                altLinksToggleBtn.setAttribute('aria-expanded', String(nextExpanded));
+                list.hidden = !nextExpanded;
+                altLinksToggleBtn.textContent = nextExpanded ? '▲' : '▼';
+                altLinksToggleBtn.title = nextExpanded ? this._i18nAltLinksBtnHide : this._i18nAltLinksBtnShow;
+                altLinksToggleBtn.setAttribute('aria-label', nextExpanded ? this._i18nAltLinksBtnHide : this._i18nAltLinksBtnShow);
                 return;
             }
-            void this.searchRedditForArticle(cardId, rbtn);
-        });
+
+            // Favorite button
+            const favoriteBtn = target.closest('.article-favorite-btn');
+            if (favoriteBtn && !target.classList.contains('summary-toggle')) {
+                void this.toggleFavorite(e);
+                return;
+            }
+
+            // Hide button
+            const hideBtn = target.closest('.article-hide-btn');
+            if (hideBtn) {
+                void this.toggleHidden(e);
+                return;
+            }
+
+            // Summary toggle button
+            const summaryToggleBtn = target.closest('.summary-toggle');
+            if (summaryToggleBtn) {
+                e.preventDefault();
+                this.toggleSummary(e);
+                return;
+            }
+
+            // Summary refresh button
+            const summaryRefreshBtn = target.closest('.summary-refresh-btn');
+            if (summaryRefreshBtn) {
+                e.preventDefault();
+                this.refreshSummary(e);
+                return;
+            }
+        };
+
+        // Set event listener on newsGrid when it exists (already assigned to this._newsCardClickHandler above)
+        if (this.elements.newsGrid && this._newsCardClickHandler) {
+            this.elements.newsGrid.addEventListener('click', this._newsCardClickHandler);
+        }
 
         // Modal close on overlay click
         this.elements.settingsModal.addEventListener('click', (e) => {
@@ -730,35 +800,6 @@ class App {
         });
 
         // YouTube modal: close on overlay click and on "Close" button
-        document.addEventListener('click', (e) => {
-            const refreshBtn = e.target.closest('.summary-alt-links-refresh-btn');
-            if (refreshBtn) {
-                e.preventDefault();
-                const summaryDiv = refreshBtn.closest('.news-summary');
-                if (summaryDiv) {
-                    void this.refreshAlternativeLinksForCard(summaryDiv, refreshBtn);
-                }
-                return;
-            }
-            const altBtn = e.target.closest('.summary-alt-links-toggle-btn');
-            if (!altBtn) {
-                return;
-            }
-            e.preventDefault();
-            const summaryDiv = altBtn.closest('.news-summary');
-            const list = summaryDiv ? summaryDiv.querySelector('.summary-alt-links-list') : null;
-            if (!list || list.hidden === undefined) {
-                return;
-            }
-            const exp = altBtn.getAttribute('aria-expanded') === 'true';
-            const nextExpanded = !exp;
-            altBtn.setAttribute('aria-expanded', String(nextExpanded));
-            list.hidden = !nextExpanded;
-            altBtn.textContent = nextExpanded ? '▲' : '▼';
-            altBtn.title = nextExpanded ? this._i18nAltLinksBtnHide : this._i18nAltLinksBtnShow;
-            altBtn.setAttribute('aria-label', nextExpanded ? this._i18nAltLinksBtnHide : this._i18nAltLinksBtnShow);
-        });
-
         if (this.elements.youtubeModal) {
             this.elements.youtubeModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.youtubeModal) {
@@ -1321,6 +1362,9 @@ class App {
             const alternativeLinksDisplayMode = App.normalizeAlternativeLinksDisplayMode(
                 settings.alternativeLinksDisplayMode
             );
+            const forumEntriesDiscoveryMode = App.normalizeForumEntriesDiscoveryMode(
+                settings.forumEntriesDiscoveryMode
+            );
             const alternativeLinksDomainBlacklist = App.normalizeAlternativeLinksDomainBlacklist(
                 settings.alternativeLinksDomainBlacklist
             );
@@ -1355,6 +1399,7 @@ class App {
                 reasoning: reasoningStored,
                 alternativeLinksCount,
                 alternativeLinksDisplayMode,
+                forumEntriesDiscoveryMode,
                 alternativeLinksDomainBlacklist,
                 webSearchEngine,
                 articleTranslationEnabled,
@@ -1371,6 +1416,7 @@ class App {
                 localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabledOrdered));
                 localStorage.setItem('heise_summary_lang_mode', summaryLangMode);
                 localStorage.setItem('heise_alternative_links_blacklist', alternativeLinksDomainBlacklist);
+                localStorage.setItem('heise_forum_entries_discovery_mode', forumEntriesDiscoveryMode);
                 localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(enabledHeiseMagazines));
             } catch (_) {
                 /* ignore */
@@ -1496,6 +1542,7 @@ class App {
                 localStorage.setItem('heise_alternative_links_count', String(alternativeLinksCount));
                 localStorage.setItem('heise_web_search_engine', webSearchEngine);
                 localStorage.setItem('heise_alternative_links_display_mode', alternativeLinksDisplayMode);
+                localStorage.setItem('heise_forum_entries_discovery_mode', forumEntriesDiscoveryMode);
             } catch (_) {
                 /* ignore */
             }
@@ -1729,6 +1776,12 @@ class App {
     static normalizeAlternativeLinksDisplayMode(raw) {
         const s = String(raw || 'expanded').trim().toLowerCase();
         return s === 'collapsed' ? 'collapsed' : 'expanded';
+    }
+
+    /** @param {unknown} raw */
+    static normalizeForumEntriesDiscoveryMode(raw) {
+        const s = String(raw || 'click').trim().toLowerCase();
+        return s === 'always' ? 'always' : 'click';
     }
 
     /**
@@ -2537,6 +2590,12 @@ class App {
                 if (ki.model_file_sameorigin_error) {
                     this._i18nLmModelFileError = ki.model_file_sameorigin_error;
                 }
+                if (ki.model_loaded_status) {
+                    this._i18nLmModelLoadedStatusLine = ki.model_loaded_status;
+                }
+                if (ki.model_loaded_status_none) {
+                    this._i18nLmModelLoadedStatusNone = ki.model_loaded_status_none;
+                }
                 const lmhIdle = document.getElementById('lmModelHint');
                 if (lmhIdle && ki.model_hint_default) {
                     lmhIdle.textContent = ki.model_hint_default;
@@ -2690,6 +2749,29 @@ class App {
                     }
                     if (oC) {
                         oC.textContent = ki.alternative_links_display_collapsed;
+                    }
+                }
+                const fdl = document.getElementById('forumEntriesDiscoveryModeLabel');
+                if (fdl && ki.forum_entries_discovery_label) {
+                    fdl.textContent = ki.forum_entries_discovery_label;
+                }
+                const fdh = document.getElementById('forumEntriesDiscoveryModeHint');
+                if (fdh && ki.forum_entries_discovery_hint) {
+                    fdh.textContent = ki.forum_entries_discovery_hint;
+                }
+                const fdSel = document.getElementById('forumEntriesDiscoveryMode');
+                if (
+                    fdSel &&
+                    ki.forum_entries_discovery_click &&
+                    ki.forum_entries_discovery_always
+                ) {
+                    const oClick = fdSel.querySelector('option[value="click"]');
+                    const oAlways = fdSel.querySelector('option[value="always"]');
+                    if (oClick) {
+                        oClick.textContent = ki.forum_entries_discovery_click;
+                    }
+                    if (oAlways) {
+                        oAlways.textContent = ki.forum_entries_discovery_always;
                     }
                 }
                 const rll = document.querySelector('label[for="reasoningSelect"]');
@@ -3174,13 +3256,6 @@ class App {
         if (!this.settings || this.settings.articleTranslationEnabled !== true) {
             return;
         }
-        if (this._articleInPlaceTranslationDebounce) {
-            window.clearTimeout(this._articleInPlaceTranslationDebounce);
-        }
-        this._articleInPlaceTranslationDebounce = window.setTimeout(() => {
-            this._articleInPlaceTranslationDebounce = 0;
-            void this.runArticleInPlaceTranslationJob();
-        }, 550);
     }
 
     async runArticleInPlaceTranslationJob() {
@@ -3548,6 +3623,21 @@ class App {
         const src = this.normalizeNewsSource(this.settings?.newsSource);
         const mode = this.sortMode || 'recency';
 
+        // Performance optimization: Use cached filter results if valid
+        const cacheKey = this._buildFilterCacheKey(src, mode);
+        
+        // Invalidate cache when newsItems changed significantly (generation check)
+        const now = Date.now();
+        if (now > this._filterCacheValidUntil && this._newsFetchGeneration > 0) {
+            this._filterCache.clear();
+            this._filterCacheValidUntil = now + 5000; // Cache valid for 5 seconds after fetch
+        }
+
+        const cached = this._filterCache.get(cacheKey);
+        if (cached && Array.isArray(cached)) {
+            return cached;
+        }
+
         const basePass = (item) => {
             if (mode === 'hidden_only') {
                 return item.isHidden === true;
@@ -3560,22 +3650,39 @@ class App {
 
         const base = this.newsItems.filter((item) => basePass(item));
 
+        let result;
         if (src === 'telepolis') {
             if (!this.selectedCategories.includes('telepolis')) {
-                return [];
+                result = [];
+            } else {
+                const tp = App.telepolisFeedCategorySet();
+                result = base.filter((item) => tp.has(String(item.category || '')));
             }
-            const tp = App.telepolisFeedCategorySet();
-            return base.filter((item) => tp.has(String(item.category || '')));
-        }
-
-        if (src === 'heise' || App.isGenericRubricNewsSource(src)) {
+        } else if (src === 'heise' || App.isGenericRubricNewsSource(src)) {
             if (this.selectedCategories.length === 0) {
-                return [];
+                result = [];
+            } else {
+                // Use Set for O(1) lookup instead of O(n) includes()
+                const catSet = new Set(this.selectedCategories);
+                result = base.filter((item) => catSet.has(item.category));
             }
-            return base.filter((item) => this.selectedCategories.includes(item.category));
+        } else {
+            result = base;
         }
 
-        return base;
+        // Cache the result
+        this._filterCache.set(cacheKey, result);
+        return result;
+    }
+
+    /** @returns {string} Unique cache key for filter state */
+    _buildFilterCacheKey(src, mode) {
+        const cats = this.selectedCategories.sort().join('|');
+        const dateFilter = 
+            mode === 'date_day' ? `day:${this.sortDateSingle}` :
+            mode === 'date_range' ? `range:${this.sortDateFrom}|${this.sortDateTo}` :
+            '';
+        return `${src}|${cats}|${mode}|${dateFilter}`;
     }
 
     /** @param {'total'|'green'|'red'} key */
@@ -4033,18 +4140,11 @@ class App {
             this.elements.newsGrid.innerHTML = html;
         }
 
-        this.elements.newsGrid.querySelectorAll('.summary-toggle').forEach((btn) => {
-            btn.addEventListener('click', (e) => this.toggleSummary(e));
-        });
-        this.elements.newsGrid.querySelectorAll('.article-favorite-btn').forEach((btn) => {
-            btn.addEventListener('click', (e) => void this.toggleFavorite(e));
-        });
-        this.elements.newsGrid.querySelectorAll('.article-hide-btn').forEach((btn) => {
-            btn.addEventListener('click', (e) => void this.toggleHidden(e));
-        });
-        this.elements.newsGrid.querySelectorAll('.summary-refresh-btn').forEach((btn) => {
-            btn.addEventListener('click', (e) => this.refreshSummary(e));
-        });
+        // Attach event delegation handler for all card buttons
+        if (this._newsCardClickHandler && this.elements.newsGrid) {
+            this.elements.newsGrid.addEventListener('click', this._newsCardClickHandler);
+            this._newsCardClickHandler = null; // Handler now attached
+        }
 
         try {
             await this.hydrateCachedSummariesForItems(items);
@@ -4274,7 +4374,8 @@ class App {
     }
 
     async toggleFavorite(event) {
-        const btn = event.currentTarget;
+        // Delegation on #newsGrid: currentTarget is the grid, not the button — resolve via closest
+        const btn = event.target?.closest('.article-favorite-btn');
         const card = btn ? btn.closest('.news-card') : null;
         const cardId = card && card.dataset ? card.dataset.id : '';
         if (!cardId) {
@@ -4292,7 +4393,8 @@ class App {
     }
 
     async toggleHidden(event) {
-        const btn = event.currentTarget;
+        // Delegation on #newsGrid: currentTarget is the grid, not the button — resolve via closest
+        const btn = event.target?.closest('.article-hide-btn');
         const card = btn ? btn.closest('.news-card') : null;
         const cardId = card && card.dataset ? card.dataset.id : '';
         if (!cardId) {
@@ -4491,6 +4593,171 @@ class App {
     }
 
     /**
+     * Build a short Reddit search query from an AI summary.
+     * Falls back to title when summary is unusable.
+     * @param {string} summaryText
+     * @param {string} title
+     * @returns {string}
+     */
+    buildRedditSearchQueryFromSummary(summaryText, title) {
+        const fallback = String(title || '').trim();
+        const raw = String(summaryText || '').trim();
+        if (!raw) {
+            return fallback;
+        }
+
+        // Remove common list prefixes / markdown noise and collapse whitespace.
+        const cleaned = raw
+            .replace(/[`*_>#]/g, ' ')
+            .replace(/^\s*[-*•]+\s*/gm, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!cleaned) {
+            return fallback;
+        }
+
+        // Prefer first meaningful sentence.
+        const sentence = cleaned
+            .split(/[.!?]\s+/)
+            .map((s) => s.trim())
+            .find((s) => s.length >= 24) || cleaned;
+
+        // Keep query concise for better Reddit relevance.
+        const short = sentence.length > 170 ? `${sentence.slice(0, 167).trim()}…` : sentence;
+        return short || fallback;
+    }
+
+    /**
+     * Resolve best Reddit query: prefer AI summary (visible/cached), fallback to title.
+     * @param {object | undefined} item
+     * @param {HTMLElement} summaryDiv
+     * @returns {Promise<string>}
+     */
+    async resolveRedditQuery(item, summaryDiv) {
+        const title = item && item.title ? String(item.title).trim() : '';
+        const visibleSummary = summaryDiv
+            ? String(summaryDiv.querySelector('.summary-content')?.textContent || '').trim()
+            : '';
+        if (visibleSummary) {
+            return this.buildRedditSearchQueryFromSummary(visibleSummary, title);
+        }
+
+        const url = App.articlePrimaryUrl(item);
+        if (!url || !this.summarizer) {
+            return title;
+        }
+        try {
+            const cached = await this.summarizer.getCachedSummaryForDisplay(url);
+            const txt =
+                cached && typeof cached.summary === 'string' ? String(cached.summary).trim() : '';
+            return this.buildRedditSearchQueryFromSummary(txt, title);
+        } catch (_) {
+            return title;
+        }
+    }
+
+    /**
+     * Whether forum entries should be auto-generated under article sources.
+     * @returns {boolean}
+     */
+    shouldAutoGenerateForumEntries() {
+        const mode = App.normalizeForumEntriesDiscoveryMode(
+            this.settings?.forumEntriesDiscoveryMode
+        );
+        return mode === 'always';
+    }
+
+    /**
+     * Parse keep-indices JSON from KI text, supports fenced code blocks.
+     * @param {string} raw
+     * @returns {number[]}
+     */
+    parseRedditKeepIndicesFromAi(raw) {
+        const text = String(raw || '').trim();
+        if (!text) {
+            return [];
+        }
+        const candidates = [];
+        candidates.push(text);
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced && fenced[1]) {
+            candidates.push(fenced[1].trim());
+        }
+        const objMatch = text.match(/\{[\s\S]*\}/);
+        if (objMatch && objMatch[0]) {
+            candidates.push(objMatch[0].trim());
+        }
+        for (const c of candidates) {
+            try {
+                const parsed = JSON.parse(c);
+                if (parsed && Array.isArray(parsed.keep)) {
+                    return parsed.keep
+                        .map((x) => Number(x))
+                        .filter((n) => Number.isInteger(n) && n >= 0);
+                }
+            } catch (_) {
+                /* try next */
+            }
+        }
+        return [];
+    }
+
+    /**
+     * KI filter: keeps only Reddit threads relevant to article topic.
+     * @param {object | undefined} item
+     * @param {HTMLElement} summaryDiv
+     * @param {Array<{ title?: string, url: string }>} threads
+     * @returns {Promise<Array<{ title?: string, url: string }>>}
+     */
+    async filterRedditThreadsByAiRelevance(item, summaryDiv, threads) {
+        if (!this.summarizer || typeof this.summarizer.completePrompt !== 'function') {
+            return threads;
+        }
+        const rows = Array.isArray(threads) ? threads.slice(0, 8) : [];
+        if (rows.length <= 1) {
+            return rows;
+        }
+
+        const title = item && item.title ? String(item.title).trim() : '';
+        const visibleSummary = summaryDiv
+            ? String(summaryDiv.querySelector('.summary-content')?.textContent || '').trim()
+            : '';
+        const articleSummary = visibleSummary.length > 1200 ? `${visibleSummary.slice(0, 1200)}…` : visibleSummary;
+        const threadLines = rows
+            .map((t, i) => `${i}. ${String(t?.title || t?.url || '').trim()} | ${String(t?.url || '').trim()}`)
+            .join('\n');
+
+        const systemPrompt =
+            'You are a strict relevance filter for Reddit results. Return ONLY JSON.';
+        const userPrompt = [
+            'Task: Keep only Reddit threads that are clearly about the same topic as the article.',
+            'Reject vague, loosely related, or different-topic results.',
+            'Return STRICT JSON only: {"keep":[indices]}',
+            '',
+            `Article title: ${title || 'n/a'}`,
+            `Article summary: ${articleSummary || 'n/a'}`,
+            '',
+            'Candidate threads:',
+            threadLines
+        ].join('\n');
+
+        try {
+            const raw = await this.summarizer.completePrompt(systemPrompt, userPrompt);
+            const keep = this.parseRedditKeepIndicesFromAi(raw);
+            if (keep.length === 0) {
+                return [];
+            }
+            const keepSet = new Set(keep);
+            return rows.filter((_, idx) => keepSet.has(idx));
+        } catch (e) {
+            console.warn('filterRedditThreadsByAiRelevance:', e);
+            // Fallback: keep original results if KI filter is unavailable
+            return rows;
+        }
+    }
+    }
+
+    /**
      * @param {string} cardId
      * @param {HTMLElement} [triggerBtn]
      * @returns {Promise<void>}
@@ -4508,6 +4775,11 @@ class App {
         }
         const card = summaryDiv.closest('.news-card');
         const toggleBtn = card ? card.querySelector('.summary-toggle') : null;
+        const query = await this.resolveRedditQuery(item, summaryDiv);
+        if (!query) {
+            this.showStatus(this._i18nRedditNoTitle, true);
+            return;
+        }
 
         const prevLabel = triggerBtn ? triggerBtn.textContent : '';
         if (triggerBtn) {
@@ -4531,7 +4803,7 @@ class App {
                 return;
             }
             const reasoning = this.summarizer ? this.summarizer.getLmReasoningLevel() : 'off';
-            const params = new URLSearchParams({ q: title, limit: '5', ai: '1', reasoning });
+            const params = new URLSearchParams({ q: query, limit: '5', ai: '1', reasoning });
             const r = await fetch(`${origin}/api/reddit-search?${params}`, {
                 method: 'GET',
                 cache: 'no-store',
@@ -4555,7 +4827,13 @@ class App {
                 this.showStatus(this._i18nRedditNone, true);
                 return;
             }
-            this.renderRedditThreadsOnCard(summaryDiv, results);
+            const relevantResults = await this.filterRedditThreadsByAiRelevance(item, summaryDiv, results);
+            if (relevantResults.length === 0) {
+                this.clearSummaryRedditBlock(summaryDiv);
+                this.showStatus(this._i18nRedditNone, true);
+                return;
+            }
+            this.renderRedditThreadsOnCard(summaryDiv, relevantResults);
             const rb = summaryDiv.querySelector('.summary-reddit-block');
             if (!rb || rb.hidden) {
                 this.clearSummaryRedditBlock(summaryDiv);
@@ -4576,10 +4854,10 @@ class App {
             if (aiQueries.length > 0) {
                 const aiTpl = String(this._i18nRedditFoundAi || '{count}');
                 statusMsg = aiTpl
-                    .replace(/\{count\}/g, String(results.length))
+                    .replace(/\{count\}/g, String(relevantResults.length))
                     .replace(/\{queries\}/g, aiQueries.join(', '));
             } else {
-                statusMsg = foundTpl.replace(/\{count\}/g, String(results.length));
+                statusMsg = foundTpl.replace(/\{count\}/g, String(relevantResults.length));
             }
             this.showStatus(statusMsg);
         } catch (e) {
@@ -4801,9 +5079,8 @@ class App {
         }
         const title = item && item.title ? String(item.title).trim() : '';
         const description = item && item.description ? String(item.description).trim() : '';
-        const legacyKey = AISummarizer.normalizeArticleUrlKey(trimmedUrl);
-        const promptUrl =
-            AISummarizer.canonicalSummaryCacheKey(trimmedUrl) || legacyKey || trimmedUrl;
+        // Legacy key removed - canonicalSummaryCacheKey handles both stripping and canonicalization
+        const promptUrl = AISummarizer.canonicalSummaryCacheKey(trimmedUrl) || trimmedUrl;
 
         await this.summarizer._ensureStorageReady();
         let summaryText = '';
@@ -4896,7 +5173,8 @@ class App {
     }
 
     async toggleSummary(event) {
-        const button = event.currentTarget;
+        // Delegation on #newsGrid: currentTarget is the grid, not the button — resolve via closest
+        const button = event.target?.closest('.summary-toggle');
         if (!button || !(button instanceof HTMLElement)) {
             return;
         }
@@ -4997,7 +5275,8 @@ class App {
         event.preventDefault();
         event.stopPropagation();
 
-        const btn = event.currentTarget;
+        // Delegation on #newsGrid: currentTarget is the grid, not the button — resolve via closest
+        const btn = event.target?.closest('.summary-refresh-btn');
         if (!btn || !(btn instanceof HTMLElement)) {
             return;
         }
@@ -5198,6 +5477,14 @@ class App {
                     } else {
                         ok++;
                         this._updateCardSummaryIfVisible(item.id, summary, false);
+                        if (
+                            this.shouldAutoGenerateForumEntries() &&
+                            this._newArticleIds &&
+                            this._newArticleIds.has(item.id)
+                        ) {
+                            // Fire-and-forget: only cards currently in DOM get immediate forum entries.
+                            void this.searchRedditForArticle(item.id);
+                        }
                     }
                 } catch (error) {
                     console.error('autoSummarizeAfterRefresh:', item.url, error);
@@ -5759,6 +6046,24 @@ class App {
             savedModel = String(this.settings.lmModel).trim();
         }
         const hintEl = document.getElementById('lmModelHint');
+        const statusEl = document.getElementById('lmModelLoadedStatus');
+        const hideLmLoadedStatus = () => {
+            if (!statusEl) {
+                return;
+            }
+            statusEl.textContent = '';
+            statusEl.style.display = 'none';
+            statusEl.setAttribute('aria-hidden', 'true');
+        };
+        const showLmLoadedStatus = (text) => {
+            if (!statusEl) {
+                return;
+            }
+            statusEl.textContent = text;
+            statusEl.style.display = '';
+            statusEl.removeAttribute('aria-hidden');
+        };
+        hideLmLoadedStatus();
         const refreshBtn = this.elements.lmModelRefreshBtn;
 
         const mode = this.elements.kiApiMode?.value === 'openai' ? 'openai' : 'lm_rest_v1';
@@ -5797,6 +6102,7 @@ class App {
             if (hintEl) {
                 hintEl.textContent = this._i18nLmModelFileError;
             }
+            hideLmLoadedStatus();
             return;
         }
 
@@ -5853,6 +6159,7 @@ class App {
                 sel.value = '';
             }
             sel.disabled = false;
+            hideLmLoadedStatus();
             return;
         }
 
@@ -5897,6 +6204,18 @@ class App {
         sel.disabled = false;
         if (hintEl) {
             hintEl.textContent = this._i18nLmModelHintDefault || '';
+        }
+        if (mode === 'lm_rest_v1') {
+            const loadedMs = models.filter((m) => m && m.loaded);
+            if (loadedMs.length) {
+                const names = loadedMs.map((m) => m.displayName || m.id).join(', ');
+                const tpl = this._i18nLmModelLoadedStatusLine || 'Loaded in LM Studio: {names}';
+                showLmLoadedStatus(tpl.replace(/\{names\}/g, names));
+            } else {
+                showLmLoadedStatus(this._i18nLmModelLoadedStatusNone || '');
+            }
+        } else {
+            hideLmLoadedStatus();
         }
 
         if (savedModel) {
@@ -6107,6 +6426,20 @@ class App {
         if (this.elements.alternativeLinksDisplayMode) {
             this.elements.alternativeLinksDisplayMode.value =
                 App.normalizeAlternativeLinksDisplayMode(altLinksDisplayUi);
+        }
+
+        let forumDiscoveryUi = 'click';
+        try {
+            forumDiscoveryUi =
+                localStorage.getItem('heise_forum_entries_discovery_mode') ||
+                this.settings?.forumEntriesDiscoveryMode ||
+                'click';
+        } catch (_) {
+            forumDiscoveryUi = this.settings?.forumEntriesDiscoveryMode || 'click';
+        }
+        if (this.elements.forumEntriesDiscoveryMode) {
+            this.elements.forumEntriesDiscoveryMode.value =
+                App.normalizeForumEntriesDiscoveryMode(forumDiscoveryUi);
         }
 
         let altBlacklistUi = '';
@@ -7213,6 +7546,9 @@ class App {
         const alternativeLinksDisplayModeSaved = this.elements.alternativeLinksDisplayMode
             ? App.normalizeAlternativeLinksDisplayMode(this.elements.alternativeLinksDisplayMode.value)
             : App.normalizeAlternativeLinksDisplayMode(this.settings?.alternativeLinksDisplayMode);
+        const forumEntriesDiscoveryModeSaved = this.elements.forumEntriesDiscoveryMode
+            ? App.normalizeForumEntriesDiscoveryMode(this.elements.forumEntriesDiscoveryMode.value)
+            : App.normalizeForumEntriesDiscoveryMode(this.settings?.forumEntriesDiscoveryMode);
         const alternativeLinksDomainBlacklistSaved = this.elements.alternativeLinksBlacklist
             ? App.normalizeAlternativeLinksDomainBlacklist(this.elements.alternativeLinksBlacklist.value)
             : App.normalizeAlternativeLinksDomainBlacklist(this.settings?.alternativeLinksDomainBlacklist);
@@ -7246,6 +7582,14 @@ class App {
 
             try {
                 localStorage.setItem('heise_alternative_links_display_mode', alternativeLinksDisplayModeSaved);
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                localStorage.setItem(
+                    'heise_forum_entries_discovery_mode',
+                    forumEntriesDiscoveryModeSaved
+                );
             } catch (_) {
                 /* ignore */
             }
@@ -7295,6 +7639,7 @@ class App {
             reasoning: reasoningLevelForStorage,
             alternativeLinksCount,
             alternativeLinksDisplayMode: alternativeLinksDisplayModeSaved,
+            forumEntriesDiscoveryMode: forumEntriesDiscoveryModeSaved,
             alternativeLinksDomainBlacklist: alternativeLinksDomainBlacklistSaved,
             webSearchEngine: webSearchEngineSaved,
             summaryLangMode:

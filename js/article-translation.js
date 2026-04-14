@@ -202,7 +202,6 @@
             j.responseData && typeof j.responseData.translatedText === 'string'
                 ? String(j.responseData.translatedText).trim()
                 : '';
-        const finalText = out || q;
         myMemoryCache.set(cacheKey, finalText);
         return finalText;
     }

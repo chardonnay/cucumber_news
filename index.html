@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net https://api.mymemory.translated.net; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net https://api.mymemory.translated.net wss://*; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>Heise News Dashboard</title>
     <!-- Fonts: Google Fonts via CSP-erlaubte URL -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2604,9 +2604,10 @@
             <div class="setting-group">
                 <label for="lmModel" class="setting-label" id="lmModelLabel">Modell</label>
                 <p id="lmModelHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <p id="lmModelLoadedStatus" class="modal-hint" role="status" aria-live="polite" aria-hidden="true" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: none;"></p>
                 <div class="lm-model-row">
                     <div class="lm-model-select-wrap">
-                        <select id="lmModel" class="setting-input" aria-describedby="lmModelHint" autocomplete="off"></select>
+                        <select id="lmModel" class="setting-input" aria-describedby="lmModelHint lmModelLoadedStatus" autocomplete="off"></select>
                     </div>
                     <button type="button" class="btn-secondary lm-model-refresh-btn" id="lmModelRefreshBtn" title="Modelle neu laden">↻</button>
                 </div>
@@ -2720,6 +2721,17 @@
                 <select id="alternativeLinksDisplayMode" class="setting-input" aria-describedby="alternativeLinksDisplayModeHint">
                     <option value="expanded">Immer unter der Zusammenfassung</option>
                     <option value="collapsed">Erst nach Klick auf „Weitere Quellen“</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="forumEntriesDiscoveryMode" id="forumEntriesDiscoveryModeLabel" class="setting-label">Forumeinträge finden</label>
+                <p id="forumEntriesDiscoveryModeHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Steuert, ob Forumeinträge (z. B. Reddit) erst nach Klick geladen werden oder automatisch unter den Quellen erscheinen.
+                </p>
+                <select id="forumEntriesDiscoveryMode" class="setting-input" aria-describedby="forumEntriesDiscoveryModeHint">
+                    <option value="click">Erst nach Klick auf „Forum“</option>
+                    <option value="always">Immer unter alternative Quellen</option>
                 </select>
             </div>
 

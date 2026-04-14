@@ -294,6 +294,8 @@ class NewsStorage {
             alternativeLinksCount: 5,
             /** expanded = show links under summary; collapsed = show after “Weitere Quellen” */
             alternativeLinksDisplayMode: 'expanded',
+            /** Forum discovery: click = only when user clicks forum button; always = auto-fetch under article sources */
+            forumEntriesDiscoveryMode: 'click',
             /** Newline/comma-separated hostnames that must not appear in alternative links */
             alternativeLinksDomainBlacklist: '',
             /** duckduckgo | google | bing — for “Weitere Artikel” web search button */

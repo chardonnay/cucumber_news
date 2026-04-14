@@ -30,15 +30,18 @@ class AISummarizer {
      * Normalizes the OpenAI-compatible base URL (must end with `/v1`, never `/chat/completions`).
      */
     /**
-     * Canonical URL for summary cache keys (query + hash stripped — matches App.normalizeNewsUrl).
+     * Canonical summary cache key: https, lowercase host, path without trailing slash.
+     * Single function replaces double normalization (canonical + legacy).
      * @param {string} url
      * @returns {string}
      */
-    static normalizeArticleUrlKey(url) {
+    static canonicalSummaryCacheKey(url) {
         if (!url || typeof url !== 'string') {
             return '';
         }
-        const s = url.trim();
+        
+        // Step 1: Strip query and hash (same as normalizeArticleUrlKey)
+        let s = String(url).trim();
         const q = s.indexOf('?');
         const h = s.indexOf('#');
         let cut = s.length;
@@ -49,29 +52,18 @@ class AISummarizer {
             cut = Math.min(cut, h);
         }
         let out = s.slice(0, cut);
+        
+        // Step 2: Normalize protocol and hostname (canonicalization)
         if (out.length > 1 && out.endsWith('/')) {
             out = out.slice(0, -1);
         }
-        return out;
-    }
-
-    /**
-     * Canonical summary cache key: https, lowercase host, path without trailing slash.
-     * Avoids duplicate misses for http/https and host casing (feeds vs. stored keys), e.g. ComputerBase.
-     * @param {string} url
-     * @returns {string}
-     */
-    static canonicalSummaryCacheKey(url) {
-        const base = AISummarizer.normalizeArticleUrlKey(url);
-        if (!base) {
-            return '';
+        
+        if (out.startsWith('//')) {
+            out = `https:${out}`;
         }
-        let s = base;
-        if (s.startsWith('//')) {
-            s = `https:${s}`;
-        }
+        
         try {
-            const u = new URL(s);
+            const u = new URL(out);
             u.protocol = 'https:';
             u.hostname = u.hostname.toLowerCase();
             let path = u.pathname;
@@ -80,37 +72,33 @@ class AISummarizer {
             }
             return `${u.protocol}//${u.hostname}${path}`;
         } catch {
-            return base.toLowerCase();
+            // Fallback: lowercase only
+            return out.toLowerCase();
         }
     }
 
     /**
-     * Read summary from IndexedDB: try canonical key first, then legacy strip-only key.
+     * Read summary from IndexedDB using canonical key (single lookup now).
+     * Legacy fallback removed - all keys stored canonically.
      * @param {string} url
      * @returns {Promise<{ entry: { summary: string, cachedAt?: string } | null, storageKey: string }>}
      */
     async _getSummaryEntryForCacheLookup(url) {
         await this._ensureStorageReady();
         const kCanon = AISummarizer.canonicalSummaryCacheKey(url);
-        const kLegacy = AISummarizer.normalizeArticleUrlKey(url);
-        const keys = [];
-        if (kCanon) {
-            keys.push(kCanon);
-        }
-        if (kLegacy && kLegacy !== kCanon) {
-            keys.push(kLegacy);
-        }
-        for (const k of keys) {
-            try {
-                const entry = await this.storage.getSummaryWithMeta(k);
+        
+        try {
+            if (kCanon) {
+                const entry = await this.storage.getSummaryWithMeta(kCanon);
                 if (entry && typeof entry.summary === 'string' && entry.summary.trim()) {
-                    return { entry, storageKey: k };
+                    return { entry, storageKey: kCanon };
                 }
-            } catch (e) {
-                console.warn('KI: Cache lesen fehlgeschlagen:', e);
             }
+        } catch (e) {
+            console.warn('KI: Cache lesen fehlgeschlagen:', e);
         }
-        return { entry: null, storageKey: kCanon || kLegacy || '' };
+        
+        return { entry: null, storageKey: kCanon };
     }
 
     /**
@@ -763,7 +751,7 @@ class AISummarizer {
     }
 
     /**
-     * OpenAI-compatible models list — same host as LM Studio; with dev_server + same-origin, proxied as GET /v1/models.
+     * Native LM Studio model list (includes `loaded_instances`). Same-origin via dev_server: GET /api/v1/models.
      */
     getLmRestModelsListUrl() {
         if (this.isLmRestSameOrigin()) {
@@ -773,10 +761,10 @@ class AISummarizer {
                 window.location.origin &&
                 window.location.protocol !== 'file:'
             ) {
-                return `${window.location.origin}/v1/models`;
+                return `${window.location.origin}/api/v1/models`;
             }
         }
-        return `${this.getLmRestRoot()}/v1/models`;
+        return `${this.getLmRestRoot()}/api/v1/models`;
     }
 
     /**
@@ -805,7 +793,7 @@ class AISummarizer {
     }
 
     /**
-     * Resolves GET /v1/models URL for LM Studio (OpenAI-style list) from persisted or explicit settings.
+     * Resolves GET …/models URL for LM Studio: native `/api/v1/models` in REST v1 mode; OpenAI-style `/v1/models` in OpenAI mode.
      * @param {{
      *   kiApiMode?: string,
      *   lmRestRoot?: string,
@@ -832,13 +820,13 @@ class AISummarizer {
                     ? window.location.origin
                     : '');
             if (origin) {
-                return `${origin}/v1/models`;
+                return `${origin}/api/v1/models`;
             }
             return '';
         }
         if (mode === 'lm_rest_v1') {
             const root = AISummarizer.normalizeLmRestServerRoot(opts.lmRestRoot || '');
-            return `${root}/v1/models`;
+            return `${root}/api/v1/models`;
         }
         const base = AISummarizer.normalizeOpenAiApiBase(opts.apiBaseUrl || '');
         return `${base}/models`;
@@ -952,6 +940,27 @@ class AISummarizer {
     }
 
     /**
+     * GET LM Studio model list: native `/api/v1/models` first; on 404 only, retry OpenAI-style `/v1/models` (older servers).
+     * @param {string} listUrl
+     * @param {AbortSignal} signal
+     * @param {Record<string, string>} headers
+     * @returns {Promise<{ response: Response, rawText: string }>}
+     */
+    static async tryFetchModelsList(listUrl, signal, headers) {
+        const opts = { method: 'GET', headers, signal, mode: 'cors', credentials: 'omit' };
+        let response = await fetch(listUrl, opts);
+        let rawText = await response.text();
+        if (response.status === 404 && /\/api\/v1\/models\/?$/i.test(String(listUrl))) {
+            const alt = String(listUrl).replace(/\/api\/v1\/models\/?$/i, '/v1/models');
+            if (alt !== listUrl) {
+                response = await fetch(alt, opts);
+                rawText = await response.text();
+            }
+        }
+        return { response, rawText };
+    }
+
+    /**
      * Fetch model list for KI settings UI. Uses same endpoints as {@link resolveLmRestModelId}.
      * @param {AbortSignal} signal
      * @param {{
@@ -981,19 +990,17 @@ class AISummarizer {
             };
         }
         let response;
+        let rawText;
         try {
-            response = await fetch(url, {
-                method: 'GET',
-                headers: this.buildLmRestGetHeaders(o.lmApiToken, url),
+            ({ response, rawText } = await AISummarizer.tryFetchModelsList(
+                url,
                 signal,
-                mode: 'cors',
-                credentials: 'omit'
-            });
+                this.buildLmRestGetHeaders(o.lmApiToken, url)
+            ));
         } catch (e) {
             const msg = e && e.message ? String(e.message) : 'Network error';
             return { ok: false, error: msg };
         }
-        const rawText = await response.text();
         let data;
         try {
             data = JSON.parse(rawText.trim());
@@ -1027,8 +1034,8 @@ class AISummarizer {
     }
 
     /**
-     * @param {Array<object>} list Raw entries from GET /v1/models
-     * @returns {string} First usable model id, or empty string.
+     * @param {Array<object>} list Raw entries from LM Studio model list
+     * @returns {string} First usable model id, preferring one reported as loaded, or empty string.
      */
     static pickFirstModelIdFromRawList(list) {
         if (!Array.isArray(list) || list.length === 0) {
@@ -1041,19 +1048,18 @@ class AISummarizer {
                 normalized.push(n);
             }
         }
-        const use = normalized.length ? normalized.map((x) => x.raw) : list;
-        const first = use.find((x) => {
-            if (!x || typeof x !== 'object') {
-                return false;
-            }
-            const id = String(x.id ?? x.model ?? x.key ?? '').trim();
-            return Boolean(id);
-        });
-        return first ? String(first.id ?? first.model ?? first.key ?? '').trim() : '';
+        if (!normalized.length) {
+            return '';
+        }
+        const loaded = normalized.find((n) => n.loaded);
+        if (loaded) {
+            return loaded.id;
+        }
+        return normalized[0].id;
     }
 
     /**
-     * LM Studio REST requires `model` on every request. If the user left the name empty, list models via GET /v1/models and use the first id (cached in sessionStorage for the tab).
+     * LM Studio REST requires `model` on every request. If the user left the name empty, list models via GET /api/v1/models (fallback: /v1/models) and use the first id (cached in sessionStorage for the tab).
      * @param {AbortSignal} signal
      * @returns {Promise<string>}
      */
@@ -1081,35 +1087,32 @@ class AISummarizer {
 
         const url = this.getLmRestModelsListUrl();
         let response;
+        let rawText;
         try {
-            response = await fetch(url, {
-                method: 'GET',
-                headers: this.buildLmRestGetHeaders(undefined, url),
+            ({ response, rawText } = await AISummarizer.tryFetchModelsList(
+                url,
                 signal,
-                mode: 'cors',
-                credentials: 'omit'
-            });
+                this.buildLmRestGetHeaders(undefined, url)
+            ));
         } catch (e) {
             const msg = e && e.message ? String(e.message) : 'Netzwerkfehler';
             throw new Error(
-                `Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein geladenes LM-Studio-Modell oder nutzen Sie „Keine spezifische Wahl …“ mit Dev-Server („REST über dieselbe Origin“), damit GET /v1/models zum LM-Server durchgereicht wird.`
+                `Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein geladenes LM-Studio-Modell oder nutzen Sie „Keine spezifische Wahl …“ mit Dev-Server („REST über dieselbe Origin“), damit GET /api/v1/models zum LM-Server durchgereicht wird.`
             );
         }
-
-        const rawText = await response.text();
         let data;
         try {
             data = JSON.parse(rawText.trim());
         } catch {
             throw new Error(
-                `GET /v1/models lieferte kein JSON (HTTP ${response.status}). Prüfen Sie die LM-Studio-URL oder tragen Sie den Modellnamen manuell ein.`
+                `GET /api/v1/models lieferte kein JSON (HTTP ${response.status}). Prüfen Sie die LM-Studio-URL oder tragen Sie den Modellnamen manuell ein.`
             );
         }
 
         if (!response.ok) {
             const detail = data.error?.message || data.message || rawText.slice(0, 200);
             throw new Error(
-                `GET /v1/models fehlgeschlagen (HTTP ${response.status}): ${detail}`
+                `GET /api/v1/models fehlgeschlagen (HTTP ${response.status}): ${detail}`
             );
         }
 
@@ -1121,7 +1124,7 @@ class AISummarizer {
         const id = AISummarizer.pickFirstModelIdFromRawList(list);
         if (!id) {
             throw new Error(
-                'LM Studio meldet keine Modelle (leere Liste unter GET /v1/models). Laden Sie ein Modell oder tragen Sie den Namen in den Einstellungen ein.'
+                'LM Studio meldet keine Modelle (leere Liste). Laden Sie ein Modell oder tragen Sie den Namen in den Einstellungen ein.'
             );
         }
         try {
@@ -1277,9 +1280,9 @@ class AISummarizer {
         }
         await this._ensureStorageReady();
         const trimmedUrl = url.trim();
+        // Legacy key removed - canonicalSummaryCacheKey handles both stripping and canonicalization
         const cacheKey = AISummarizer.canonicalSummaryCacheKey(trimmedUrl);
-        const legacyKey = AISummarizer.normalizeArticleUrlKey(trimmedUrl);
-        const promptUrl = cacheKey || legacyKey || trimmedUrl;
+        const promptUrl = cacheKey || trimmedUrl;
         const force = options.forceRefresh === true;
 
         if (force) {
