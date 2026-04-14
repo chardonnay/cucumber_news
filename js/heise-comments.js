@@ -157,6 +157,26 @@ function localesJsonCandidateUrls(file) {
 /** Inline SVG: thread / replies symbol (replaces the old text label on the “most replies” link). */
 const NEWS_COMMENTS_MAX_REPLIES_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="news-comments-max-link__icon-svg" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9 10h6"/><path d="M9 14h4"/></svg>`;
 
+/**
+ * @param {string} url
+ * @returns {string}
+ */
+function heiseCommentsWrapArticleUrl(url) {
+    const raw = String(url || '').trim();
+    if (!raw) {
+        return raw;
+    }
+    try {
+        const app = typeof window !== 'undefined' ? window.app : null;
+        if (app && typeof app.maybeWrapUrlForArticleTranslation === 'function') {
+            return app.maybeWrapUrlForArticleTranslation(raw);
+        }
+    } catch (_) {
+        /* ignore */
+    }
+    return raw;
+}
+
 const HeiseComments = {
     /** @type {Record<string, string>|undefined} */
     _strings: undefined,
@@ -485,7 +505,7 @@ sanitizeHtml(html) {
                 : 'rss_stub_note';
         const note = this.escapeHtml(this.t(hintKey));
         const open = this.escapeHtml(this.t('article_open_link'));
-        const href = this.escapeHtml(du);
+        const href = this.escapeHtml(heiseCommentsWrapArticleUrl(du));
         row.innerHTML = `
 <div class="news-comments-inner news-comments-stub">
   <p class="news-comments-rss-note">${note}</p>
@@ -509,7 +529,7 @@ sanitizeHtml(html) {
         const notInFeed = this.escapeHtml(this.t('rss_not_in_feed'));
         const linkHtml =
             du && !bad
-                ? ` <a class="news-comments-max-link" href="${this.escapeHtml(du)}" target="_blank" rel="noopener noreferrer">${forumLabel}</a>`
+                ? ` <a class="news-comments-max-link" href="${this.escapeHtml(heiseCommentsWrapArticleUrl(du))}" target="_blank" rel="noopener noreferrer">${forumLabel}</a>`
                 : '';
         const warn = bad ? ` <span class="news-comments-note">${notInFeed}</span>` : '';
         const volHtml = this.getCommentVolumeIndicatorHtml(total);
@@ -640,7 +660,7 @@ sanitizeHtml(html) {
                 maxStandalone = `
 <div class="news-comments-max-standalone">
   <a class="news-comments-max-link news-comments-max-link--standalone"
-     href="${this.escapeHtml(maxU)}"
+     href="${this.escapeHtml(heiseCommentsWrapArticleUrl(maxU))}"
      target="_blank"
      rel="noopener noreferrer"
      title="${maxLinkTooltip}"

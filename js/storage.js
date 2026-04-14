@@ -300,6 +300,12 @@ class NewsStorage {
             webSearchEngine: 'duckduckgo',
             /** KI summary language: site = match article site (de/en), browser = navigator language */
             summaryLangMode: 'site',
+            /** Machine-translate article area (titles, summaries, links text) via Google Translate widget */
+            articleTranslationEnabled: false,
+            /** BCP 47 / Google Translate target language (e.g. de, en, fr, zh-CN) */
+            articleTranslationTargetLang: 'de',
+            /** Wrap outgoing article links: google (translate.goog) | google_classic | bing */
+            articleTranslationLinkProvider: 'google',
             /** Article list sort: recency | date_day | date_range | comments | green | red */
             sortMode: 'recency',
             sortDateSingle: '',

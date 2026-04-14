@@ -15,6 +15,25 @@ const COMPUTERBASE_BRAND_LOGO_URL = 'https://www.computerbase.de/img/logo-blue.s
 const T3N_BRAND_LOGO_URL = 'https://cdn.t3n.de/global/images/icons/t3n-favicon-96x96.png';
 /** Remote favicon from The Verge — not bundled (see README). */
 const VERGE_BRAND_LOGO_URL = 'https://www.theverge.com/static-assets/icons/favicon-32x32.png';
+/**
+ * Normalized hostname suffixes for English-first publishers (MyMemory `lang` + card `lang`).
+ * Matches `AISummarizer.normalizeHostnameForMatch` output (no leading `www.`).
+ */
+const ENGLISH_CONTENT_HOST_SUFFIXES = [
+    'theverge.com',
+    'techcrunch.com',
+    'arstechnica.com',
+    'wired.com',
+    'engadget.com',
+    'theguardian.com',
+    'msn.com',
+    'bbc.co.uk',
+    'bbc.com',
+    'nytimes.com',
+    'washingtonpost.com',
+    'reuters.com',
+    'bloomberg.com'
+];
 /** Telepolis (heise medien) — favicon */
 const TELEPOLIS_BRAND_LOGO_URL = 'https://www.telepolis.de/favicon.ico';
 /** IT-Administrator — favicon */
@@ -75,6 +94,12 @@ class App {
         this._autoSummarizeNewInProgress = false;
         /** @type {Map<string, {isFavorite?: boolean, isHidden?: boolean}>} */
         this._articleFlags = new Map();
+        /** Serializes MyMemory in-place translation passes. */
+        this._articleInPlaceTranslationRunning = false;
+        /** When a pass was requested while another run was active, run again after the current pass finishes. */
+        this._articleInPlaceTranslationPending = false;
+        /** @type {ReturnType<typeof setTimeout>|0} */
+        this._articleInPlaceTranslationDebounce = 0;
 
         // DOM Elements
         this.elements = {
@@ -107,6 +132,9 @@ class App {
             lmModel: document.getElementById('lmModel'),
             lmModelRefreshBtn: document.getElementById('lmModelRefreshBtn'),
             summaryLangMode: document.getElementById('summaryLangMode'),
+            articleTranslationEnabled: document.getElementById('articleTranslationEnabled'),
+            articleTranslationTargetLang: document.getElementById('articleTranslationTargetLang'),
+            articleTranslationLinkProvider: document.getElementById('articleTranslationLinkProvider'),
             summaryCacheDays: document.getElementById('summaryCacheDays'),
             summaryConcurrency: document.getElementById('summaryConcurrency'),
             kiRequestTimeoutSeconds: document.getElementById('kiRequestTimeoutSeconds'),
@@ -213,6 +241,9 @@ class App {
         this._i18nLmModelActiveSuffix = ' — currently in use';
         this._i18nLmModelFileError =
             '“REST via same page origin” does not work with file://. Use http(s) or disable the option.';
+        this._i18nArticleTranslationToolbarHint = '';
+        this._i18nArticleTranslationReloadStatus = '';
+        this._i18nArticleTranslationQuota = '';
         this._i18nAltLinksCount = '{count} alternative sources';
         this._i18nAltLinksBtnShow = 'Show alternative links';
         this._i18nAltLinksBtnHide = 'Hide alternative links';
@@ -356,6 +387,7 @@ class App {
 
             // Load user settings
             await this.loadSettings();
+            this.clearArticleTranslationCookieIfDisabled();
             await this.loadArticleFlags();
 
             await this.applySortLabelsFromLocale();
@@ -375,6 +407,9 @@ class App {
 
             // Initial news fetch
             await this.fetchNews();
+
+            this.refreshArticleTranslationToolbarFromSettings();
+            this.scheduleArticleInPlaceTranslation();
 
             // Start auto-update timer
             this.startAutoUpdateTimer();
@@ -569,6 +604,10 @@ class App {
         }
         if (this.elements.lmModelRefreshBtn) {
             this.elements.lmModelRefreshBtn.addEventListener('click', () => void this.populateModelDropdown());
+        }
+
+        if (this.elements.articleTranslationEnabled) {
+            this.elements.articleTranslationEnabled.addEventListener('change', () => this.syncArticleTranslationFormDisabled());
         }
 
         // Aktualisierungsintervall (Header)
@@ -1264,6 +1303,21 @@ class App {
             }
 
             const webSearchEngine = App.normalizeWebSearchEngine(settings.webSearchEngine);
+            const articleTranslationEnabled = settings.articleTranslationEnabled === true;
+            const AT0 = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+            const articleTranslationTargetLang = AT0
+                ? AT0.normalizeTargetLang(settings.articleTranslationTargetLang)
+                : String(settings.articleTranslationTargetLang || 'de')
+                      .trim()
+                      .toLowerCase() || 'de';
+            const rawArticleProv = String(settings.articleTranslationLinkProvider || 'google').trim().toLowerCase();
+            const articleTranslationLinkProvider = AT0
+                ? AT0.normalizeLinkProvider(settings.articleTranslationLinkProvider)
+                : rawArticleProv === 'bing'
+                  ? 'bing'
+                  : rawArticleProv === 'google_classic' || rawArticleProv === 'google_legacy'
+                    ? 'google_classic'
+                    : 'google';
             const alternativeLinksDisplayMode = App.normalizeAlternativeLinksDisplayMode(
                 settings.alternativeLinksDisplayMode
             );
@@ -1303,6 +1357,9 @@ class App {
                 alternativeLinksDisplayMode,
                 alternativeLinksDomainBlacklist,
                 webSearchEngine,
+                articleTranslationEnabled,
+                articleTranslationTargetLang,
+                articleTranslationLinkProvider,
                 enabledHeiseMagazines,
                 summaryConcurrency,
                 summaryRequestTimeoutSeconds,
@@ -2544,6 +2601,70 @@ class App {
                 if (wsh && ki.web_search_engine_hint) {
                     wsh.textContent = ki.web_search_engine_hint;
                 }
+                if (ki.article_translation_enabled_title) {
+                    const aet = document.getElementById('articleTranslationEnabledTitle');
+                    if (aet) {
+                        aet.textContent = ki.article_translation_enabled_title;
+                    }
+                }
+                if (ki.article_translation_enabled_hint) {
+                    const aeh = document.getElementById('articleTranslationEnabledHint');
+                    if (aeh) {
+                        aeh.textContent = ki.article_translation_enabled_hint;
+                    }
+                }
+                if (ki.article_translation_target_label) {
+                    const atl = document.getElementById('articleTranslationTargetLabel');
+                    if (atl) {
+                        atl.textContent = ki.article_translation_target_label;
+                    }
+                }
+                if (ki.article_translation_target_hint) {
+                    const ath = document.getElementById('articleTranslationTargetHint');
+                    if (ath) {
+                        ath.textContent = ki.article_translation_target_hint;
+                    }
+                }
+                if (ki.article_translation_provider_label) {
+                    const apl = document.getElementById('articleTranslationProviderLabel');
+                    if (apl) {
+                        apl.textContent = ki.article_translation_provider_label;
+                    }
+                }
+                if (ki.article_translation_provider_hint) {
+                    const aph = document.getElementById('articleTranslationProviderHint');
+                    if (aph) {
+                        aph.textContent = ki.article_translation_provider_hint;
+                    }
+                }
+                if (ki.article_translation_toolbar_hint) {
+                    this._i18nArticleTranslationToolbarHint = ki.article_translation_toolbar_hint;
+                    const tbh = document.getElementById('articleTranslationToolbarHint');
+                    if (tbh) {
+                        tbh.textContent = ki.article_translation_toolbar_hint;
+                    }
+                }
+                if (ki.article_translation_reload_status) {
+                    this._i18nArticleTranslationReloadStatus = ki.article_translation_reload_status;
+                }
+                if (ki.article_translation_quota) {
+                    this._i18nArticleTranslationQuota = ki.article_translation_quota;
+                }
+                const gto = document.getElementById('articleTranslationLinkProvider');
+                if (gto) {
+                    const og = gto.querySelector('option[value="google"]');
+                    const ogc = gto.querySelector('option[value="google_classic"]');
+                    const ob = gto.querySelector('option[value="bing"]');
+                    if (og && ki.article_translation_provider_goog) {
+                        og.textContent = ki.article_translation_provider_goog;
+                    }
+                    if (ogc && ki.article_translation_provider_google_classic) {
+                        ogc.textContent = ki.article_translation_provider_google_classic;
+                    }
+                    if (ob && ki.article_translation_provider_bing) {
+                        ob.textContent = ki.article_translation_provider_bing;
+                    }
+                }
                 const adl = document.getElementById('alternativeLinksDisplayModeLabel');
                 if (adl && ki.alternative_links_display_label) {
                     adl.textContent = ki.alternative_links_display_label;
@@ -2868,6 +2989,315 @@ class App {
             return u;
         }
         return item.link != null && String(item.link).trim() ? String(item.link).trim() : '';
+    }
+
+    /**
+     * Reconstructs a real hostname from a `*.translate.goog` host (dots in the original host became hyphens).
+     * @param {string} translateGoogHost e.g. `www-theverge-com.translate.goog`
+     * @returns {string} e.g. `www.theverge.com`, or '' if not a translate.goog host
+     */
+    static decodeTranslateGoogSlugToHostname(translateGoogHost) {
+        const h = String(translateGoogHost || '')
+            .trim()
+            .toLowerCase();
+        const suf = '.translate.goog';
+        if (!h.endsWith(suf)) {
+            return '';
+        }
+        const slug = h.slice(0, -suf.length);
+        const parts = slug.split('-').filter(Boolean);
+        if (parts.length < 2) {
+            return '';
+        }
+        const last = parts[parts.length - 1];
+        if (!/^[a-z0-9]{2,24}$/i.test(last)) {
+            return '';
+        }
+        return `${parts.slice(0, -1).join('.')}.${last}`;
+    }
+
+    /**
+     * Returns the article URL to inspect for content language (unwraps translation proxy URLs).
+     * @param {string} rawUrl
+     * @returns {string}
+     */
+    static unwrapArticleUrlForLangDetection(rawUrl) {
+        const s = String(rawUrl || '').trim();
+        if (!s) {
+            return '';
+        }
+        try {
+            const u = new URL(s);
+            const h = u.hostname.toLowerCase();
+            if (h === 'translate.google.com' || h.endsWith('.translate.google.com')) {
+                const inner = u.searchParams.get('u');
+                if (inner && /^https?:\/\//i.test(inner.trim())) {
+                    return inner.trim();
+                }
+            }
+            if (h.endsWith('.translate.goog')) {
+                const decoded = App.decodeTranslateGoogSlugToHostname(h);
+                if (decoded) {
+                    return `${u.protocol}//${decoded}${u.pathname}${u.search}`;
+                }
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        return s;
+    }
+
+    /**
+     * @param {string} hostname
+     * @returns {boolean}
+     */
+    static hostnameLikelyEnglishArticleHost(hostname) {
+        try {
+            const h = AISummarizer.normalizeHostnameForMatch(hostname);
+            for (const r of ENGLISH_CONTENT_HOST_SUFFIXES) {
+                if (h === r || h.endsWith(`.${r}`)) {
+                    return true;
+                }
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        return false;
+    }
+
+    /**
+     * HTML `lang` for card content so Google Translate can treat mixed feeds (e.g. de heise + en Verge) correctly.
+     * @param {{ newsSource?: string, link?: string, url?: string }|null|undefined} item
+     * @param {string} [activeNewsSource] — current tab (fallback when `item.newsSource` is missing on cached rows)
+     * @returns {string}
+     */
+    static articleContentHtmlLang(item, activeNewsSource) {
+        const srcItem = item && item.newsSource != null ? String(item.newsSource).trim().toLowerCase() : '';
+        const srcView = String(activeNewsSource || '')
+            .trim()
+            .toLowerCase();
+        if (srcItem === 'verge' || (srcItem === '' && srcView === 'verge')) {
+            return 'en';
+        }
+        const primary = App.articlePrimaryUrl(item) || (item && item.link != null ? String(item.link).trim() : '') || '';
+        const link = App.unwrapArticleUrlForLangDetection(primary);
+        try {
+            const h = new URL(link).hostname.toLowerCase();
+            if (h === 'theverge.com' || h.endsWith('.theverge.com')) {
+                return 'en';
+            }
+            if (App.hostnameLikelyEnglishArticleHost(h)) {
+                return 'en';
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        return 'de';
+    }
+
+    clearArticleTranslationCookieIfDisabled() {
+        if (this.settings && this.settings.articleTranslationEnabled === true) {
+            return;
+        }
+        try {
+            document.cookie = 'googtrans=;path=/;max-age=0';
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    /**
+     * When article translation is enabled, rewrite external article URLs to open via Google or Microsoft translation.
+     * @param {string} url
+     * @returns {string}
+     */
+    maybeWrapUrlForArticleTranslation(url) {
+        const raw = String(url || '').trim();
+        if (!raw || !this.settings || this.settings.articleTranslationEnabled !== true) {
+            return raw;
+        }
+        const AT = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+        if (!AT || typeof AT.wrapUrlForTranslatedView !== 'function') {
+            return raw;
+        }
+        return AT.wrapUrlForTranslatedView(
+            raw,
+            this.settings.articleTranslationTargetLang || 'de',
+            AT.normalizeLinkProvider(this.settings.articleTranslationLinkProvider)
+        );
+    }
+
+    syncArticleTranslationFormDisabled() {
+        const on =
+            this.elements.articleTranslationEnabled &&
+            this.elements.articleTranslationEnabled.checked === true;
+        const tl = this.elements.articleTranslationTargetLang;
+        const pr = this.elements.articleTranslationLinkProvider;
+        const tw = document.getElementById('articleTranslationTargetWrap');
+        const pw = document.getElementById('articleTranslationProviderWrap');
+        if (tl) {
+            tl.disabled = !on;
+        }
+        if (pr) {
+            pr.disabled = !on;
+        }
+        if (tw) {
+            tw.style.opacity = on ? '' : '0.58';
+        }
+        if (pw) {
+            pw.style.opacity = on ? '' : '0.58';
+        }
+    }
+
+    refreshArticleTranslationToolbarFromSettings() {
+        const tb = document.getElementById('articleTranslationToolbar');
+        const hintEl = document.getElementById('articleTranslationToolbarHint');
+        if (!tb) {
+            return;
+        }
+        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
+            tb.hidden = true;
+            return;
+        }
+        tb.hidden = false;
+        if (hintEl) {
+            hintEl.textContent =
+                this._i18nArticleTranslationToolbarHint ||
+                'Machine translation is active for the article list below (Google Translate).';
+        }
+    }
+
+    /**
+     * Debounced MyMemory translation pass after the grid or summaries change.
+     */
+    scheduleArticleInPlaceTranslation() {
+        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
+            return;
+        }
+        if (this._articleInPlaceTranslationDebounce) {
+            window.clearTimeout(this._articleInPlaceTranslationDebounce);
+        }
+        this._articleInPlaceTranslationDebounce = window.setTimeout(() => {
+            this._articleInPlaceTranslationDebounce = 0;
+            void this.runArticleInPlaceTranslationJob();
+        }, 550);
+    }
+
+    async runArticleInPlaceTranslationJob() {
+        if (this._articleInPlaceTranslationRunning) {
+            this._articleInPlaceTranslationPending = true;
+            return;
+        }
+        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+            return;
+        }
+        const AT = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+        if (!AT || !this.settings || this.settings.articleTranslationEnabled !== true) {
+            return;
+        }
+        this.refreshArticleTranslationToolbarFromSettings();
+        this._articleInPlaceTranslationRunning = true;
+        try {
+            await this.translateNewsCardsWithMyMemory(AT);
+        } catch (e) {
+            console.warn('In-place article translation:', e);
+            const msg = String((e && e.message) || e);
+            if (msg.includes('mymemory_quota')) {
+                this.showStatus(
+                    this._i18nArticleTranslationQuota ||
+                        'Daily translation quota exceeded (MyMemory). Try again tomorrow.',
+                    true
+                );
+            }
+        } finally {
+            this._articleInPlaceTranslationRunning = false;
+            if (this._articleInPlaceTranslationPending) {
+                this._articleInPlaceTranslationPending = false;
+                void this.runArticleInPlaceTranslationJob();
+            }
+        }
+    }
+
+    /**
+     * @param {{ normalizeTargetLang: Function, shouldMachineTranslateInPlace: Function, translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
+     */
+    async translateNewsCardsWithMyMemory(AT) {
+        const target = AT.normalizeTargetLang(this.settings.articleTranslationTargetLang);
+        const grid = this.elements.newsGrid;
+        if (!grid) {
+            return;
+        }
+        const cards = Array.from(grid.querySelectorAll('.news-card'));
+        for (const card of cards) {
+            const from = (card.getAttribute('lang') || 'de').trim();
+            if (!AT.shouldMachineTranslateInPlace(from, target)) {
+                continue;
+            }
+            try {
+                await this.translateOneNewsCardWithMyMemory(card, from, target, AT);
+            } catch (e) {
+                const m = String((e && e.message) || e);
+                if (m.includes('mymemory_quota')) {
+                    throw e;
+                }
+                console.warn('translateOneNewsCardWithMyMemory:', e);
+            }
+            await new Promise((r) => window.setTimeout(r, 420));
+        }
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {string} from
+     * @param {string} target
+     * @param {{ translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
+     */
+    async translateOneNewsCardWithMyMemory(card, from, target, AT) {
+        const titleSpan = card.querySelector('.news-title-translate');
+        if (titleSpan && titleSpan.dataset.mtm !== '1') {
+            const raw = (titleSpan.textContent || '').trim();
+            if (raw) {
+                titleSpan.textContent = await AT.translateTextMyMemory(raw, from, target);
+                titleSpan.dataset.mtm = '1';
+            }
+        }
+        const badge = card.querySelector('.category-badge');
+        if (badge && badge.dataset.mtm !== '1') {
+            const raw = (badge.textContent || '').trim();
+            if (raw) {
+                badge.textContent = await AT.translateTextMyMemory(raw, from, target);
+                badge.dataset.mtm = '1';
+            }
+        }
+        const sc = card.querySelector('.summary-content');
+        if (sc && sc.textContent && sc.textContent.trim() && sc.dataset.mtm !== '1') {
+            sc.textContent = await AT.translateLongTextMyMemory(sc.textContent.trim(), from, target);
+            sc.dataset.mtm = '1';
+        }
+        const altTitles = card.querySelectorAll('.summary-alt-link-title');
+        for (const el of altTitles) {
+            if (el.dataset.mtm === '1') {
+                continue;
+            }
+            const tx = (el.textContent || '').trim();
+            if (tx) {
+                el.textContent = await AT.translateTextMyMemory(tx, from, target);
+                el.dataset.mtm = '1';
+                await new Promise((r) => window.setTimeout(r, 380));
+            }
+        }
+        const redditLines = card.querySelectorAll('.summary-reddit-line');
+        for (const el of redditLines) {
+            if (el.dataset.mtm === '1') {
+                continue;
+            }
+            const tx = (el.textContent || '').trim();
+            if (tx) {
+                el.textContent = await AT.translateTextMyMemory(tx, from, target);
+                el.dataset.mtm = '1';
+                await new Promise((r) => window.setTimeout(r, 380));
+            }
+        }
     }
 
     /**
@@ -3282,7 +3712,7 @@ class App {
         this.filteredNewsItems = this.sortItemList(list);
         this.currentPage = 1;
         if (render) {
-            this.renderNews(this.filteredNewsItems.slice(0, this.itemsPerPage), false);
+            await this.renderNews(this.filteredNewsItems.slice(0, this.itemsPerPage), false);
             this.syncLoadMoreAndCount();
             if (['comments', 'green', 'red'].includes(this.sortMode)) {
                 this.showSortRateLimitBanner(Boolean(prefetchResult && prefetchResult.rateLimited));
@@ -3560,7 +3990,7 @@ class App {
             return;
         }
 
-        this.renderNews(newsToShow, true);
+        void this.renderNews(newsToShow, true);
         this.currentPage++;
         this.syncLoadMoreAndCount();
     }
@@ -3574,7 +4004,7 @@ class App {
             return;
         }
         const rest = this.filteredNewsItems.slice(startIndex);
-        this.renderNews(rest, true);
+        void this.renderNews(rest, true);
         this.currentPage = Math.max(1, Math.ceil(n / this.itemsPerPage));
         this.syncLoadMoreAndCount();
     }
@@ -3583,7 +4013,7 @@ class App {
      * @param {Array} items
      * @param {boolean} append - true only for "Mehr laden"; false replaces the grid (avoids stacking on skeleton cards)
      */
-    renderNews(items, append = false) {
+    async renderNews(items, append = false) {
         if (items.length === 0) {
             this.elements.newsGrid.innerHTML = `
                 <div style="text-align: center; padding: 3rem; grid-column: 1 / -1;">
@@ -3616,13 +4046,18 @@ class App {
             btn.addEventListener('click', (e) => this.refreshSummary(e));
         });
 
-        void this.hydrateCachedSummariesForItems(items);
+        try {
+            await this.hydrateCachedSummariesForItems(items);
+        } catch (e) {
+            console.warn('hydrateCachedSummariesForItems (renderNews):', e);
+        }
 
         if (typeof HeiseComments !== 'undefined' && this.elements.newsGrid) {
             void HeiseComments.hydrate(this.elements.newsGrid);
         }
 
         this.attachNewArticleHoverHandlers();
+        this.scheduleArticleInPlaceTranslation();
     }
 
     /**
@@ -3746,6 +4181,7 @@ class App {
                     }
                 })
             );
+            this.scheduleArticleInPlaceTranslation();
         } catch (e) {
             console.warn('hydrateCachedSummariesForItems:', e);
         }
@@ -3770,7 +4206,7 @@ class App {
             : '';
 
         return `
-            <article class="news-card${newClass}" data-id="${item.id}"${ariaNew}>
+            <article class="news-card${newClass}" data-id="${item.id}" lang="${App.articleContentHtmlLang(item, this.settings && this.settings.newsSource)}"${ariaNew}>
                 <div class="news-header">
                     <div class="news-header-main">
                         ${badge}
@@ -3784,9 +4220,9 @@ class App {
                 </div>
 
                 <h3 class="news-title">
-                    <a href="${item.link}" target="_blank" rel="noopener noreferrer">
+                    <a href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(item.link))}" target="_blank" rel="noopener noreferrer">
                         ${titleFavoriteMarker}
-                        ${this.escapeHtml(item.title)}
+                        <span class="news-title-translate">${this.escapeHtml(item.title)}</span>
                     </a>
                 </h3>
 
@@ -4045,12 +4481,13 @@ class App {
                 const tit =
                     t && typeof t.title === 'string' && t.title.trim() ? t.title.trim() : u;
                 const img = `<img class="summary-reddit-logo" src="${this.escapeHtml(fav)}" width="16" height="16" alt="" loading="lazy" decoding="async" />`;
-                return `<li class="summary-reddit-item"><a class="summary-reddit-link" href="${this.escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${img}<span class="summary-reddit-line">${this.escapeHtml(tit)}</span></a></li>`;
+                return `<li class="summary-reddit-item"><a class="summary-reddit-link" href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(u))}" target="_blank" rel="noopener noreferrer">${img}<span class="summary-reddit-line">${this.escapeHtml(tit)}</span></a></li>`;
             })
             .filter(Boolean)
             .join('');
         list.innerHTML = itemsHtml ? this.sanitizeHtml(itemsHtml) : '';
         block.hidden = !itemsHtml;
+        this.queueInPlaceTranslationForSummaryCard(summaryDiv);
     }
 
     /**
@@ -4275,6 +4712,7 @@ class App {
                 list.innerHTML = '';
                 list.hidden = true;
                 list.classList.remove('summary-alt-links-list--expanded');
+                this.queueInPlaceTranslationForSummaryCard(summaryDiv);
                 return;
             }
 
@@ -4298,7 +4736,7 @@ class App {
                     const lineInner = src
                         ? `<span class="summary-alt-link-source">${this.escapeHtml(src)}:</span><span class="summary-alt-link-title">${this.escapeHtml(headline)}</span>`
                         : `<span class="summary-alt-link-title">${this.escapeHtml(headline)}</span>`;
-                    return `<li class="summary-alt-link-item"><a class="summary-alt-link" href="${this.escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${img}<span class="summary-alt-link-line">${lineInner}</span></a></li>`;
+                    return `<li class="summary-alt-link-item"><a class="summary-alt-link" href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(u))}" target="_blank" rel="noopener noreferrer">${img}<span class="summary-alt-link-line">${lineInner}</span></a></li>`;
                 })
                 .join('');
             list.innerHTML = this.sanitizeHtml(itemsHtml);
@@ -4320,6 +4758,27 @@ class App {
                 toggleBtn.setAttribute('aria-label', this._i18nAltLinksBtnShow);
             }
         }
+        this.queueInPlaceTranslationForSummaryCard(summaryDiv);
+    }
+
+    /**
+     * Re-translate summary / alt / Reddit nodes on this card after DOM updates (MyMemory).
+     * @param {HTMLElement} summaryDiv
+     */
+    queueInPlaceTranslationForSummaryCard(summaryDiv) {
+        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
+            return;
+        }
+        if (!summaryDiv) {
+            return;
+        }
+        const sc = summaryDiv.querySelector('.summary-content');
+        if (sc) {
+            sc.removeAttribute('data-mtm');
+        }
+        summaryDiv.querySelectorAll('.summary-alt-link-title').forEach((el) => el.removeAttribute('data-mtm'));
+        summaryDiv.querySelectorAll('.summary-reddit-line').forEach((el) => el.removeAttribute('data-mtm'));
+        this.scheduleArticleInPlaceTranslation();
     }
 
     /**
@@ -5565,6 +6024,29 @@ class App {
             this.elements.summaryLangMode.value = summaryLangModeUi;
         }
 
+        if (this.elements.articleTranslationEnabled) {
+            this.elements.articleTranslationEnabled.checked = this.settings?.articleTranslationEnabled === true;
+        }
+        if (this.elements.articleTranslationTargetLang) {
+            const atl = String(this.settings?.articleTranslationTargetLang || 'de').trim();
+            const sel = this.elements.articleTranslationTargetLang;
+            const has = [...sel.options].some((o) => o.value === atl);
+            sel.value = has ? atl : 'de';
+        }
+        if (this.elements.articleTranslationLinkProvider) {
+            const ATp = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+            const p = ATp
+                ? ATp.normalizeLinkProvider(this.settings?.articleTranslationLinkProvider)
+                : 'google';
+            const sel = this.elements.articleTranslationLinkProvider;
+            if ([...sel.options].some((o) => o.value === p)) {
+                sel.value = p;
+            } else {
+                sel.value = 'google';
+            }
+        }
+        this.syncArticleTranslationFormDisabled();
+
         let reasoningUi = 'off';
         try {
             reasoningUi = AISummarizer.normalizeLmReasoningParam(
@@ -6644,6 +7126,15 @@ class App {
     }
 
     async saveSettings() {
+        const prevArticleTranslation = {
+            on: this.settings?.articleTranslationEnabled === true,
+            lang: String(this.settings?.articleTranslationTargetLang || 'de'),
+            prov:
+                typeof window !== 'undefined' && window.ArticleTranslation
+                    ? window.ArticleTranslation.normalizeLinkProvider(this.settings?.articleTranslationLinkProvider)
+                    : 'google'
+        };
+
         const mode =
             this.elements.kiApiMode && this.elements.kiApiMode.value === 'openai' ? 'openai' : 'lm_rest_v1';
 
@@ -6702,6 +7193,22 @@ class App {
         const webSearchEngineSaved = this.elements.webSearchEngine
             ? App.normalizeWebSearchEngine(this.elements.webSearchEngine.value)
             : App.normalizeWebSearchEngine(this.settings?.webSearchEngine);
+
+        const articleTranslationEnabled =
+            this.elements.articleTranslationEnabled &&
+            this.elements.articleTranslationEnabled.checked === true;
+        const ATs = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+        const articleTranslationTargetLang = ATs
+            ? ATs.normalizeTargetLang(
+                  this.elements.articleTranslationTargetLang && this.elements.articleTranslationTargetLang.value
+              )
+            : 'de';
+        const articleTranslationLinkProvider = ATs
+            ? ATs.normalizeLinkProvider(
+                  this.elements.articleTranslationLinkProvider &&
+                      this.elements.articleTranslationLinkProvider.value
+              )
+            : 'google';
 
         const alternativeLinksDisplayModeSaved = this.elements.alternativeLinksDisplayMode
             ? App.normalizeAlternativeLinksDisplayMode(this.elements.alternativeLinksDisplayMode.value)
@@ -6794,6 +7301,9 @@ class App {
                 this.elements.summaryLangMode && this.elements.summaryLangMode.value === 'browser'
                     ? 'browser'
                     : 'site',
+            articleTranslationEnabled,
+            articleTranslationTargetLang,
+            articleTranslationLinkProvider,
             enabledHeiseMagazines: enabledHeiseMagazinesKi
         };
 
@@ -6812,6 +7322,45 @@ class App {
 
             this.applyTheme();
             this.applyColorTheme();
+
+            const nextArticleTranslation = {
+                on: settings.articleTranslationEnabled === true,
+                lang: String(settings.articleTranslationTargetLang || 'de'),
+                prov:
+                    typeof window !== 'undefined' && window.ArticleTranslation
+                        ? window.ArticleTranslation.normalizeLinkProvider(settings.articleTranslationLinkProvider)
+                        : 'google'
+            };
+            const articleTranslationNeedsReload =
+                prevArticleTranslation.on !== nextArticleTranslation.on ||
+                (nextArticleTranslation.on &&
+                    prevArticleTranslation.on &&
+                    (prevArticleTranslation.lang !== nextArticleTranslation.lang ||
+                        prevArticleTranslation.prov !== nextArticleTranslation.prov));
+
+            if (articleTranslationNeedsReload) {
+                this.clearArticleTranslationCookieIfDisabled();
+                try {
+                    if (!nextArticleTranslation.on) {
+                        document.cookie = 'googtrans=;path=/;max-age=0';
+                    }
+                } catch (_) {
+                    /* ignore */
+                }
+                this.closeSettingsModal();
+                this.showStatus(
+                    this._i18nArticleTranslationReloadStatus ||
+                        'Translation settings saved. Reloading the page …',
+                    false
+                );
+                window.setTimeout(() => {
+                    window.location.reload();
+                }, 400);
+                return;
+            }
+
+            this.refreshArticleTranslationToolbarFromSettings();
+            this.scheduleArticleInPlaceTranslation();
 
             this.closeSettingsModal();
             this.showStatus(

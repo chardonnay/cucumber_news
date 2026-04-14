@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net https://api.mymemory.translated.net; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>Heise News Dashboard</title>
     <!-- Fonts: Google Fonts via CSP-erlaubte URL -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -739,6 +739,28 @@
         .sort-progress {
             font-size: 0.85rem;
             color: var(--text-secondary);
+        }
+
+        /* Google Translate toolbar (above news grid; UI chrome uses .notranslate) */
+        .article-translation-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            padding: 0.65rem 1rem;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            box-shadow: var(--shadow);
+        }
+
+        .article-translation-toolbar__hint {
+            margin: 0;
+            flex: 1 1 12rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            min-width: 0;
         }
 
         /* News Grid — column count follows container width (auto-fill + min track width) */
@@ -2114,7 +2136,7 @@
             <span class="cucumber-brand-banner__title">Cucumber NewsScraper</span>
         </div>
     </div>
-    <header class="header">
+    <header class="header notranslate">
         <h1 class="header-title">
             <button
                 type="button"
@@ -2204,6 +2226,7 @@
     </header>
 
     <main class="container">
+        <div class="app-ui-chrome notranslate" data-app-notranslate-chrome="1">
         <!-- Filter Section -->
         <section class="filter-section" aria-labelledby="filter-heading">
             <div class="filter-section__heading-row">
@@ -2374,6 +2397,11 @@
             </div>
             </div>
         </section>
+        </div>
+
+        <div class="article-translation-toolbar" id="articleTranslationToolbar" hidden>
+            <p class="article-translation-toolbar__hint notranslate" id="articleTranslationToolbarHint"></p>
+        </div>
 
         <!-- News Grid -->
         <section class="news-grid" id="newsGrid" aria-live="polite">
@@ -2384,14 +2412,14 @@
         </section>
 
         <!-- Load More -->
-        <div class="load-more-container">
+        <div class="load-more-container notranslate">
             <button type="button" class="load-more-btn" id="loadMoreBtn">Mehr laden</button>
             <button type="button" class="load-more-btn load-more-btn--secondary" id="showAllNewsBtn">Alles anzeigen</button>
         </div>
     </main>
 
     <!-- Dashboard settings: news sources in header dropdown -->
-    <div class="modal-overlay" id="dashboardSettingsModal" role="dialog" aria-labelledby="dashboardSettingsTitle" aria-modal="true">
+    <div class="modal-overlay notranslate" id="dashboardSettingsModal" role="dialog" aria-labelledby="dashboardSettingsTitle" aria-modal="true">
         <div class="modal modal--sources">
             <h2 id="dashboardSettingsTitle">Einstellungen — Newsquellen</h2>
 
@@ -2539,7 +2567,7 @@
     </div>
 
     <!-- KI / LM Studio Modal -->
-    <div class="modal-overlay" id="settingsModal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
+    <div class="modal-overlay notranslate" id="settingsModal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
         <div class="modal">
             <h2 id="modal-title">🤖 KI-Zusammenfassung (LM Studio)</h2>
             <p class="modal-hint" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
@@ -2590,6 +2618,60 @@
                 <select id="summaryLangMode" class="setting-input" aria-describedby="summaryLangHint">
                     <option value="site">Wie die News-Website (je nach Quelle)</option>
                     <option value="browser">Browser- / Systemsprache</option>
+                </select>
+            </div>
+
+            <div class="setting-group" id="articleTranslationSettingsGroup">
+                <label class="setting-label" style="display: flex; align-items: flex-start; gap: 0.5rem; font-weight: normal; cursor: pointer;">
+                    <input type="checkbox" id="articleTranslationEnabled" style="width: auto; margin-top: 0.2rem;">
+                    <span>
+                        <strong id="articleTranslationEnabledTitle">Artikelbereich maschinell übersetzen</strong>
+                        <span id="articleTranslationEnabledHint" class="modal-hint" style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.35rem;"></span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="setting-group" id="articleTranslationTargetWrap">
+                <label for="articleTranslationTargetLang" class="setting-label" id="articleTranslationTargetLabel">Zielsprache</label>
+                <p id="articleTranslationTargetHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <select id="articleTranslationTargetLang" class="setting-input" aria-describedby="articleTranslationTargetHint">
+                    <option value="de">Deutsch</option>
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                    <option value="it">Italiano</option>
+                    <option value="nl">Nederlands</option>
+                    <option value="pl">Polski</option>
+                    <option value="pt">Português</option>
+                    <option value="ru">Русский</option>
+                    <option value="ja">日本語</option>
+                    <option value="zh-CN">中文（简体）</option>
+                    <option value="ko">한국어</option>
+                    <option value="sv">Svenska</option>
+                    <option value="da">Dansk</option>
+                    <option value="fi">Suomi</option>
+                    <option value="cs">Čeština</option>
+                    <option value="el">Ελληνικά</option>
+                    <option value="uk">Українська</option>
+                    <option value="tr">Türkçe</option>
+                    <option value="ar">العربية</option>
+                    <option value="hi">हिन्दी</option>
+                    <option value="id">Bahasa Indonesia</option>
+                    <option value="vi">Tiếng Việt</option>
+                    <option value="th">ไทย</option>
+                    <option value="he">עברית</option>
+                    <option value="ro">Română</option>
+                    <option value="hu">Magyar</option>
+                </select>
+            </div>
+
+            <div class="setting-group" id="articleTranslationProviderWrap">
+                <label for="articleTranslationLinkProvider" class="setting-label" id="articleTranslationProviderLabel">Anbieter für Artikel-Links (neuer Tab)</label>
+                <p id="articleTranslationProviderHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></p>
+                <select id="articleTranslationLinkProvider" class="setting-input" aria-describedby="articleTranslationProviderHint">
+                    <option value="google">Google (translate.goog)</option>
+                    <option value="google_classic">Google (translate.google.com)</option>
+                    <option value="bing">Microsoft Translator</option>
                 </select>
             </div>
 
@@ -2706,7 +2788,7 @@
     </div>
 
     <!-- KI usage statistics (localStorage) -->
-    <div class="modal-overlay" id="kiStatsModal" role="dialog" aria-labelledby="kiStatsTitle" aria-modal="true">
+    <div class="modal-overlay notranslate" id="kiStatsModal" role="dialog" aria-labelledby="kiStatsTitle" aria-modal="true">
         <div class="modal modal--wide ki-stats-modal">
             <h2 id="kiStatsTitle">KI-Server — Statistik</h2>
             <p id="kiStatsIntro" class="modal-hint ki-stats-intro"></p>
@@ -2812,7 +2894,7 @@
     </style>
 
     <!-- YouTube Modal -->
-    <div class="modal-overlay" id="youtubeModal" role="dialog" aria-labelledby="yt-modal-title" aria-modal="true">
+    <div class="modal-overlay notranslate" id="youtubeModal" role="dialog" aria-labelledby="yt-modal-title" aria-modal="true">
         <div class="modal modal--wide">
             <h2 id="yt-modal-title" class="yt-modal-title">
                 <svg class="yt-modal-title__logo" viewBox="0 0 24 24" width="48" height="48" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
@@ -2836,7 +2918,7 @@
     </div>
 
     <!-- Status Bar -->
-    <footer class="status-bar" id="statusBar">
+    <footer class="status-bar notranslate" id="statusBar">
         <span id="statusFlash" class="status-flash" role="status" aria-live="polite"></span>
         <span id="lastUpdate">Letzte Aktualisierung: --:--</span>
         <span aria-hidden="true"> | </span>
@@ -2861,6 +2943,7 @@
     <script src="js/ai-summarizer.js?v=altblk1"></script>
     <script src="js/heise-comments.js?v=telepolis-comments1"></script>
     <script src="js/youtube-related.js"></script>
+    <script src="js/article-translation.js?v=1"></script>
     <script src="js/app.js?v=themeHeaderBar20260412b"></script>
     
 </body>
