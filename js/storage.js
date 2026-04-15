@@ -315,6 +315,8 @@ class NewsStorage {
             sortDateTo: '',
             /** Header: show remote heise logo vs. text wordmark */
             headerBrandMode: 'logo',
+            /** Show feed-provided article thumbnails in dashboard cards when available */
+            articleThumbnailsEnabled: true,
             /** News source: heise | telepolis | golem | computerbase | t3n | it_administrator | verge */
             newsSource: 'heise',
             /**

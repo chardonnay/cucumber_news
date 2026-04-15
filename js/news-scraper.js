@@ -601,6 +601,151 @@ class NewsScraper {
     }
 
     /**
+     * @param {string} rawUrl
+     * @param {string} [baseUrl]
+     * @returns {string}
+     */
+    normalizeThumbnailUrl(rawUrl, baseUrl) {
+        const raw = String(rawUrl || '').trim();
+        if (!raw) {
+            return '';
+        }
+        const withProtocol = raw.startsWith('//') ? `https:${raw}` : raw;
+        try {
+            const resolved = baseUrl ? new URL(withProtocol, baseUrl) : new URL(withProtocol);
+            if (resolved.protocol !== 'https:' && resolved.protocol !== 'http:') {
+                return '';
+            }
+            resolved.hash = '';
+            return resolved.toString();
+        } catch (_) {
+            return '';
+        }
+    }
+
+    /**
+     * @param {Element} entry
+     * @param {string} articleUrl
+     * @param {string[]} markupCandidates
+     * @returns {string}
+     */
+    extractThumbnailUrl(entry, articleUrl, markupCandidates) {
+        const attrUrl = this.extractThumbnailUrlFromFeedEntry(entry, articleUrl);
+        if (attrUrl) {
+            return attrUrl;
+        }
+        if (!Array.isArray(markupCandidates)) {
+            return '';
+        }
+        for (const markup of markupCandidates) {
+            const htmlUrl = this.extractThumbnailUrlFromMarkup(markup, articleUrl);
+            if (htmlUrl) {
+                return htmlUrl;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param {Element} entry
+     * @param {string} articleUrl
+     * @returns {string}
+     */
+    extractThumbnailUrlFromFeedEntry(entry, articleUrl) {
+        if (!entry) {
+            return '';
+        }
+        const nodes = entry.getElementsByTagName('*');
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const localName = String(node.localName || node.tagName || '')
+                .trim()
+                .toLowerCase();
+            if (!localName) {
+                continue;
+            }
+
+            const rel = String(node.getAttribute('rel') || '')
+                .trim()
+                .toLowerCase();
+            const medium = String(node.getAttribute('medium') || '')
+                .trim()
+                .toLowerCase();
+            const type = String(node.getAttribute('type') || '')
+                .trim()
+                .toLowerCase();
+
+            if (localName === 'thumbnail' || localName.endsWith(':thumbnail')) {
+                const thumbnailUrl =
+                    this.normalizeThumbnailUrl(
+                        node.getAttribute('url') || node.getAttribute('href') || node.getAttribute('src') || '',
+                        articleUrl
+                    );
+                if (thumbnailUrl) {
+                    return thumbnailUrl;
+                }
+                continue;
+            }
+
+            const isImageCarrier =
+                localName === 'enclosure' ||
+                localName === 'content' ||
+                localName.endsWith(':content') ||
+                (localName === 'link' && rel === 'enclosure');
+            const isImageType = medium === 'image' || type.startsWith('image/');
+            if (!isImageCarrier || !isImageType) {
+                continue;
+            }
+            const imageUrl =
+                this.normalizeThumbnailUrl(
+                    node.getAttribute('url') || node.getAttribute('href') || node.getAttribute('src') || '',
+                    articleUrl
+                );
+            if (imageUrl) {
+                return imageUrl;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param {string} markup
+     * @param {string} articleUrl
+     * @returns {string}
+     */
+    extractThumbnailUrlFromMarkup(markup, articleUrl) {
+        const rawMarkup = String(markup || '').trim();
+        if (!rawMarkup || typeof DOMParser === 'undefined') {
+            return '';
+        }
+        try {
+            const doc = new DOMParser().parseFromString(rawMarkup, 'text/html');
+            const directImg = doc.querySelector('img[src]');
+            if (directImg) {
+                const directImgUrl = this.normalizeThumbnailUrl(directImg.getAttribute('src') || '', articleUrl);
+                if (directImgUrl) {
+                    return directImgUrl;
+                }
+            }
+
+            const srcSetNode = doc.querySelector('img[srcset], source[srcset]');
+            if (srcSetNode) {
+                const srcSet = String(srcSetNode.getAttribute('srcset') || '').trim();
+                if (srcSet) {
+                    const firstCandidate = srcSet.split(',')[0].trim().split(/\s+/)[0];
+                    const srcSetUrl = this.normalizeThumbnailUrl(firstCandidate, articleUrl);
+                    if (srcSetUrl) {
+                        return srcSetUrl;
+                    }
+                }
+            }
+        } catch (_) {
+            return '';
+        }
+        return '';
+    }
+
+    /**
      * Parse RSS 2.0 (Golem, t3n).
      * @param {string} xml
      */
@@ -644,9 +789,25 @@ class NewsScraper {
             const cleanUrl = this.normalizeArticleUrlKey(href);
             const summaryEl = entry.getElementsByTagName('description')[0];
             let description = '';
+            const markupCandidates = [];
             if (summaryEl) {
                 description = this.stripHtml(summaryEl.textContent || '');
+                markupCandidates.push(summaryEl.textContent || '');
             }
+            const rssChildNodes = entry.getElementsByTagName('*');
+            for (let j = 0; j < rssChildNodes.length; j++) {
+                const node = rssChildNodes[j];
+                const localName = String(node.localName || node.tagName || '')
+                    .trim()
+                    .toLowerCase();
+                if (localName === 'encoded' || localName.endsWith(':encoded')) {
+                    const markup = node.textContent || '';
+                    if (markup) {
+                        markupCandidates.push(markup);
+                    }
+                }
+            }
+            const thumbnailUrl = this.extractThumbnailUrl(entry, href, markupCandidates);
 
             const pubDateEl = entry.getElementsByTagName('pubDate')[0];
             const pubRaw = pubDateEl ? pubDateEl.textContent.trim() : '';
@@ -673,6 +834,9 @@ class NewsScraper {
                 fetchedAt: new Date().toISOString(),
                 newsSource: this.source
             });
+            if (thumbnailUrl) {
+                articles[articles.length - 1].thumbnailUrl = thumbnailUrl;
+            }
         }
 
         return articles;
@@ -740,10 +904,18 @@ class NewsScraper {
 
             const cleanUrl = this.normalizeArticleUrlKey(href);
             const summaryEl = entry.getElementsByTagName('summary')[0];
+            const contentEl = entry.getElementsByTagName('content')[0];
             let description = '';
+            let summaryMarkup = '';
+            let contentMarkup = '';
             if (summaryEl) {
                 description = this.stripHtml(summaryEl.textContent || '');
+                summaryMarkup = summaryEl.textContent || '';
             }
+            if (contentEl) {
+                contentMarkup = contentEl.textContent || '';
+            }
+            const thumbnailUrl = this.extractThumbnailUrl(entry, href, [summaryMarkup, contentMarkup]);
 
             const publishedEl =
                 entry.getElementsByTagName('published')[0] ||
@@ -778,6 +950,9 @@ class NewsScraper {
                 fetchedAt: new Date().toISOString(),
                 newsSource: this.source
             });
+            if (thumbnailUrl) {
+                articles[articles.length - 1].thumbnailUrl = thumbnailUrl;
+            }
         }
 
         return articles;

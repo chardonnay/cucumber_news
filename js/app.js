@@ -72,6 +72,9 @@ const THEME_DEFAULT_HEADER = {
     }
 };
 
+/** Persisted manual card order per visible main-view state (source + categories + sort + date filter). */
+const MANUAL_CARD_ORDER_STORAGE_KEY = 'heise_manual_card_order_by_view';
+
 class App {
     constructor() {
         this.storage = new NewsStorage();
@@ -94,6 +97,11 @@ class App {
         // Performance optimization: Filter cache to avoid repeated O(n) filtering on the same dataset.
         /** @type {Map<string, object[]>} */
         this._filterCache = new Map();
+        /** @type {Record<string, string[]>} */
+        this._manualCardOrderByView = App.loadManualCardOrderState();
+        this._draggedNewsCardId = '';
+        this._dragNewsDropTargetId = '';
+        this._dragNewsDropPosition = 'before';
 
         /** Background KI run for new articles after refresh (avoid overlap with „Alle Zusammenfassungen“). */
         this._autoSummarizeNewInProgress = false;
@@ -168,6 +176,7 @@ class App {
             exportIncludeReddit: document.getElementById('exportIncludeReddit'),
             exportIncludeComments: document.getElementById('exportIncludeComments'),
             exportIncludeKiMeta: document.getElementById('exportIncludeKiMeta'),
+            exportIncludeThumbnails: document.getElementById('exportIncludeThumbnails'),
             exportSelectionInfo: document.getElementById('exportSelectionInfo'),
             cancelExportBtn: document.getElementById('cancelExportBtn'),
             runExportBtn: document.getElementById('runExportBtn'),
@@ -196,6 +205,7 @@ class App {
             themeBrightnessLight: document.getElementById('themeBrightnessLight'),
             themeBrightnessDark: document.getElementById('themeBrightnessDark'),
             themeResetDefaultsBtn: document.getElementById('themeResetDefaultsBtn'),
+            articleThumbnailsEnabled: document.getElementById('articleThumbnailsEnabled'),
             themeLightBgPrimary: document.getElementById('themeLightBgPrimary'),
             themeLightBgSecondary: document.getElementById('themeLightBgSecondary'),
             themeLightBgCard: document.getElementById('themeLightBgCard'),
@@ -273,7 +283,7 @@ class App {
         this._i18nAltLinksErrNoUrl = 'No article URL for alternative link search.';
         this._i18nAltLinksErrNoSummary = 'No summary yet — load or generate one first.';
         this._i18nAltLinksRefreshNone = 'No alternative links returned (search or probe).';
-        this._i18nWebSearchBtn = '🔍 Weitere Artikel';
+        this._i18nWebSearchBtn = 'Weitere Artikel';
         this._i18nWebSearchTitle = 'Gleiches Thema per Suchmaschine finden';
         this._i18nRedditSearchBtn = 'Reddit';
         this._i18nRedditSearchTitle = 'Search Reddit for threads on this topic (up to 5)';
@@ -282,6 +292,17 @@ class App {
         this._i18nRedditNoTitle = 'No article title for Reddit search.';
         this._i18nRedditFound = '{count} Reddit thread(s)';
         this._i18nRedditFoundAi = 'Reddit (KI): {count} Thread(s) — Suche: {queries}';
+        this._i18nSummaryRefreshBtn = 'Neu erstellen';
+        this._i18nShareBtn = 'Teilen';
+        this._i18nShareTitle = 'Artikel und sichtbare Karteninhalte teilen';
+        this._i18nShareDone = 'Artikel an die Teilen-Funktion übergeben.';
+        this._i18nShareCopied = 'Artikelinhalt in die Zwischenablage kopiert.';
+        this._i18nShareUnavailable = 'Teilen ist in diesem Browser hier nicht verfügbar.';
+        this._i18nShareFailed = 'Teilen fehlgeschlagen.';
+        this._i18nShareSectionSummary = 'Zusammenfassung';
+        this._i18nShareSectionAlternativeLinks = 'Alternative Links';
+        this._i18nShareSectionReddit = 'Reddit Threads';
+        this._i18nShareSectionComments = 'Kommentar-Metadaten';
         this._i18nNewsCountLoaded = '{count} Nachrichten geladen';
         this._i18nExportSelectionInfo = 'Ausgewählt: {selected}, sichtbar: {visible}';
         this._i18nExportDone = 'Export erstellt: {count} Artikel ({format}).';
@@ -556,6 +577,9 @@ class App {
         if (this.elements.exportScope) {
             this.elements.exportScope.addEventListener('change', () => this.syncExportScopeUi());
         }
+        if (this.elements.exportFormat) {
+            this.elements.exportFormat.addEventListener('change', () => this.syncExportFormatUi());
+        }
 
         // KI / LM Studio modal
         this.elements.settingsBtn.addEventListener('click', () => this.openSettingsModal());
@@ -729,6 +753,17 @@ class App {
                 return;
             }
 
+            // Share button
+            const shareBtn = target.closest('.article-share-btn');
+            if (shareBtn) {
+                e.preventDefault();
+                const card = shareBtn.closest('.news-card');
+                const cardId = card && card.dataset ? card.dataset.id : '';
+                if (!cardId) return;
+                void this.shareArticleCard(cardId, shareBtn);
+                return;
+            }
+
             // Alternative links refresh button
             const altLinksRefreshBtn = target.closest('.summary-alt-links-refresh-btn');
             if (altLinksRefreshBtn) {
@@ -794,6 +829,10 @@ class App {
         }
         if (this.elements.newsGrid) {
             this.elements.newsGrid.addEventListener('change', (e) => this.handleNewsGridChange(e));
+            this.elements.newsGrid.addEventListener('dragstart', (e) => this.handleNewsCardDragStart(e));
+            this.elements.newsGrid.addEventListener('dragover', (e) => this.handleNewsCardDragOver(e));
+            this.elements.newsGrid.addEventListener('drop', (e) => this.handleNewsCardDrop(e));
+            this.elements.newsGrid.addEventListener('dragend', () => this.clearNewsCardDragState());
         }
 
         // Modal close on overlay click
@@ -1407,6 +1446,9 @@ class App {
             const alternativeLinksDomainBlacklist = App.normalizeAlternativeLinksDomainBlacklist(
                 settings.alternativeLinksDomainBlacklist
             );
+            const articleThumbnailsEnabled = App.normalizeArticleThumbnailsEnabled(
+                settings.articleThumbnailsEnabled
+            );
 
             const summaryConcurrency = App.normalizeSummaryConcurrency(settings.summaryConcurrency);
             const summaryRequestTimeoutSeconds = App.normalizeKiRequestTimeoutSeconds(
@@ -1440,6 +1482,7 @@ class App {
                 alternativeLinksDisplayMode,
                 forumEntriesDiscoveryMode,
                 alternativeLinksDomainBlacklist,
+                articleThumbnailsEnabled,
                 webSearchEngine,
                 articleTranslationEnabled,
                 articleTranslationTargetLang,
@@ -1456,6 +1499,7 @@ class App {
                 localStorage.setItem('heise_summary_lang_mode', summaryLangMode);
                 localStorage.setItem('heise_alternative_links_blacklist', alternativeLinksDomainBlacklist);
                 localStorage.setItem('heise_forum_entries_discovery_mode', forumEntriesDiscoveryMode);
+                localStorage.setItem('heise_article_thumbnails_enabled', articleThumbnailsEnabled ? '1' : '0');
                 localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(enabledHeiseMagazines));
             } catch (_) {
                 /* ignore */
@@ -1709,6 +1753,67 @@ class App {
         return { light, dark };
     }
 
+    /**
+     * @param {unknown} raw
+     * @returns {string[]}
+     */
+    static normalizeManualCardOrderIds(raw) {
+        if (!Array.isArray(raw)) {
+            return [];
+        }
+        const out = [];
+        const seen = new Set();
+        raw.forEach((entry) => {
+            const id = String(entry == null ? '' : entry).trim();
+            if (!id || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            out.push(id);
+        });
+        return out;
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {Record<string, string[]>}
+     */
+    static normalizeManualCardOrderState(raw) {
+        const out = {};
+        if (!raw || typeof raw !== 'object') {
+            return out;
+        }
+        Object.keys(raw).forEach((key) => {
+            const viewKey = String(key || '').trim();
+            if (!viewKey) {
+                return;
+            }
+            const ids = App.normalizeManualCardOrderIds(raw[key]);
+            if (ids.length > 0) {
+                out[viewKey] = ids;
+            }
+        });
+        return out;
+    }
+
+    /**
+     * @returns {Record<string, string[]>}
+     */
+    static loadManualCardOrderState() {
+        if (typeof localStorage === 'undefined') {
+            return {};
+        }
+        try {
+            const raw = localStorage.getItem(MANUAL_CARD_ORDER_STORAGE_KEY);
+            if (!raw) {
+                return {};
+            }
+            return App.normalizeManualCardOrderState(JSON.parse(raw));
+        } catch (_) {
+            return {};
+        }
+    }
+
     /** @param {unknown} raw @returns {string | null} */
     static normalizeHexColor(raw) {
         const s = String(raw || '').trim();
@@ -1821,6 +1926,15 @@ class App {
     static normalizeForumEntriesDiscoveryMode(raw) {
         const s = String(raw || 'click').trim().toLowerCase();
         return s === 'always' ? 'always' : 'click';
+    }
+
+    /** @param {unknown} raw */
+    static normalizeArticleThumbnailsEnabled(raw) {
+        if (raw === false || raw === 0) {
+            return false;
+        }
+        const s = String(raw == null ? 'true' : raw).trim().toLowerCase();
+        return !(s === 'false' || s === '0' || s === 'off' || s === 'no');
     }
 
     /**
@@ -2023,6 +2137,28 @@ class App {
     /** Reddit favicon (CDN, used next to thread titles). */
     static redditFaviconUrl() {
         return 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-32x32.png';
+    }
+
+    /**
+     * @param {{ thumbnailUrl?: unknown }|null|undefined} item
+     * @returns {string}
+     */
+    static articleThumbnailUrl(item) {
+        const raw = item && item.thumbnailUrl != null ? String(item.thumbnailUrl).trim() : '';
+        if (!raw) {
+            return '';
+        }
+        const withProtocol = raw.startsWith('//') ? `https:${raw}` : raw;
+        try {
+            const url = new URL(withProtocol, typeof window !== 'undefined' ? window.location.href : undefined);
+            if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+                return '';
+            }
+            url.hash = '';
+            return url.toString();
+        } catch (_) {
+            return '';
+        }
     }
 
     /**
@@ -2334,6 +2470,36 @@ class App {
                 if (newsLoc.reddit_found_ai) {
                     this._i18nRedditFoundAi = newsLoc.reddit_found_ai;
                 }
+                if (newsLoc.share_btn) {
+                    this._i18nShareBtn = newsLoc.share_btn;
+                }
+                if (newsLoc.share_title) {
+                    this._i18nShareTitle = newsLoc.share_title;
+                }
+                if (newsLoc.share_done) {
+                    this._i18nShareDone = newsLoc.share_done;
+                }
+                if (newsLoc.share_copied) {
+                    this._i18nShareCopied = newsLoc.share_copied;
+                }
+                if (newsLoc.share_unavailable) {
+                    this._i18nShareUnavailable = newsLoc.share_unavailable;
+                }
+                if (newsLoc.share_failed) {
+                    this._i18nShareFailed = newsLoc.share_failed;
+                }
+                if (newsLoc.share_section_summary) {
+                    this._i18nShareSectionSummary = newsLoc.share_section_summary;
+                }
+                if (newsLoc.share_section_alternative_links) {
+                    this._i18nShareSectionAlternativeLinks = newsLoc.share_section_alternative_links;
+                }
+                if (newsLoc.share_section_reddit) {
+                    this._i18nShareSectionReddit = newsLoc.share_section_reddit;
+                }
+                if (newsLoc.share_section_comments) {
+                    this._i18nShareSectionComments = newsLoc.share_section_comments;
+                }
                 if (newsLoc.news_count_loaded) {
                     this._i18nNewsCountLoaded = newsLoc.news_count_loaded;
                 }
@@ -2383,6 +2549,7 @@ class App {
                 setTxt('exportIncludeRedditLabel', newsLoc.export_include_reddit);
                 setTxt('exportIncludeCommentsLabel', newsLoc.export_include_comments);
                 setTxt('exportIncludeKiMetaLabel', newsLoc.export_include_ki_meta);
+                setTxt('exportIncludeThumbnailsLabel', newsLoc.export_include_thumbnails);
                 setTxt('cancelExportBtn', newsLoc.export_cancel_btn);
                 setTxt('runExportBtn', newsLoc.export_run_btn);
                 this.updateExportSelectionInfo();
@@ -2678,6 +2845,9 @@ class App {
                 }
                 if (ki.model_loaded_status_none) {
                     this._i18nLmModelLoadedStatusNone = ki.model_loaded_status_none;
+                }
+                if (ki.btn_refresh_summary) {
+                    this._i18nSummaryRefreshBtn = ki.btn_refresh_summary;
                 }
                 const lmhIdle = document.getElementById('lmModelHint');
                 if (lmhIdle && ki.model_hint_default) {
@@ -3157,6 +3327,16 @@ class App {
     }
 
     /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    static collapseWhitespace(value) {
+        return String(value ?? '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
      * Reconstructs a real hostname from a `*.translate.goog` host (dots in the original host became hyphens).
      * @param {string} translateGoogHost e.g. `www-theverge-com.translate.goog`
      * @returns {string} e.g. `www.theverge.com`, or '' if not a translate.goog host
@@ -3204,6 +3384,36 @@ class App {
                 const decoded = App.decodeTranslateGoogSlugToHostname(h);
                 if (decoded) {
                     return `${u.protocol}//${decoded}${u.pathname}${u.search}`;
+                }
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        return s;
+    }
+
+    /**
+     * Best-effort unwrapping for outbound share targets so the shared URL points to the original article.
+     * Supports the translation wrappers emitted by `article-translation.js`.
+     * @param {string} rawUrl
+     * @returns {string}
+     */
+    static unwrapShareTargetUrl(rawUrl) {
+        const s = String(rawUrl || '').trim();
+        if (!s) {
+            return '';
+        }
+        const unwrappedGoogle = App.unwrapArticleUrlForLangDetection(s);
+        if (unwrappedGoogle !== s) {
+            return unwrappedGoogle;
+        }
+        try {
+            const u = new URL(s);
+            const h = u.hostname.toLowerCase();
+            if (h === 'www.microsofttranslator.com' || h === 'microsofttranslator.com') {
+                const inner = u.searchParams.get('a');
+                if (inner && /^https?:\/\//i.test(inner.trim())) {
+                    return inner.trim();
                 }
             }
         } catch (_) {
@@ -3554,6 +3764,247 @@ class App {
         return byUrl(this.newsItems) || byUrl(this.filteredNewsItems);
     }
 
+    /**
+     * @param {HTMLElement} card
+     * @param {string} selector
+     * @param {(link: HTMLAnchorElement) => string} buildLabel
+     * @returns {string[]}
+     */
+    collectShareLinkLines(card, selector, buildLabel) {
+        if (!card) {
+            return [];
+        }
+        return Array.from(card.querySelectorAll(selector))
+            .map((node) => {
+                const link = node instanceof HTMLAnchorElement ? node : null;
+                if (!link) {
+                    return '';
+                }
+                const href = App.unwrapShareTargetUrl(link.getAttribute('href') || link.href || '');
+                const label = App.collapseWhitespace(buildLabel(link));
+                if (!href && !label) {
+                    return '';
+                }
+                if (!href) {
+                    return label;
+                }
+                if (!label || label === href) {
+                    return href;
+                }
+                return `${label} — ${href}`;
+            })
+            .filter(Boolean);
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @returns {string[]}
+     */
+    collectShareCommentLines(card) {
+        if (!card) {
+            return [];
+        }
+        const lines = [];
+        const moodWrap = card.querySelector('.forum-mood-wrap');
+        if (moodWrap instanceof HTMLElement && !moodWrap.hidden) {
+            const mood = App.collapseWhitespace(moodWrap.textContent || '');
+            if (mood) {
+                lines.push(mood);
+            }
+        }
+        const commentsRow = card.querySelector('.news-comments-row');
+        if (!(commentsRow instanceof HTMLElement) || commentsRow.hidden) {
+            return lines;
+        }
+        const commentsInner = commentsRow.querySelector('.news-comments-inner');
+        if (!(commentsInner instanceof HTMLElement)) {
+            return lines;
+        }
+        const primary = App.collapseWhitespace(
+            commentsInner.querySelector('.news-comments-row-primary')?.textContent || ''
+        );
+        if (primary) {
+            lines.push(primary);
+        }
+        const maxRepliesLink = commentsInner.querySelector('.news-comments-max-link--standalone');
+        if (maxRepliesLink instanceof HTMLAnchorElement) {
+            const label = App.collapseWhitespace(maxRepliesLink.textContent || '');
+            const href = App.unwrapShareTargetUrl(
+                maxRepliesLink.getAttribute('href') || maxRepliesLink.href || ''
+            );
+            if (label && href) {
+                lines.push(`${label} — ${href}`);
+            } else if (label) {
+                lines.push(label);
+            }
+        }
+        commentsInner
+            .querySelectorAll(
+                '.news-comments-rss-note, .news-comments-rate-msg, .news-comments-note, .news-comments-error'
+            )
+            .forEach((node) => {
+                const text = App.collapseWhitespace(node.textContent || '');
+                if (text) {
+                    lines.push(text);
+                }
+            });
+        return Array.from(new Set(lines));
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {object|undefined} item
+     * @returns {{ title: string, url: string, text: string }}
+     */
+    buildSharePayloadForCard(card, item) {
+        const title = App.collapseWhitespace(
+            card.querySelector('.news-title-translate')?.textContent || item?.title || ''
+        );
+        const rowUrl = card.querySelector('.news-comments-row[data-article-url]')?.getAttribute('data-article-url') || '';
+        const linkHref = card.querySelector('.news-title a')?.getAttribute('href') || '';
+        const articleUrl = App.unwrapShareTargetUrl(App.articlePrimaryUrl(item) || rowUrl || linkHref);
+        const sections = [];
+        const summaryDiv = card.querySelector('.news-summary');
+        const summaryVisible =
+            summaryDiv instanceof HTMLElement && summaryDiv.classList.contains('active');
+        const summaryText = summaryVisible
+            ? App.collapseWhitespace(summaryDiv.querySelector('.summary-content')?.textContent || '')
+            : '';
+        if (summaryText) {
+            sections.push(`${this._i18nShareSectionSummary}\n${summaryText}`);
+        }
+        const altLinks = summaryVisible
+            ? this.collectShareLinkLines(card, '.summary-alt-link', (link) => {
+                  const source = App.collapseWhitespace(
+                      link.querySelector('.summary-alt-link-source')?.textContent || ''
+                  ).replace(/:\s*$/, '');
+                  const headline = App.collapseWhitespace(
+                      link.querySelector('.summary-alt-link-title')?.textContent || ''
+                  );
+                  if (source && headline) {
+                      return `${source}: ${headline}`;
+                  }
+                  return headline;
+              })
+            : [];
+        if (altLinks.length > 0) {
+            sections.push(
+                `${this._i18nShareSectionAlternativeLinks}\n${altLinks.map((line, index) => `${index + 1}. ${line}`).join('\n')}`
+            );
+        }
+        const redditThreads = summaryVisible
+            ? this.collectShareLinkLines(card, '.summary-reddit-link', (link) =>
+                  App.collapseWhitespace(
+                      link.querySelector('.summary-reddit-line')?.textContent || link.textContent || ''
+                  )
+              )
+            : [];
+        if (redditThreads.length > 0) {
+            sections.push(
+                `${this._i18nShareSectionReddit}\n${redditThreads.map((line, index) => `${index + 1}. ${line}`).join('\n')}`
+            );
+        }
+        const commentLines = this.collectShareCommentLines(card);
+        if (commentLines.length > 0) {
+            sections.push(`${this._i18nShareSectionComments}\n${commentLines.join('\n')}`);
+        }
+
+        const parts = [];
+        if (title) {
+            parts.push(title);
+        }
+        if (articleUrl) {
+            parts.push(articleUrl);
+        }
+        if (sections.length > 0) {
+            parts.push(...sections.map((section) => `\n${section}`));
+        }
+
+        return {
+            title,
+            url: articleUrl,
+            text: parts.join('\n').trim()
+        };
+    }
+
+    /**
+     * @param {string} cardId
+     * @param {HTMLElement} [triggerBtn]
+     * @returns {Promise<void>}
+     */
+    async shareArticleCard(cardId, triggerBtn) {
+        const card = this.findRenderedNewsCardById(cardId);
+        if (!card) {
+            this.showStatus(this._i18nShareFailed, true);
+            return;
+        }
+        const item = this.resolveNewsItemForSummary(cardId, '');
+        const payload = this.buildSharePayloadForCard(card, item);
+        if (!payload.text) {
+            this.showStatus(this._i18nShareFailed, true);
+            return;
+        }
+
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        const shareData = {
+            title: payload.title,
+            text: payload.text,
+            ...(payload.url ? { url: payload.url } : {})
+        };
+
+        const prevDisabled = triggerBtn ? triggerBtn.disabled : false;
+        if (triggerBtn) {
+            triggerBtn.disabled = true;
+        }
+        try {
+            const canUseNativeShare =
+                nav &&
+                typeof nav.share === 'function' &&
+                (() => {
+                    if (typeof nav.canShare !== 'function') {
+                        return true;
+                    }
+                    try {
+                        return nav.canShare(shareData);
+                    } catch (_) {
+                        return false;
+                    }
+                })();
+
+            if (canUseNativeShare) {
+                await nav.share(shareData);
+                this.showStatus(this._i18nShareDone);
+                return;
+            }
+
+            if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+                await nav.clipboard.writeText(payload.text);
+                this.showStatus(this._i18nShareCopied);
+                return;
+            }
+
+            this.showStatus(this._i18nShareUnavailable, true);
+        } catch (error) {
+            if (error && typeof error === 'object' && error.name === 'AbortError') {
+                return;
+            }
+            if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+                try {
+                    await nav.clipboard.writeText(payload.text);
+                    this.showStatus(this._i18nShareCopied);
+                    return;
+                } catch (_) {
+                    /* fall through to error status */
+                }
+            }
+            this.showStatus(this._i18nShareFailed, true);
+        } finally {
+            if (triggerBtn) {
+                triggerBtn.disabled = prevDisabled;
+            }
+        }
+    }
+
     syncSortUIFromSettings() {
         const s = this.settings || {};
         const mode = s.sortMode || 'recency';
@@ -3767,6 +4218,89 @@ class App {
         return `${src}|${cats}|${mode}|${dateFilter}`;
     }
 
+    /** @returns {string} */
+    getManualCardOrderViewKey() {
+        const src = this.normalizeNewsSource(this.settings?.newsSource);
+        const mode = this.sortMode || 'recency';
+        return this._buildFilterCacheKey(src, mode);
+    }
+
+    /** @returns {string[]} */
+    getManualCardOrderForCurrentView() {
+        const viewKey = this.getManualCardOrderViewKey();
+        return App.normalizeManualCardOrderIds(this._manualCardOrderByView[viewKey]);
+    }
+
+    persistManualCardOrderState() {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+        try {
+            localStorage.setItem(
+                MANUAL_CARD_ORDER_STORAGE_KEY,
+                JSON.stringify(App.normalizeManualCardOrderState(this._manualCardOrderByView))
+            );
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    /**
+     * @param {string[]} ids
+     */
+    setManualCardOrderForCurrentView(ids) {
+        const viewKey = this.getManualCardOrderViewKey();
+        const normalizedIds = App.normalizeManualCardOrderIds(ids);
+        if (normalizedIds.length > 0) {
+            this._manualCardOrderByView[viewKey] = normalizedIds;
+        } else {
+            delete this._manualCardOrderByView[viewKey];
+        }
+        this.persistManualCardOrderState();
+    }
+
+    /**
+     * @param {Array<Record<string, unknown>>} list
+     * @returns {Array<Record<string, unknown>>}
+     */
+    applyManualCardOrder(list) {
+        const items = Array.isArray(list) ? [...list] : [];
+        const manualIds = this.getManualCardOrderForCurrentView();
+        if (items.length < 2 || manualIds.length === 0) {
+            return items;
+        }
+        const byId = new Map();
+        items.forEach((item) => {
+            const id = String(item && item.id ? item.id : '').trim();
+            if (!id) {
+                return;
+            }
+            byId.set(id, item);
+        });
+
+        const ordered = [];
+        const seen = new Set();
+
+        manualIds.forEach((id) => {
+            const item = byId.get(id);
+            if (!item || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            ordered.push(item);
+        });
+
+        items.forEach((item) => {
+            const id = String(item && item.id ? item.id : '').trim();
+            if (!id || seen.has(id)) {
+                return;
+            }
+            ordered.push(item);
+        });
+
+        return ordered;
+    }
+
     /** @param {'total'|'green'|'red'} key */
     getCommentMetric(item, key) {
         const s = item.commentStats;
@@ -3898,7 +4432,7 @@ class App {
             }
         }
 
-        this.filteredNewsItems = this.sortItemList(list);
+        this.filteredNewsItems = this.applyManualCardOrder(this.sortItemList(list));
         this.currentPage = 1;
         if (render) {
             await this.renderNews(this.filteredNewsItems.slice(0, this.itemsPerPage), false);
@@ -4211,6 +4745,7 @@ class App {
      * @param {boolean} append - true only for "Mehr laden"; false replaces the grid (avoids stacking on skeleton cards)
      */
     async renderNews(items, append = false) {
+        this.clearNewsCardDragState();
         if (items.length === 0) {
             this.elements.newsGrid.innerHTML = `
                 <div style="text-align: center; padding: 3rem; grid-column: 1 / -1;">
@@ -4246,8 +4781,258 @@ class App {
             void HeiseComments.hydrate(this.elements.newsGrid);
         }
 
+        this.attachThumbnailImageFallbacks();
         this.attachNewArticleHoverHandlers();
         this.scheduleArticleInPlaceTranslation();
+    }
+
+    /** @returns {HTMLElement[]} */
+    getRenderedNewsCards() {
+        if (!this.elements.newsGrid) {
+            return [];
+        }
+        return Array.from(this.elements.newsGrid.querySelectorAll('.news-card[data-id]'));
+    }
+
+    /**
+     * @param {string} articleId
+     * @returns {HTMLElement | null}
+     */
+    findRenderedNewsCardById(articleId) {
+        if (!articleId) {
+            return null;
+        }
+        return this.getRenderedNewsCards().find((card) => card.dataset.id === articleId) || null;
+    }
+
+    clearNewsCardDragState() {
+        this.getRenderedNewsCards().forEach((card) => {
+            card.classList.remove('news-card--dragging', 'news-card--drop-before', 'news-card--drop-after');
+        });
+        this._draggedNewsCardId = '';
+        this._dragNewsDropTargetId = '';
+        this._dragNewsDropPosition = 'before';
+    }
+
+    /** @returns {number} */
+    getNewsGridColumnCount() {
+        if (!this.elements.newsGrid || typeof window === 'undefined') {
+            return 1;
+        }
+        const cols = window
+            .getComputedStyle(this.elements.newsGrid)
+            .gridTemplateColumns
+            .split(/\s+/)
+            .filter(Boolean);
+        return Math.max(1, cols.length);
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {DragEvent} event
+     * @returns {'before'|'after'}
+     */
+    getNewsCardDropPosition(card, event) {
+        const rect = card.getBoundingClientRect();
+        const clientX = Number(event.clientX);
+        const clientY = Number(event.clientY);
+        if (this.getNewsGridColumnCount() > 1) {
+            const xRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5;
+            const yRatio = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
+            const xDist = Math.abs(xRatio - 0.5);
+            const yDist = Math.abs(yRatio - 0.5);
+            if (yDist > xDist + 0.08) {
+                return yRatio >= 0.5 ? 'after' : 'before';
+            }
+            return xRatio >= 0.5 ? 'after' : 'before';
+        }
+        return clientY >= rect.top + rect.height / 2 ? 'after' : 'before';
+    }
+
+    /**
+     * @param {HTMLElement | null} card
+     * @param {'before'|'after'} position
+     */
+    markNewsCardDropTarget(card, position) {
+        this.getRenderedNewsCards().forEach((entry) => {
+            entry.classList.remove('news-card--drop-before', 'news-card--drop-after');
+        });
+        if (!card) {
+            this._dragNewsDropTargetId = '';
+            this._dragNewsDropPosition = 'before';
+            return;
+        }
+        card.classList.add(position === 'after' ? 'news-card--drop-after' : 'news-card--drop-before');
+        this._dragNewsDropTargetId = String(card.dataset.id || '').trim();
+        this._dragNewsDropPosition = position;
+    }
+
+    syncManualCardOrderFromGrid() {
+        const visibleCards = this.getRenderedNewsCards();
+        if (visibleCards.length === 0 || !Array.isArray(this.filteredNewsItems) || this.filteredNewsItems.length === 0) {
+            return;
+        }
+        const visibleIds = visibleCards
+            .map((card) => String(card.dataset.id || '').trim())
+            .filter(Boolean);
+        if (visibleIds.length === 0) {
+            return;
+        }
+        const byId = new Map();
+        this.filteredNewsItems.forEach((item) => {
+            const id = String(item && item.id ? item.id : '').trim();
+            if (!id) {
+                return;
+            }
+            byId.set(id, item);
+        });
+        const visibleSet = new Set(visibleIds);
+        const reorderedVisible = visibleIds
+            .map((id) => byId.get(id))
+            .filter(Boolean);
+        const rest = this.filteredNewsItems.filter((item) => !visibleSet.has(String(item && item.id ? item.id : '').trim()));
+        this.filteredNewsItems = [...reorderedVisible, ...rest];
+        this.setManualCardOrderForCurrentView(
+            this.filteredNewsItems
+                .map((item) => String(item && item.id ? item.id : '').trim())
+                .filter(Boolean)
+        );
+    }
+
+    /**
+     * @param {string} draggedId
+     * @param {string} targetId
+     * @param {'before'|'after'} position
+     */
+    reorderRenderedNewsCards(draggedId, targetId, position) {
+        if (!draggedId || !targetId || draggedId === targetId) {
+            return;
+        }
+        const draggedCard = this.findRenderedNewsCardById(draggedId);
+        const targetCard = this.findRenderedNewsCardById(targetId);
+        if (!draggedCard || !targetCard || draggedCard === targetCard) {
+            return;
+        }
+        if (position === 'after') {
+            targetCard.insertAdjacentElement('afterend', draggedCard);
+        } else {
+            targetCard.insertAdjacentElement('beforebegin', draggedCard);
+        }
+        this.syncManualCardOrderFromGrid();
+    }
+
+    /**
+     * @param {DragEvent} event
+     */
+    handleNewsCardDragStart(event) {
+        const handle = event.target && event.target.closest
+            ? event.target.closest('.news-card-drag-handle')
+            : null;
+        if (!handle) {
+            return;
+        }
+        const card = handle.closest('.news-card[data-id]');
+        const articleId = card && card.dataset ? String(card.dataset.id || '').trim() : '';
+        if (!card || !articleId) {
+            return;
+        }
+        this._draggedNewsCardId = articleId;
+        this._dragNewsDropTargetId = '';
+        this._dragNewsDropPosition = 'before';
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            try {
+                event.dataTransfer.setData('text/plain', articleId);
+            } catch (_) {
+                /* ignore */
+            }
+        }
+        window.requestAnimationFrame(() => {
+            card.classList.add('news-card--dragging');
+        });
+    }
+
+    /**
+     * @param {DragEvent} event
+     */
+    handleNewsCardDragOver(event) {
+        if (!this._draggedNewsCardId) {
+            return;
+        }
+        event.preventDefault();
+        let targetCard = event.target && event.target.closest
+            ? event.target.closest('.news-card[data-id]')
+            : null;
+        if (!targetCard) {
+            const renderedCards = this.getRenderedNewsCards();
+            targetCard = renderedCards[renderedCards.length - 1] || null;
+        }
+        if (!targetCard) {
+            this.markNewsCardDropTarget(null, 'before');
+            return;
+        }
+        if (String(targetCard.dataset.id || '').trim() === this._draggedNewsCardId) {
+            this.markNewsCardDropTarget(null, 'before');
+            return;
+        }
+        const position = this.getNewsCardDropPosition(targetCard, event);
+        this.markNewsCardDropTarget(targetCard, position);
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = 'move';
+        }
+    }
+
+    /**
+     * @param {DragEvent} event
+     */
+    handleNewsCardDrop(event) {
+        if (!this._draggedNewsCardId) {
+            return;
+        }
+        event.preventDefault();
+        let targetId = this._dragNewsDropTargetId;
+        let position = this._dragNewsDropPosition === 'after' ? 'after' : 'before';
+
+        const hoveredCard = event.target && event.target.closest
+            ? event.target.closest('.news-card[data-id]')
+            : null;
+        if (hoveredCard && hoveredCard.dataset) {
+            const hoveredId = String(hoveredCard.dataset.id || '').trim();
+            if (hoveredId && hoveredId !== this._draggedNewsCardId) {
+                targetId = hoveredId;
+                position = this.getNewsCardDropPosition(hoveredCard, event);
+            }
+        }
+
+        if (!targetId || targetId === this._draggedNewsCardId) {
+            this.clearNewsCardDragState();
+            return;
+        }
+
+        this.reorderRenderedNewsCards(this._draggedNewsCardId, targetId, position);
+        this.clearNewsCardDragState();
+    }
+
+    attachThumbnailImageFallbacks() {
+        if (!this.elements.newsGrid) {
+            return;
+        }
+        this.elements.newsGrid.querySelectorAll('.news-card-thumbnail img').forEach((img) => {
+            if (img.dataset.thumbFallbackBound === '1') {
+                return;
+            }
+            img.dataset.thumbFallbackBound = '1';
+            img.addEventListener(
+                'error',
+                () => {
+                    const wrap = img.closest('.news-card-thumbnail-wrap');
+                    if (wrap) {
+                        wrap.hidden = true;
+                    }
+                },
+                { once: true }
+            );
+        });
     }
 
     /**
@@ -4339,7 +5124,7 @@ class App {
                     if (cached != null && cached.summary?.trim() && toggleBtn) {
                         this.renderAiSummaryOnCard(summaryDiv, cached);
                         summaryDiv.classList.add('active');
-                        toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                        this.setSummaryToggleButtonState(toggleBtn, 'hide');
                         panelOpened = true;
                     }
 
@@ -4360,7 +5145,7 @@ class App {
                                     if (!panelOpened) {
                                         summaryDiv.classList.add('active');
                                         if (toggleBtn) {
-                                            toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                                            this.setSummaryToggleButtonState(toggleBtn, 'hide');
                                         }
                                     }
                                 }
@@ -4404,6 +5189,7 @@ class App {
             this.elements.exportPeriodDate.value = new Date().toISOString().slice(0, 10);
         }
         this.syncExportScopeUi();
+        this.syncExportFormatUi();
         this.updateExportSelectionInfo();
         this.elements.exportModal.classList.add('active');
     }
@@ -4419,6 +5205,23 @@ class App {
             return;
         }
         this.elements.exportPeriodWrap.hidden = this.elements.exportScope.value !== 'period';
+    }
+
+    syncExportFormatUi() {
+        if (!this.elements.exportFormat || !this.elements.exportIncludeThumbnails) {
+            return;
+        }
+        const isPdf = this.elements.exportFormat.value === 'pdf';
+        this.elements.exportIncludeThumbnails.checked = isPdf;
+        this.elements.exportIncludeThumbnails.disabled = !isPdf;
+        const label = this.elements.exportIncludeThumbnails.closest('label');
+        if (label) {
+            label.style.opacity = isPdf ? '1' : '0.6';
+        }
+        const labelText = document.getElementById('exportIncludeThumbnailsLabel');
+        if (labelText) {
+            labelText.textContent = 'Thumbnails (nur PDF, Standard: an)';
+        }
     }
 
     updateExportSelectionInfo() {
@@ -4502,6 +5305,12 @@ class App {
                 publishedAt: item.publishedMs ? new Date(item.publishedMs).toISOString() : '',
                 fetchedAt: item.fetchedAt || ''
             };
+            if (opts.includeThumbnails) {
+                const thumbnailUrl = App.articleThumbnailUrl(item);
+                if (thumbnailUrl) {
+                    rec.thumbnailUrl = thumbnailUrl;
+                }
+            }
             if (opts.includeSummary || opts.includeAlternativeLinks || opts.includeKiMeta) {
                 const url = App.articlePrimaryUrl(item);
                 if (url) {
@@ -4564,7 +5373,11 @@ class App {
                 includeAlternativeLinks: this.elements.exportIncludeAlternativeLinks ? this.elements.exportIncludeAlternativeLinks.checked : true,
                 includeReddit: this.elements.exportIncludeReddit ? this.elements.exportIncludeReddit.checked : false,
                 includeComments: this.elements.exportIncludeComments ? this.elements.exportIncludeComments.checked : false,
-                includeKiMeta: this.elements.exportIncludeKiMeta ? this.elements.exportIncludeKiMeta.checked : false
+                includeKiMeta: this.elements.exportIncludeKiMeta ? this.elements.exportIncludeKiMeta.checked : false,
+                includeThumbnails:
+                    format === 'pdf' &&
+                    this.elements.exportIncludeThumbnails &&
+                    this.elements.exportIncludeThumbnails.checked === true
             };
             const payload = await this.buildExportPayload(items, opts);
             const baseName = `news-export-${this.settings?.newsSource || 'source'}`;
@@ -4577,12 +5390,16 @@ class App {
             } else if (format === 'xml') {
                 const file = window.ArticleExporter.buildFileName(baseName, 'xml');
                 window.ArticleExporter.download(window.ArticleExporter.toXml(payload), 'application/xml;charset=utf-8', file);
-            } else if (format === 'markdown') {
-                const file = window.ArticleExporter.buildFileName(baseName, 'md');
-                window.ArticleExporter.download(window.ArticleExporter.toMarkdown(payload), 'text/markdown;charset=utf-8', file);
+            } else if (format === 'asciidoc') {
+                const file = window.ArticleExporter.buildFileName(baseName, 'adoc');
+                window.ArticleExporter.download(
+                    window.ArticleExporter.toAsciiDoc(payload),
+                    'text/plain;charset=utf-8',
+                    file
+                );
             } else {
                 const file = window.ArticleExporter.buildFileName(baseName, 'pdf');
-                const ok = window.ArticleExporter.toPdf(payload, file);
+                const ok = await window.ArticleExporter.toPdf(payload, file);
                 if (!ok) {
                     this.showStatus('PDF-Export ist aktuell nicht verfügbar.', true);
                     return;
@@ -4599,6 +5416,107 @@ class App {
             console.error('runExport:', e);
             this.showStatus('Export fehlgeschlagen.', true);
         }
+    }
+
+    areArticleThumbnailsEnabled() {
+        return App.normalizeArticleThumbnailsEnabled(this.settings?.articleThumbnailsEnabled);
+    }
+
+    /**
+     * @param {Record<string, unknown>} item
+     * @returns {string}
+     */
+    buildArticleThumbnailHtml(item) {
+        if (!this.areArticleThumbnailsEnabled()) {
+            return '';
+        }
+        const thumbnailUrl = App.articleThumbnailUrl(item);
+        if (!thumbnailUrl) {
+            return '';
+        }
+        const articleHref = this.maybeWrapUrlForArticleTranslation(item.link || item.url || '');
+        if (!articleHref) {
+            return '';
+        }
+        return `
+            <div class="news-card-thumbnail-wrap">
+                <a class="news-card-thumbnail" href="${this.escapeHtml(articleHref)}" target="_blank" rel="noopener noreferrer">
+                    <img
+                        src="${this.escapeHtml(thumbnailUrl)}"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        referrerpolicy="no-referrer"
+                    >
+                </a>
+            </div>
+        `;
+    }
+
+    /**
+     * @param {string} icon
+     * @param {string} label
+     * @param {{ labelClass?: string }} [options]
+     * @returns {string}
+     */
+    buildCardActionButtonContent(icon, label, options = {}) {
+        const labelClass = App.collapseWhitespace(options.labelClass || '');
+        const labelClassAttr = labelClass ? ` class="card-action-label ${this.escapeHtml(labelClass)}"` : ' class="card-action-label"';
+        return `<span class="card-action-icon" aria-hidden="true">${this.escapeHtml(icon)}</span><span${labelClassAttr}>${this.escapeHtml(label)}</span>`;
+    }
+
+    /**
+     * @param {HTMLElement|null} button
+     * @param {string} icon
+     * @param {string} label
+     * @param {{ labelClass?: string }} [options]
+     */
+    setCardActionButtonContent(button, icon, label, options = {}) {
+        if (!(button instanceof HTMLElement)) {
+            return;
+        }
+        button.innerHTML = this.sanitizeHtml(this.buildCardActionButtonContent(icon, label, options));
+    }
+
+    /**
+     * @param {HTMLElement|null} button
+     * @param {'show'|'hide'|'retry'|'loading'} state
+     */
+    setSummaryToggleButtonState(button, state) {
+        const map = {
+            show: { icon: '✦', label: 'Zusammenfassung anzeigen' },
+            hide: { icon: '✦', label: 'Zusammenfassung ausblenden' },
+            retry: { icon: '↻', label: 'Zusammenfassung erneut versuchen' },
+            loading: { icon: '⋯', label: 'Lade Zusammenfassung...', labelClass: 'summary-loading' }
+        };
+        const spec = map[state] || map.show;
+        this.setCardActionButtonContent(button, spec.icon, spec.label, { labelClass: spec.labelClass || '' });
+    }
+
+    /**
+     * @param {HTMLElement|null} button
+     * @param {'default'|'loading'} state
+     */
+    setSummaryRefreshButtonState(button, state) {
+        const map = {
+            default: { icon: '↻', label: this._i18nSummaryRefreshBtn || 'Neu erstellen' },
+            loading: { icon: '⋯', label: 'KI erzeugt neu...', labelClass: 'summary-loading' }
+        };
+        const spec = map[state] || map.default;
+        this.setCardActionButtonContent(button, spec.icon, spec.label, { labelClass: spec.labelClass || '' });
+    }
+
+    /**
+     * @param {HTMLElement|null} button
+     * @param {'default'|'loading'} state
+     */
+    setRedditActionButtonState(button, state) {
+        const map = {
+            default: { icon: '💬', label: this._i18nRedditSearchBtn || 'Reddit' },
+            loading: { icon: '⋯', label: 'Reddit sucht...', labelClass: 'summary-loading' }
+        };
+        const spec = map[state] || map.default;
+        this.setCardActionButtonContent(button, spec.icon, spec.label, { labelClass: spec.labelClass || '' });
     }
 
     createNewsCardHTML(item) {
@@ -4619,11 +5537,31 @@ class App {
         const titleFavoriteMarker = item.isFavorite
             ? '<span class="news-favorite-marker" title="Favorit" aria-hidden="true">★</span>'
             : '';
+        const thumbnailHtml = this.buildArticleThumbnailHtml(item);
+        const summaryToggleHtml = this.buildCardActionButtonContent('✦', 'Zusammenfassung anzeigen');
+        const summaryRefreshHtml = this.buildCardActionButtonContent(
+            '↻',
+            this._i18nSummaryRefreshBtn || 'Neu erstellen'
+        );
+        const youtubeHtml = this.buildCardActionButtonContent('▶', 'YouTube');
+        const webSearchHtml = this.buildCardActionButtonContent(
+            '🔍',
+            this._i18nWebSearchBtn || 'Weitere Artikel'
+        );
+        const redditHtml = this.buildCardActionButtonContent(
+            '💬',
+            this._i18nRedditSearchBtn || 'Reddit'
+        );
+        const shareHtml = this.buildCardActionButtonContent(
+            '↗',
+            this._i18nShareBtn || 'Teilen'
+        );
 
         return `
             <article class="news-card${newClass}" data-id="${item.id}" lang="${App.articleContentHtmlLang(item, this.settings && this.settings.newsSource)}"${ariaNew}>
                 <div class="news-header">
                     <div class="news-header-main">
+                        <span class="news-card-drag-handle notranslate" draggable="true" title="Artikel verschieben" aria-label="Artikel verschieben">⋮⋮</span>
                         <label class="article-select-wrap" title="Für Export auswählen">
                             <input type="checkbox" class="article-select-checkbox" data-article-id="${this.escapeHtml(item.id)}" ${isSelected ? 'checked' : ''}>
                             <span>Export</span>
@@ -4637,6 +5575,8 @@ class App {
                     </div>
                     <span class="news-time">${timeDisplay}</span>
                 </div>
+
+                ${thumbnailHtml}
 
                 <h3 class="news-title">
                     <a href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(item.link))}" target="_blank" rel="noopener noreferrer">
@@ -4653,19 +5593,22 @@ class App {
                         ${hideIcon}
                     </button>
                     <button type="button" class="summary-toggle" data-url="${encodeURIComponent(item.url || item.link || '')}">
-                        Zusammenfassung anzeigen
+                        ${summaryToggleHtml}
                     </button>
                     <button type="button" class="summary-refresh-btn" data-url="${encodeURIComponent(item.url || item.link || '')}" title="Cache leeren und Zusammenfassung neu von der KI erzeugen">
-                        Neu erstellen
+                        ${summaryRefreshHtml}
                     </button>
                     <button type="button" class="youtube-toggle" data-url="${encodeURIComponent(item.url || item.link || '')}" title="${this.escapeHtml(this._i18nYoutubeBtnTitle || 'YouTube search suggestions')}">
-                        ▶ YouTube
+                        ${youtubeHtml}
                     </button>
                     <button type="button" class="article-web-search-btn" data-article-id="${this.escapeHtml(item.id)}" title="${this.escapeHtml(this._i18nWebSearchTitle)}">
-                        ${this.escapeHtml(this._i18nWebSearchBtn)}
+                        ${webSearchHtml}
                     </button>
                     <button type="button" class="article-reddit-search-btn" data-article-id="${this.escapeHtml(item.id)}" title="${this.escapeHtml(this._i18nRedditSearchTitle)}">
-                        ${this.escapeHtml(this._i18nRedditSearchBtn)}
+                        ${redditHtml}
+                    </button>
+                    <button type="button" class="article-share-btn" data-article-id="${this.escapeHtml(item.id)}" title="${this.escapeHtml(this._i18nShareTitle)}">
+                        ${shareHtml}
                     </button>
                 </div>
 
@@ -5099,15 +6042,14 @@ class App {
             return;
         }
 
-        const prevLabel = triggerBtn ? triggerBtn.textContent : '';
         if (triggerBtn) {
             triggerBtn.disabled = true;
-            triggerBtn.textContent = '…';
+            this.setRedditActionButtonState(triggerBtn, 'loading');
         }
 
         summaryDiv.classList.add('active');
         if (toggleBtn) {
-            toggleBtn.textContent = 'Zusammenfassung ausblenden';
+            this.setSummaryToggleButtonState(toggleBtn, 'hide');
         }
 
         try {
@@ -5185,7 +6127,7 @@ class App {
         } finally {
             if (triggerBtn) {
                 triggerBtn.disabled = false;
-                triggerBtn.textContent = prevLabel || this._i18nRedditSearchBtn;
+                this.setRedditActionButtonState(triggerBtn, 'default');
             }
         }
     }
@@ -5524,13 +6466,13 @@ class App {
         // Check if already loaded and visible
         if (summaryDiv.classList.contains('active')) {
             summaryDiv.classList.remove('active');
-            button.textContent = 'Zusammenfassung anzeigen';
+            this.setSummaryToggleButtonState(button, 'show');
             return;
         }
 
         // Show loading state
         button.disabled = true;
-        button.innerHTML = '<span class="summary-loading">Lade Zusammenfassung...</span>';
+        this.setSummaryToggleButtonState(button, 'loading');
 
         try {
             if (!url) {
@@ -5560,17 +6502,17 @@ class App {
                 this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`);
                 this.updateKiStatus('err');
-                button.textContent = 'Zusammenfassung erneut versuchen';
+                this.setSummaryToggleButtonState(button, 'retry');
             } else if (!display) {
                 this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML =
                     '<span style="color: var(--primary-color);">Zusammenfassung leer — bitte „Neu erstellen“ oder Modell prüfen.</span>';
                 this.updateKiStatus('err');
-                button.textContent = 'Zusammenfassung erneut versuchen';
+                this.setSummaryToggleButtonState(button, 'retry');
             } else {
                 this.renderAiSummaryOnCard(summaryDiv, summary);
                 this.updateKiStatus('ok');
-                button.textContent = 'Zusammenfassung ausblenden';
+                this.setSummaryToggleButtonState(button, 'hide');
             }
 
             summaryDiv.classList.add('active');
@@ -5579,7 +6521,7 @@ class App {
             this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">Fehler beim Laden der Zusammenfassung: ${this.escapeHtml(error.message || String(error))}</span>`);
             summaryDiv.classList.add('active');
-            button.textContent = 'Zusammenfassung erneut versuchen';
+            this.setSummaryToggleButtonState(button, 'retry');
             this.updateKiStatus('err');
         } finally {
             button.disabled = false;
@@ -5624,10 +6566,9 @@ class App {
         const title = item?.title || '';
         const description = item?.description || '';
 
-        const prevLabel = btn.textContent;
         btn.disabled = true;
         toggleBtn.disabled = true;
-        btn.textContent = '…';
+        this.setSummaryRefreshButtonState(btn, 'loading');
         summaryDiv.classList.add('active');
         summaryContent.innerHTML = '<span class="summary-loading">KI erzeugt neu…</span>';
 
@@ -5650,28 +6591,28 @@ class App {
                 this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML = `<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`;
                 this.updateKiStatus('err');
-                toggleBtn.textContent = 'Zusammenfassung anzeigen';
+                this.setSummaryToggleButtonState(toggleBtn, 'show');
             } else if (!display) {
                 this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
                 summaryContent.innerHTML =
                     '<span style="color: var(--primary-color);">Zusammenfassung leer — bitte „Neu erstellen“ oder Modell prüfen.</span>';
                 this.updateKiStatus('err');
-                toggleBtn.textContent = 'Zusammenfassung erneut versuchen';
+                this.setSummaryToggleButtonState(toggleBtn, 'retry');
             } else {
                 this.renderAiSummaryOnCard(summaryDiv, summary);
                 this.updateKiStatus('ok');
-                toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                this.setSummaryToggleButtonState(toggleBtn, 'hide');
             }
         } catch (error) {
             console.error('refreshSummary:', error);
             this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">Fehler: ${this.escapeHtml(error.message || String(error))}</span>`);
             this.updateKiStatus('err');
-            toggleBtn.textContent = 'Zusammenfassung anzeigen';
+            this.setSummaryToggleButtonState(toggleBtn, 'show');
         } finally {
             btn.disabled = false;
             toggleBtn.disabled = false;
-            btn.textContent = prevLabel || 'Neu erstellen';
+            this.setSummaryRefreshButtonState(btn, 'default');
         }
     }
 
@@ -5704,12 +6645,12 @@ class App {
             this.clearSummaryAltLinks(summaryDiv, { keepReddit: true });
             summaryContent.innerHTML = this.sanitizeHtml(`<span style="color: var(--primary-color);">${this.escapeHtml(errText)}</span>`);
             if (toggleBtn) {
-                toggleBtn.textContent = 'Zusammenfassung erneut versuchen';
+                this.setSummaryToggleButtonState(toggleBtn, 'retry');
             }
         } else {
             this.renderAiSummaryOnCard(summaryDiv, summary);
             if (toggleBtn) {
-                toggleBtn.textContent = 'Zusammenfassung ausblenden';
+                this.setSummaryToggleButtonState(toggleBtn, 'hide');
             }
         }
         summaryDiv.classList.add('active');
@@ -7631,6 +8572,9 @@ class App {
         }
         this.filterNewsSourcesSettingsList();
         this.populateThemeSettingsModal();
+        if (this.elements.articleThumbnailsEnabled) {
+            this.elements.articleThumbnailsEnabled.checked = this.areArticleThumbnailsEnabled();
+        }
         if (this.elements.dashboardSettingsModal) {
             this.elements.dashboardSettingsModal.classList.add('active');
         }
@@ -7700,6 +8644,7 @@ class App {
         const prevMagazinesJson = JSON.stringify(this.settings.enabledHeiseMagazines || []);
         const nextMagazinesJson = JSON.stringify(nextMagazines);
         const magazinesChanged = prevMagazinesJson !== nextMagazinesJson;
+        const prevArticleThumbnailsEnabled = this.areArticleThumbnailsEnabled();
 
         const themePrefSaved = this.elements.themeModeSelect
             ? App.normalizeThemePreference(this.elements.themeModeSelect.value)
@@ -7716,6 +8661,10 @@ class App {
                       dark: parseInt(this.elements.themeBrightnessDark.value, 10)
                   })
                 : App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+        const articleThumbnailsEnabledSaved = this.elements.articleThumbnailsEnabled
+            ? App.normalizeArticleThumbnailsEnabled(this.elements.articleThumbnailsEnabled.checked)
+            : prevArticleThumbnailsEnabled;
+        const thumbnailsChanged = articleThumbnailsEnabledSaved !== prevArticleThumbnailsEnabled;
 
         try {
             localStorage.setItem('theme', themePrefSaved);
@@ -7723,6 +8672,7 @@ class App {
             localStorage.setItem('heise_theme_custom_colors', JSON.stringify(themeCustomColorsSaved));
             localStorage.setItem('heise_theme_custom_header_colors', JSON.stringify(themeCustomHeaderColorsSaved));
             localStorage.setItem('heise_theme_surface_brightness', JSON.stringify(themeSurfaceBrightnessSaved));
+            localStorage.setItem('heise_article_thumbnails_enabled', articleThumbnailsEnabledSaved ? '1' : '0');
         } catch (_) {
             /* ignore */
         }
@@ -7735,6 +8685,7 @@ class App {
         this.settings.themeCustomColors = themeCustomColorsSaved;
         this.settings.themeCustomHeaderColors = themeCustomHeaderColorsSaved;
         this.settings.themeSurfaceBrightness = themeSurfaceBrightnessSaved;
+        this.settings.articleThumbnailsEnabled = articleThumbnailsEnabledSaved;
         try {
             localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabled));
             localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(nextMagazines));
@@ -7749,7 +8700,8 @@ class App {
                 colorTheme: colorThemeSaved,
                 themeCustomColors: themeCustomColorsSaved,
                 themeCustomHeaderColors: themeCustomHeaderColorsSaved,
-                themeSurfaceBrightness: themeSurfaceBrightnessSaved
+                themeSurfaceBrightness: themeSurfaceBrightnessSaved,
+                articleThumbnailsEnabled: articleThumbnailsEnabledSaved
             });
         } catch (e) {
             console.warn('saveDashboardSettings:', e);
@@ -7770,6 +8722,9 @@ class App {
             await this.onNewsSourceChange();
         } else if (magazinesChanged && next === 'heise') {
             await this.fetchNews(true);
+        } else if (thumbnailsChanged) {
+            await this.applySortPipeline({ render: true });
+            this.showStatus(this._i18nDashboardSaved || 'Einstellungen gespeichert.');
         } else {
             this.showStatus(this._i18nDashboardSaved || 'Einstellungen gespeichert.');
         }

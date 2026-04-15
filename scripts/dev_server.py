@@ -76,6 +76,18 @@ REDDIT_SEARCH_UA = (
     "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 )
 URL_CHECK_TIMEOUT = 14
+ARTICLE_IMAGE_TIMEOUT = 20
+ARTICLE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+ARTICLE_IMAGE_ALLOWED_HOST_SUFFIXES = (
+    "heise.de",
+    "heise.cloudimg.io",
+    "telepolis.de",
+    "golem.de",
+    "computerbase.de",
+    "t3n.de",
+    "theverge.com",
+    "it-administrator.de",
+)
 
 _LM_REASONING_ALLOWED = frozenset({"off", "low", "medium", "high", "on"})
 _LM_REDDIT_QUERY_TIMEOUT = 12
@@ -1727,6 +1739,65 @@ def connect_upstream(target: str) -> http.client.HTTPConnection:
     return http.client.HTTPConnection(host, port, timeout=300)
 
 
+def _host_matches_allowed_suffix(host: str, allowed_suffixes: tuple[str, ...]) -> bool:
+    clean_host = (host or "").strip().strip(".").lower()
+    if not clean_host:
+        return False
+    for suffix in allowed_suffixes:
+        clean_suffix = suffix.strip().strip(".").lower()
+        if clean_host == clean_suffix or clean_host.endswith("." + clean_suffix):
+            return True
+    return False
+
+
+def _article_image_url_allowed(url: str) -> bool:
+    target = (url or "").strip()
+    if not target:
+        return False
+    parsed = urlparse(target)
+    if parsed.scheme != "https":
+        return False
+    return _host_matches_allowed_suffix(parsed.hostname or "", ARTICLE_IMAGE_ALLOWED_HOST_SUFFIXES)
+
+
+def _fetch_article_image_bytes(image_url: str) -> tuple[str, bytes]:
+    target = (image_url or "").strip()
+    if not _article_image_url_allowed(target):
+        raise ValueError("Only https image URLs from supported news sources are allowed.")
+
+    req = Request(
+        target,
+        headers={
+            "User-Agent": FETCH_UA,
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+    )
+    with urlopen(req, timeout=ARTICLE_IMAGE_TIMEOUT) as resp:
+        final_url = str(resp.geturl() or target).strip()
+        if not _article_image_url_allowed(final_url):
+            raise ValueError("Redirect target is not allowed for article image proxying.")
+
+        content_type = str(resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if not content_type.startswith("image/"):
+            raise ValueError(
+                f"Upstream response is not an image: {content_type or 'unknown content type'}."
+            )
+
+        raw_length = str(resp.headers.get("Content-Length") or "").strip()
+        if raw_length:
+            try:
+                if int(raw_length) > ARTICLE_IMAGE_MAX_BYTES:
+                    raise ValueError("Image is too large for proxying.")
+            except ValueError as exc:
+                if str(exc) == "Image is too large for proxying.":
+                    raise
+
+        body = resp.read(ARTICLE_IMAGE_MAX_BYTES + 1)
+        if len(body) > ARTICLE_IMAGE_MAX_BYTES:
+            raise ValueError("Image is too large for proxying.")
+        return content_type, body
+
+
 def csp_content() -> str:
     """Strict CSP to block inline scripts and unsafe eval."""
     return (
@@ -1838,6 +1909,51 @@ def make_handler(lm_target: str) -> type:
                 self.send_response(200)
                 cors_headers(self)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path_only == "/api/article-image":
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                raw_url = (qs.get("url") or [""])[0].strip()
+                image_url = unquote(raw_url)
+                if not image_url:
+                    err = json.dumps(
+                        {"ok": False, "error": "Missing required query parameter: url"},
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    self.send_response(400)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                try:
+                    content_type, body = _fetch_article_image_bytes(image_url)
+                except ValueError as e:
+                    err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(400)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                except (HTTPError, URLError, TimeoutError, OSError) as e:
+                    err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(502)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                self.send_response(200)
+                cors_headers(self)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "public, max-age=900")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -2204,6 +2320,7 @@ def main() -> int:
         f"GET /api/v1/models → {lm_target}/api/v1/models (native list incl. loaded state)\n"
         f"GET /v1/models → {lm_target}/v1/models (OpenAI-style fallback)\n"
         f"GET /api/heise-comments?url=… → Heise or Telepolis article + forum comment stats (server-side fetch)\n"
+        f"GET /api/article-image?url=… → same-origin proxy for allowed article thumbnails (PDF export)\n"
         f"GET /api/heise-feed?url=… → Heise Atom/RSS (CORS proxy; url must be https://www.heise.de/…/*.xml)\n"
         f"GET /api/telepolis-feed → Telepolis news-atom.xml (CORS proxy)\n"
         f"GET /api/golem-feed → Golem RSS (browser CORS proxy; same cache as /api/golem-comments)\n"
