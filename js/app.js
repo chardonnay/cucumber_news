@@ -83,6 +83,7 @@ class App {
         this.newsItems = [];
         this.filteredNewsItems = [];
         this.selectedCategories = [];
+        this.selectedArticleIds = new Set();
         this.currentPage = 1;
         const itemsPerPage = 15;
         this.itemsPerPage = itemsPerPage;
@@ -115,6 +116,7 @@ class App {
             refreshBtn: document.getElementById('refreshBtn'),
             summarizeAllBtn: document.getElementById('summarizeAllBtn'),
             summarizeAllRefreshBtn: document.getElementById('summarizeAllRefreshBtn'),
+            exportBtn: document.getElementById('exportBtn'),
             settingsBtn: document.getElementById('settingsBtn'),
             dashboardSettingsBtn: document.getElementById('dashboardSettingsBtn'),
             dashboardSettingsModal: document.getElementById('dashboardSettingsModal'),
@@ -155,6 +157,20 @@ class App {
             kiStatsModal: document.getElementById('kiStatsModal'),
             clearKiStatsBtn: document.getElementById('clearKiStatsBtn'),
             cancelKiStatsBtn: document.getElementById('cancelKiStatsBtn'),
+            exportModal: document.getElementById('exportModal'),
+            exportFormat: document.getElementById('exportFormat'),
+            exportScope: document.getElementById('exportScope'),
+            exportPeriodWrap: document.getElementById('exportPeriodWrap'),
+            exportPeriodType: document.getElementById('exportPeriodType'),
+            exportPeriodDate: document.getElementById('exportPeriodDate'),
+            exportIncludeSummary: document.getElementById('exportIncludeSummary'),
+            exportIncludeAlternativeLinks: document.getElementById('exportIncludeAlternativeLinks'),
+            exportIncludeReddit: document.getElementById('exportIncludeReddit'),
+            exportIncludeComments: document.getElementById('exportIncludeComments'),
+            exportIncludeKiMeta: document.getElementById('exportIncludeKiMeta'),
+            exportSelectionInfo: document.getElementById('exportSelectionInfo'),
+            cancelExportBtn: document.getElementById('cancelExportBtn'),
+            runExportBtn: document.getElementById('runExportBtn'),
             statusBar: document.getElementById('statusBar'),
             lastUpdate: document.getElementById('lastUpdate'),
             newsCount: document.getElementById('newsCount'),
@@ -267,6 +283,9 @@ class App {
         this._i18nRedditFound = '{count} Reddit thread(s)';
         this._i18nRedditFoundAi = 'Reddit (KI): {count} Thread(s) — Suche: {queries}';
         this._i18nNewsCountLoaded = '{count} Nachrichten geladen';
+        this._i18nExportSelectionInfo = 'Ausgewählt: {selected}, sichtbar: {visible}';
+        this._i18nExportDone = 'Export erstellt: {count} Artikel ({format}).';
+        this._i18nExportNoItems = 'Keine Artikel für den Export gefunden.';
 
         // Initialize
         this.init();
@@ -525,6 +544,18 @@ class App {
         if (this.elements.summarizeAllRefreshBtn) {
             this.elements.summarizeAllRefreshBtn.addEventListener('click', () => this.confirmAndSummarizeAllRegenerate());
         }
+        if (this.elements.exportBtn) {
+            this.elements.exportBtn.addEventListener('click', () => this.openExportModal());
+        }
+        if (this.elements.cancelExportBtn) {
+            this.elements.cancelExportBtn.addEventListener('click', () => this.closeExportModal());
+        }
+        if (this.elements.runExportBtn) {
+            this.elements.runExportBtn.addEventListener('click', () => void this.runExport());
+        }
+        if (this.elements.exportScope) {
+            this.elements.exportScope.addEventListener('change', () => this.syncExportScopeUi());
+        }
 
         // KI / LM Studio modal
         this.elements.settingsBtn.addEventListener('click', () => this.openSettingsModal());
@@ -761,6 +792,9 @@ class App {
         if (this.elements.newsGrid && this._newsCardClickHandler) {
             this.elements.newsGrid.addEventListener('click', this._newsCardClickHandler);
         }
+        if (this.elements.newsGrid) {
+            this.elements.newsGrid.addEventListener('change', (e) => this.handleNewsGridChange(e));
+        }
 
         // Modal close on overlay click
         this.elements.settingsModal.addEventListener('click', (e) => {
@@ -772,6 +806,13 @@ class App {
             this.elements.kiStatsModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.kiStatsModal) {
                     this.closeKiStatsModal();
+                }
+            });
+        }
+        if (this.elements.exportModal) {
+            this.elements.exportModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.exportModal) {
+                    this.closeExportModal();
                 }
             });
         }
@@ -2310,6 +2351,41 @@ class App {
                     this.elements.showAllNewsBtn.setAttribute('title', newsLoc.show_all_title);
                     this.elements.showAllNewsBtn.setAttribute('aria-label', newsLoc.show_all_title);
                 }
+                if (newsLoc.export_selection_info) {
+                    this._i18nExportSelectionInfo = newsLoc.export_selection_info;
+                }
+                if (newsLoc.export_done) {
+                    this._i18nExportDone = newsLoc.export_done;
+                }
+                if (newsLoc.export_no_items) {
+                    this._i18nExportNoItems = newsLoc.export_no_items;
+                }
+                const setTxt = (id, txt) => {
+                    const el = document.getElementById(id);
+                    if (el && txt) {
+                        el.textContent = txt;
+                    }
+                };
+                setTxt('exportModalTitle', newsLoc.export_modal_title);
+                setTxt('exportFormatLabel', newsLoc.export_format_label);
+                setTxt('exportScopeLabel', newsLoc.export_scope_label);
+                setTxt('exportScopeSelectedOption', newsLoc.export_scope_selected);
+                setTxt('exportScopePeriodOption', newsLoc.export_scope_period);
+                setTxt('exportPeriodTypeLabel', newsLoc.export_period_label);
+                setTxt('exportPeriodDayOption', newsLoc.export_period_day);
+                setTxt('exportPeriodWeekOption', newsLoc.export_period_week);
+                setTxt('exportPeriodMonthOption', newsLoc.export_period_month);
+                setTxt('exportPeriodYearOption', newsLoc.export_period_year);
+                setTxt('exportPeriodDateLabel', newsLoc.export_reference_date_label);
+                setTxt('exportContentLabel', newsLoc.export_include_label);
+                setTxt('exportIncludeSummaryLabel', newsLoc.export_include_summary);
+                setTxt('exportIncludeAlternativeLinksLabel', newsLoc.export_include_alt_links);
+                setTxt('exportIncludeRedditLabel', newsLoc.export_include_reddit);
+                setTxt('exportIncludeCommentsLabel', newsLoc.export_include_comments);
+                setTxt('exportIncludeKiMetaLabel', newsLoc.export_include_ki_meta);
+                setTxt('cancelExportBtn', newsLoc.export_cancel_btn);
+                setTxt('runExportBtn', newsLoc.export_run_btn);
+                this.updateExportSelectionInfo();
             }
 
             const headerLoc = data.header;
@@ -2318,6 +2394,15 @@ class App {
                     const sub = document.getElementById('headerSubtitle');
                     if (sub) {
                         sub.textContent = headerLoc.subtitle;
+                    }
+                }
+                if (this.elements.exportBtn) {
+                    if (headerLoc.export_btn) {
+                        this.elements.exportBtn.textContent = headerLoc.export_btn;
+                    }
+                    if (headerLoc.export_btn_title) {
+                        this.elements.exportBtn.setAttribute('title', headerLoc.export_btn_title);
+                        this.elements.exportBtn.setAttribute('aria-label', headerLoc.export_btn_title);
                     }
                 }
                 const ns = this.settings && this.settings.newsSource
@@ -3999,6 +4084,9 @@ class App {
             // Update state
             this._filterCache.clear();
             this.newsItems = this.applyArticleFlags(newsItems);
+            this.selectedArticleIds = new Set(
+                [...this.selectedArticleIds].filter((id) => this.newsItems.some((n) => n && n.id === id))
+            );
 
             this._newArticleIds = new Set();
             if (hadPrevious) {
@@ -4064,6 +4152,9 @@ class App {
                 this._newArticleIds = new Set();
                 this._filterCache.clear();
                 this.newsItems = this.applyArticleFlags(filteredCached);
+                this.selectedArticleIds = new Set(
+                    [...this.selectedArticleIds].filter((id) => this.newsItems.some((n) => n && n.id === id))
+                );
                 await this.applySortPipeline({ render: true });
 
                 const lastUpdate = new Date().toLocaleTimeString('de-DE', {
@@ -4286,9 +4377,234 @@ class App {
         }
     }
 
+    handleNewsGridChange(event) {
+        const checkbox = event.target && event.target.closest
+            ? event.target.closest('.article-select-checkbox')
+            : null;
+        if (!checkbox) {
+            return;
+        }
+        const articleId = String(checkbox.getAttribute('data-article-id') || '').trim();
+        if (!articleId) {
+            return;
+        }
+        if (checkbox.checked) {
+            this.selectedArticleIds.add(articleId);
+        } else {
+            this.selectedArticleIds.delete(articleId);
+        }
+        this.updateExportSelectionInfo();
+    }
+
+    openExportModal() {
+        if (!this.elements.exportModal) {
+            return;
+        }
+        if (this.elements.exportPeriodDate && !this.elements.exportPeriodDate.value) {
+            this.elements.exportPeriodDate.value = new Date().toISOString().slice(0, 10);
+        }
+        this.syncExportScopeUi();
+        this.updateExportSelectionInfo();
+        this.elements.exportModal.classList.add('active');
+    }
+
+    closeExportModal() {
+        if (this.elements.exportModal) {
+            this.elements.exportModal.classList.remove('active');
+        }
+    }
+
+    syncExportScopeUi() {
+        if (!this.elements.exportScope || !this.elements.exportPeriodWrap) {
+            return;
+        }
+        this.elements.exportPeriodWrap.hidden = this.elements.exportScope.value !== 'period';
+    }
+
+    updateExportSelectionInfo() {
+        const el = this.elements.exportSelectionInfo;
+        if (!el) {
+            return;
+        }
+        const tpl = this._i18nExportSelectionInfo || 'Selected: {selected}, visible: {visible}';
+        el.textContent = tpl
+            .replace(/\{selected\}/g, String(this.selectedArticleIds.size))
+            .replace(/\{visible\}/g, String(this.filteredNewsItems.length));
+    }
+
+    static getPeriodBounds(periodType, isoDate) {
+        const d = new Date(`${isoDate}T00:00:00`);
+        if (!Number.isFinite(d.getTime())) {
+            return null;
+        }
+        if (periodType === 'day') {
+            const start = new Date(d);
+            const end = new Date(d);
+            end.setHours(23, 59, 59, 999);
+            return { startMs: start.getTime(), endMs: end.getTime() };
+        }
+        if (periodType === 'week') {
+            const day = d.getDay();
+            const mondayOffset = day === 0 ? -6 : 1 - day;
+            const start = new Date(d);
+            start.setDate(start.getDate() + mondayOffset);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 6);
+            end.setHours(23, 59, 59, 999);
+            return { startMs: start.getTime(), endMs: end.getTime() };
+        }
+        if (periodType === 'month') {
+            const start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+            const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+            return { startMs: start.getTime(), endMs: end.getTime() };
+        }
+        const start = new Date(d.getFullYear(), 0, 1, 0, 0, 0, 0);
+        const end = new Date(d.getFullYear(), 11, 31, 23, 59, 59, 999);
+        return { startMs: start.getTime(), endMs: end.getTime() };
+    }
+
+    getExportItemsByScope() {
+        const scope = this.elements.exportScope ? this.elements.exportScope.value : 'selected';
+        if (scope === 'period') {
+            const periodType = this.elements.exportPeriodType ? this.elements.exportPeriodType.value : 'day';
+            const refDate = this.elements.exportPeriodDate ? this.elements.exportPeriodDate.value : '';
+            const bounds = App.getPeriodBounds(periodType, refDate);
+            if (!bounds) {
+                return [];
+            }
+            return (this.newsItems || []).filter((item) => {
+                const ms = Number(item && item.publishedMs);
+                return Number.isFinite(ms) && ms >= bounds.startMs && ms <= bounds.endMs;
+            });
+        }
+        if (this.selectedArticleIds.size === 0) {
+            return [];
+        }
+        const idSet = new Set(this.selectedArticleIds);
+        return (this.newsItems || []).filter((item) => idSet.has(item.id));
+    }
+
+    async buildExportPayload(items, opts) {
+        const model = (this.settings && this.settings.lmModel) || '';
+        const kiMode = (this.settings && this.settings.kiApiMode) || '';
+        const reasoning = (this.settings && this.settings.reasoning) || '';
+        const rows = [];
+        for (const item of items) {
+            const rec = {
+                id: item.id,
+                title: item.title,
+                url: item.url || item.link || '',
+                source: item.newsSource || this.settings?.newsSource || '',
+                category: item.category || '',
+                categoryName: item.categoryName || '',
+                timestamp: item.timestamp || '',
+                publishedAt: item.publishedMs ? new Date(item.publishedMs).toISOString() : '',
+                fetchedAt: item.fetchedAt || ''
+            };
+            if (opts.includeSummary || opts.includeAlternativeLinks || opts.includeKiMeta) {
+                const url = App.articlePrimaryUrl(item);
+                if (url) {
+                    const cached = await this.summarizer.getCachedSummaryForDisplay(url);
+                    if (cached && opts.includeSummary) {
+                        rec.summary = cached.summary || '';
+                    }
+                    if (cached && opts.includeAlternativeLinks) {
+                        rec.alternativeLinks = Array.isArray(cached.alternativeLinks)
+                            ? cached.alternativeLinks
+                            : [];
+                    }
+                    if (cached && opts.includeKiMeta) {
+                        rec.kiMeta = {
+                            model,
+                            apiMode: kiMode,
+                            reasoning,
+                            summaryCachedAt: cached.cachedAt || ''
+                        };
+                    }
+                }
+            }
+            if (opts.includeReddit && this.storage && this.storage.db) {
+                const articleKey = App.articleFlagKey(item);
+                if (articleKey) {
+                    const rd = await this.storage.getRedditThreadsWithMeta(articleKey);
+                    rec.redditThreads = rd && Array.isArray(rd.threads) ? rd.threads : [];
+                }
+            }
+            if (opts.includeComments) {
+                rec.commentStats = item.commentStats || null;
+            }
+            rows.push(rec);
+        }
+        return {
+            meta: {
+                createdAt: new Date().toISOString(),
+                articleCount: rows.length,
+                newsSource: this.settings?.newsSource || '',
+                scope: this.elements.exportScope ? this.elements.exportScope.value : 'selected'
+            },
+            articles: rows
+        };
+    }
+
+    async runExport() {
+        try {
+            if (typeof window === 'undefined' || !window.ArticleExporter) {
+                this.showStatus('Export-Modul nicht verfügbar.', true);
+                return;
+            }
+            const items = this.getExportItemsByScope();
+            if (!items || items.length === 0) {
+                this.showStatus(this._i18nExportNoItems || 'No articles found for export.', true);
+                return;
+            }
+            const format = this.elements.exportFormat ? this.elements.exportFormat.value : 'json';
+            const opts = {
+                includeSummary: this.elements.exportIncludeSummary ? this.elements.exportIncludeSummary.checked : true,
+                includeAlternativeLinks: this.elements.exportIncludeAlternativeLinks ? this.elements.exportIncludeAlternativeLinks.checked : true,
+                includeReddit: this.elements.exportIncludeReddit ? this.elements.exportIncludeReddit.checked : false,
+                includeComments: this.elements.exportIncludeComments ? this.elements.exportIncludeComments.checked : false,
+                includeKiMeta: this.elements.exportIncludeKiMeta ? this.elements.exportIncludeKiMeta.checked : false
+            };
+            const payload = await this.buildExportPayload(items, opts);
+            const baseName = `news-export-${this.settings?.newsSource || 'source'}`;
+            if (format === 'json') {
+                const file = window.ArticleExporter.buildFileName(baseName, 'json');
+                window.ArticleExporter.download(JSON.stringify(payload, null, 2), 'application/json;charset=utf-8', file);
+            } else if (format === 'yaml') {
+                const file = window.ArticleExporter.buildFileName(baseName, 'yaml');
+                window.ArticleExporter.download(window.ArticleExporter.toYaml(payload), 'application/x-yaml;charset=utf-8', file);
+            } else if (format === 'xml') {
+                const file = window.ArticleExporter.buildFileName(baseName, 'xml');
+                window.ArticleExporter.download(window.ArticleExporter.toXml(payload), 'application/xml;charset=utf-8', file);
+            } else if (format === 'markdown') {
+                const file = window.ArticleExporter.buildFileName(baseName, 'md');
+                window.ArticleExporter.download(window.ArticleExporter.toMarkdown(payload), 'text/markdown;charset=utf-8', file);
+            } else {
+                const file = window.ArticleExporter.buildFileName(baseName, 'pdf');
+                const ok = window.ArticleExporter.toPdf(payload, file);
+                if (!ok) {
+                    this.showStatus('PDF-Export ist aktuell nicht verfügbar.', true);
+                    return;
+                }
+            }
+            const doneTpl = this._i18nExportDone || 'Export created: {count} article(s) ({format}).';
+            this.showStatus(
+                doneTpl
+                    .replace(/\{count\}/g, String(items.length))
+                    .replace(/\{format\}/g, String(format).toUpperCase())
+            );
+            this.closeExportModal();
+        } catch (e) {
+            console.error('runExport:', e);
+            this.showStatus('Export fehlgeschlagen.', true);
+        }
+    }
+
     createNewsCardHTML(item) {
         const timeDisplay = item.timestamp || 'Aktuell';
         const isNew = this._newArticleIds && this._newArticleIds.has(item.id);
+        const isSelected = this.selectedArticleIds.has(item.id);
         const newClass = isNew ? ' news-card--new' : '';
         const badge = isNew
             ? `<span class="news-card-new-badge">${this.escapeHtml(this._i18nNewsBadge || 'Neu')}</span>`
@@ -4308,6 +4624,10 @@ class App {
             <article class="news-card${newClass}" data-id="${item.id}" lang="${App.articleContentHtmlLang(item, this.settings && this.settings.newsSource)}"${ariaNew}>
                 <div class="news-header">
                     <div class="news-header-main">
+                        <label class="article-select-wrap" title="Für Export auswählen">
+                            <input type="checkbox" class="article-select-checkbox" data-article-id="${this.escapeHtml(item.id)}" ${isSelected ? 'checked' : ''}>
+                            <span>Export</span>
+                        </label>
                         ${badge}
                         <span class="category-badge">${item.categoryName}</span>
                         <span class="forum-mood-wrap" hidden>

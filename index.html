@@ -2213,6 +2213,9 @@
                 aria-label="Alle Zusammenfassungen neu erzeugen (mit Bestätigung)">
                 🔄 Alle neu erzeugen
             </button>
+            <button type="button" class="settings-btn settings-btn--gear" id="exportBtn" title="Artikel exportieren" aria-label="Artikel exportieren">
+                ⤓ Export
+            </button>
             <button type="button" class="settings-btn settings-btn--gear" id="dashboardSettingsBtn" title="Einstellungen" aria-label="Einstellungen">
                 ⚙️ Einstellungen
             </button>
@@ -2903,6 +2906,40 @@
         .youtube-video-card .video-title:hover { text-decoration: underline; }
         .video-channel { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .video-summary { font-size: 0.9rem; line-height: 1.45; color: var(--text-primary); margin: 0; max-width: 60ch; }
+        .article-select-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-right: 0.45rem;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+        .article-select-checkbox {
+            width: 1rem;
+            height: 1rem;
+            accent-color: var(--primary-color);
+        }
+        .export-modal .setting-group {
+            margin-bottom: 0.9rem;
+        }
+        .export-modal .export-inline {
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .export-modal .export-checklist {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.5rem 1rem;
+        }
+        .export-modal .export-checklist label {
+            display: inline-flex;
+            gap: 0.45rem;
+            align-items: center;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
     </style>
 
     <!-- YouTube Modal -->
@@ -2929,6 +2966,64 @@
         </div>
     </div>
 
+    <div class="modal-overlay notranslate" id="exportModal" role="dialog" aria-labelledby="exportModalTitle" aria-modal="true">
+        <div class="modal export-modal">
+            <h2 id="exportModalTitle">Artikel exportieren</h2>
+            <p id="exportSelectionInfo" class="modal-hint"></p>
+
+            <div class="setting-group">
+                <label for="exportFormat" id="exportFormatLabel" class="setting-label">Format</label>
+                <select id="exportFormat" class="setting-input">
+                    <option value="pdf">PDF</option>
+                    <option value="markdown">Markup (Markdown)</option>
+                    <option value="xml">XML</option>
+                    <option value="yaml">YAML</option>
+                    <option value="json">JSON</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="exportScope" id="exportScopeLabel" class="setting-label">Umfang</label>
+                <select id="exportScope" class="setting-input">
+                    <option id="exportScopeSelectedOption" value="selected">Ausgewählte Artikel</option>
+                    <option id="exportScopePeriodOption" value="period">Zeitbereich (Tag/Woche/Monat/Jahr)</option>
+                </select>
+            </div>
+
+            <div class="setting-group export-inline" id="exportPeriodWrap" hidden>
+                <span>
+                    <label for="exportPeriodType" id="exportPeriodTypeLabel" class="setting-label">Zeitraum</label>
+                    <select id="exportPeriodType" class="setting-input">
+                        <option id="exportPeriodDayOption" value="day">Tag</option>
+                        <option id="exportPeriodWeekOption" value="week">Woche</option>
+                        <option id="exportPeriodMonthOption" value="month">Monat</option>
+                        <option id="exportPeriodYearOption" value="year">Jahr</option>
+                    </select>
+                </span>
+                <span>
+                    <label for="exportPeriodDate" id="exportPeriodDateLabel" class="setting-label">Referenzdatum</label>
+                    <input id="exportPeriodDate" type="date" class="setting-input" />
+                </span>
+            </div>
+
+            <div class="setting-group">
+                <label id="exportContentLabel" class="setting-label">Inhalt</label>
+                <div class="export-checklist">
+                    <label><input type="checkbox" id="exportIncludeSummary" checked> <span id="exportIncludeSummaryLabel">KI-Zusammenfassung</span></label>
+                    <label><input type="checkbox" id="exportIncludeAlternativeLinks" checked> <span id="exportIncludeAlternativeLinksLabel">Alternative Links</span></label>
+                    <label><input type="checkbox" id="exportIncludeReddit"> <span id="exportIncludeRedditLabel">Reddit-Threads</span></label>
+                    <label><input type="checkbox" id="exportIncludeComments"> <span id="exportIncludeCommentsLabel">Kommentar-Metadaten</span></label>
+                    <label><input type="checkbox" id="exportIncludeKiMeta"> <span id="exportIncludeKiMetaLabel">KI-Metadaten (Modell/Modus)</span></label>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="cancelExportBtn">Schließen</button>
+                <button type="button" class="btn-primary" id="runExportBtn">Export starten</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Status Bar -->
     <footer class="status-bar notranslate" id="statusBar">
         <span id="statusFlash" class="status-flash" role="status" aria-live="polite"></span>
@@ -2939,6 +3034,7 @@
 
     <!-- DOMPurify für XSS-Schutz bei komplexer HTML-Generierung -->
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script>
         try {
             var _hr = localStorage.getItem('heise_reasoning');
@@ -2956,7 +3052,8 @@
     <script src="js/heise-comments.js?v=telepolis-comments1"></script>
     <script src="js/youtube-related.js"></script>
     <script src="js/article-translation.js?v=1"></script>
-    <script src="js/app.js?v=filterCacheNewsData20260415a"></script>
+    <script src="js/article-exporter.js?v=1"></script>
+    <script src="js/app.js?v=exportArticles20260415a"></script>
     
 </body>
 </html>
