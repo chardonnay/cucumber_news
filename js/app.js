@@ -90,11 +90,9 @@ class App {
         /** Article IDs that appeared since the previous fetch (cleared after 3s hover or highlight removal). */
         this._newArticleIds = new Set();
 
-        // Performance optimization: Filter cache to avoid O(n²) re-filtering
-        /** @type {Map<string, object[]>} Cache key: "categories|sortMode|dateFilter" */
+        // Performance optimization: Filter cache to avoid repeated O(n) filtering on the same dataset.
+        /** @type {Map<string, object[]>} */
         this._filterCache = new Map();
-        /** Timestamp when cache was invalidated (newsItems change) */
-        this._filterCacheValidUntil = 0;
 
         /** Background KI run for new articles after refresh (avoid overlap with „Alle Zusammenfassungen“). */
         this._autoSummarizeNewInProgress = false;
@@ -3256,6 +3254,13 @@ class App {
         if (!this.settings || this.settings.articleTranslationEnabled !== true) {
             return;
         }
+        if (this._articleInPlaceTranslationDebounce) {
+            window.clearTimeout(this._articleInPlaceTranslationDebounce);
+        }
+        this._articleInPlaceTranslationDebounce = window.setTimeout(() => {
+            this._articleInPlaceTranslationDebounce = 0;
+            void this.runArticleInPlaceTranslationJob();
+        }, 550);
     }
 
     async runArticleInPlaceTranslationJob() {
@@ -3623,15 +3628,7 @@ class App {
         const src = this.normalizeNewsSource(this.settings?.newsSource);
         const mode = this.sortMode || 'recency';
 
-        // Performance optimization: Use cached filter results if valid
         const cacheKey = this._buildFilterCacheKey(src, mode);
-        
-        // Invalidate cache when newsItems changed significantly (generation check)
-        const now = Date.now();
-        if (now > this._filterCacheValidUntil && this._newsFetchGeneration > 0) {
-            this._filterCache.clear();
-            this._filterCacheValidUntil = now + 5000; // Cache valid for 5 seconds after fetch
-        }
 
         const cached = this._filterCache.get(cacheKey);
         if (cached && Array.isArray(cached)) {
@@ -3677,7 +3674,7 @@ class App {
 
     /** @returns {string} Unique cache key for filter state */
     _buildFilterCacheKey(src, mode) {
-        const cats = this.selectedCategories.sort().join('|');
+        const cats = [...this.selectedCategories].sort().join('|');
         const dateFilter = 
             mode === 'date_day' ? `day:${this.sortDateSingle}` :
             mode === 'date_range' ? `range:${this.sortDateFrom}|${this.sortDateTo}` :
@@ -4000,6 +3997,7 @@ class App {
             }
 
             // Update state
+            this._filterCache.clear();
             this.newsItems = this.applyArticleFlags(newsItems);
 
             this._newArticleIds = new Set();
@@ -4064,6 +4062,7 @@ class App {
 
             if (filteredCached.length > 0) {
                 this._newArticleIds = new Set();
+                this._filterCache.clear();
                 this.newsItems = this.applyArticleFlags(filteredCached);
                 await this.applySortPipeline({ render: true });
 
@@ -4754,7 +4753,6 @@ class App {
             // Fallback: keep original results if KI filter is unavailable
             return rows;
         }
-    }
     }
 
     /**
