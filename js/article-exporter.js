@@ -8,6 +8,43 @@
 
     class ArticleExporter {
         /**
+         * @returns {string}
+         */
+        static exportAttribution() {
+            return 'Created with Cucumber NewsScraper';
+        }
+
+        /**
+         * @param {unknown} value
+         * @returns {string}
+         */
+        static exportAttributionDate(value) {
+            const raw = ArticleExporter.cleanText(value) || new Date().toISOString();
+            const ts = Date.parse(raw);
+            if (!Number.isFinite(ts)) {
+                return raw;
+            }
+            try {
+                return new Intl.DateTimeFormat('de-DE', {
+                    dateStyle: 'medium'
+                }).format(new Date(ts));
+            } catch (_) {
+                return new Date(ts).toLocaleDateString('de-DE');
+            }
+        }
+
+        /**
+         * @param {unknown} createdAt
+         * @returns {string}
+         */
+        static exportWatermarkText(createdAt) {
+            const dateLabel = ArticleExporter.exportAttributionDate(createdAt);
+            return dateLabel
+                ? `${ArticleExporter.exportAttribution()} ${dateLabel}`
+                : ArticleExporter.exportAttribution();
+        }
+
+        /**
          * @param {string} name
          * @returns {string}
          */
@@ -335,6 +372,8 @@
                 lines.push('Keine Artikel im Export enthalten.');
                 lines.push('');
             }
+
+            lines.push(ArticleExporter.exportAttribution());
 
             return lines.join('\n');
         }
@@ -754,6 +793,8 @@
                 accentDark: ArticleExporter.mixRgb(accent, [14, 23, 38], 0.28),
                 accentSoft: ArticleExporter.mixRgb(accent, [255, 255, 255], 0.82),
                 accentSurface: ArticleExporter.mixRgb(accent, [255, 255, 255], 0.92),
+                watermark: ArticleExporter.mixRgb(accent, [245, 247, 250], 0.88),
+                coverWatermark: ArticleExporter.mixRgb([255, 255, 255], [18, 26, 39], 0.68),
                 page: [245, 247, 250],
                 surface: [255, 255, 255],
                 border: [224, 229, 237],
@@ -768,6 +809,7 @@
 
             let cursorY = layout.top;
             let currentHeader = null;
+            const pdfWatermark = ArticleExporter.exportWatermarkText(meta.createdAt);
 
             const setFill = (rgb) => doc.setFillColor(rgb[0], rgb[1], rgb[2]);
             const setDraw = (rgb) => doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
@@ -806,11 +848,30 @@
                 return y + Math.max(0, lines.length - 1) * lineHeight;
             };
 
+            const drawWatermark = (rgb) => {
+                if (!pdfWatermark) {
+                    return;
+                }
+                setText(rgb);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(26);
+                doc.text(
+                    fitSingleLine(pdfWatermark, pageW * 0.76),
+                    pageW / 2,
+                    pageH / 2,
+                    {
+                        align: 'center',
+                        angle: -28
+                    }
+                );
+            };
+
             const paintStandardPage = () => {
                 setFill(theme.page);
                 doc.rect(0, 0, pageW, pageH, 'F');
                 setFill(theme.accent);
                 doc.rect(0, 0, pageW, 6, 'F');
+                drawWatermark(theme.watermark);
                 setDraw(theme.border);
                 doc.setLineWidth(1);
                 doc.line(layout.marginX, pageH - 28, pageW - layout.marginX, pageH - 28);
@@ -944,6 +1005,7 @@
                 doc.circle(pageW + 24, 84, 132, 'F');
                 setFill(theme.coverGlowPrimary);
                 doc.circle(-26, pageH - 48, 128, 'F');
+                drawWatermark(theme.coverWatermark);
 
                 setText([255, 255, 255]);
                 doc.setFont('helvetica', 'bold');
@@ -1492,6 +1554,14 @@
                     layout.marginX,
                     pageH - 16
                 );
+                if (page === totalPages) {
+                    doc.text(
+                        fitSingleLine(ArticleExporter.exportAttribution(), 220),
+                        pageW / 2,
+                        pageH - 16,
+                        { align: 'center' }
+                    );
+                }
                 doc.text(`Seite ${page} / ${totalPages}`, pageW - layout.marginX, pageH - 16, {
                     align: 'right'
                 });

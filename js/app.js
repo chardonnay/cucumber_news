@@ -3919,6 +3919,7 @@ class App {
         if (sections.length > 0) {
             parts.push(...sections.map((section) => `\n${section}`));
         }
+        parts.push('\nCreated with Cucumber NewsScraper');
 
         return {
             title,
