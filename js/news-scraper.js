@@ -5,7 +5,7 @@
  * Copyright (c) 2026 Daniel Mengel
  */
 
-/** @typedef {'heise'|'telepolis'|'golem'|'computerbase'|'t3n'|'it_administrator'|'verge'} NewsSourceId */
+/** @typedef {'heise'|'bild'|'telepolis'|'golem'|'computerbase'|'t3n'|'it_administrator'|'verge'} NewsSourceId */
 
 class NewsScraper {
     constructor() {
@@ -19,7 +19,7 @@ class NewsScraper {
         const catalog =
             typeof window !== 'undefined' && window.NEWS_SOURCE_IDS
                 ? window.NEWS_SOURCE_IDS
-                : ['heise', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+                : ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
         const allowed = new Set(catalog);
         this.source = allowed.has(String(source)) ? String(source) : 'heise';
 
@@ -36,6 +36,14 @@ class NewsScraper {
         this.rubricFeeds = [];
 
         switch (this.source) {
+            case 'bild':
+                this.baseUrl = 'https://www.bild.de';
+                this.feedUrl = 'https://www.bild.de/feed/home.xml';
+                this.cacheName = 'bild-news-cache';
+                this.feedType = 'rss';
+                this.rssItemHost = 'bild.de';
+                this.feedProxyPath = '/api/bild-feed';
+                break;
             case 'telepolis':
                 this.baseUrl = 'https://www.telepolis.de';
                 this.feedUrl = 'https://www.telepolis.de/news-atom.xml';
@@ -129,6 +137,7 @@ class NewsScraper {
             heise_mac: 'Mac & i',
             heise_make: 'Make',
             heise_autos: 'heise autos',
+            bild: 'BILD',
             telepolis: 'Telepolis'
         };
     }
@@ -456,6 +465,7 @@ class NewsScraper {
      */
     /**
      * Golem sponsored posts use slugs like …/news/anzeige-cloud-… (see RSS & public URLs).
+     * BILD advertorials use paths like …/service/brandstory/anzeige-…
      * Use substring checks (more robust than a single regex across encodings / protocol-relative URLs).
      * @param {string} url
      * @returns {boolean}
@@ -473,6 +483,9 @@ class NewsScraper {
             return true;
         }
         if (low.includes('/specials/anzeige')) {
+            return true;
+        }
+        if (low.includes('/brandstory/anzeige-')) {
             return true;
         }
         return false;
@@ -746,7 +759,7 @@ class NewsScraper {
     }
 
     /**
-     * Parse RSS 2.0 (Golem, t3n).
+     * Parse RSS 2.0 (BILD, Golem, t3n, IT-Administrator).
      * @param {string} xml
      */
     parseRss2Feed(xml) {
@@ -814,7 +827,9 @@ class NewsScraper {
             const publishedMs = pubRaw ? Date.parse(pubRaw) : Date.now();
 
             const category =
-                this.source === 't3n'
+                this.source === 'bild'
+                    ? this.inferCategoryBild(entry, title, href)
+                    : this.source === 't3n'
                     ? this.inferCategoryT3n(title, href)
                     : this.source === 'it_administrator'
                       ? this.inferCategoryItAdministrator(entry, title, href)
@@ -1074,6 +1089,14 @@ class NewsScraper {
             return 'entertainment';
         }
         return 'telepolis';
+    }
+
+    /**
+     * BILD is integrated as a single source category rather than mapped onto the tech-specific rubric set.
+     * @returns {string}
+     */
+    inferCategoryBild() {
+        return 'bild';
     }
 
     inferCategoryComputerbase(title, link) {
@@ -1397,6 +1420,13 @@ class NewsScraper {
                 url: 'https://www.telepolis.de/',
                 newsSource: 'telepolis'
             },
+            bild: {
+                id: 'bild-fallback-1',
+                title: 'Beispiel: BILD (Offline-Demo)',
+                link: 'https://www.bild.de/',
+                url: 'https://www.bild.de/',
+                newsSource: 'bild'
+            },
             it_administrator: {
                 id: 'it-admin-fallback-1',
                 title: 'Beispiel: IT-Administrator (Offline-Demo)',
@@ -1408,7 +1438,12 @@ class NewsScraper {
 
         if (demos[this.source]) {
             const d = demos[this.source];
-            const cat = this.source === 'telepolis' ? 'telepolis' : 'it';
+            const cat =
+                this.source === 'telepolis'
+                    ? 'telepolis'
+                    : this.source === 'bild'
+                      ? 'bild'
+                      : 'it';
             const categoryName = this.categoryMap[cat] || 'IT & Tech';
             return [
                 {
@@ -1470,6 +1505,7 @@ class NewsScraper {
             await caches.delete('t3n-news-cache');
             await caches.delete('verge-news-cache');
             await caches.delete('telepolis-news-cache');
+            await caches.delete('bild-news-cache');
             await caches.delete('it-administrator-news-cache');
         } catch (e) {
             console.warn(e);

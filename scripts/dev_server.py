@@ -45,11 +45,15 @@ DEFAULT_PORT = 8080
 DEFAULT_BIND = "127.0.0.1"
 HEISE_ORIGIN = "https://www.heise.de"
 HEISE_PREFIX = HEISE_ORIGIN + "/"
+BILD_ORIGIN = "https://www.bild.de"
+BILD_PREFIX = BILD_ORIGIN + "/"
+BILD_FEED_URL = "https://www.bild.de/feed/home.xml"
 TELEPOLIS_ORIGIN = "https://www.telepolis.de"
 TELEPOLIS_PREFIX = TELEPOLIS_ORIGIN + "/"
 TELEPOLIS_FEED_URL = "https://www.telepolis.de/news-atom.xml"
 # url -> {"t": float, "xml": str}
 _heise_feed_cache_by_url: dict[str, dict[str, object]] = {}
+_bild_rss_cache: dict[str, object] = {"t": 0.0, "xml": ""}
 _telepolis_feed_cache: dict[str, object] = {"t": 0.0, "xml": ""}
 GOLEM_ORIGIN = "https://www.golem.de"
 GOLEM_PREFIX = GOLEM_ORIGIN + "/"
@@ -80,6 +84,7 @@ ARTICLE_IMAGE_TIMEOUT = 20
 ARTICLE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 ARTICLE_IMAGE_ALLOWED_HOST_SUFFIXES = (
     "heise.de",
+    "bild.de",
     "heise.cloudimg.io",
     "telepolis.de",
     "golem.de",
@@ -1298,6 +1303,36 @@ def _golem_fetch_rss_xml() -> str:
     return xml
 
 
+def _bild_fetch_rss_xml() -> str:
+    now = time.time()
+    cached = str(_bild_rss_cache.get("xml") or "")
+    t0 = float(_bild_rss_cache.get("t") or 0.0)
+    if cached and now - t0 < 300.0:
+        return cached
+    req = Request(
+        BILD_FEED_URL,
+        headers={
+            "User-Agent": FETCH_UA,
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+        },
+        method="GET",
+    )
+    with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+        body = resp.read()
+    for enc in ("utf-8", "iso-8859-1", "windows-1252"):
+        try:
+            xml = body.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        xml = body.decode("utf-8", errors="replace")
+    _bild_rss_cache["xml"] = xml
+    _bild_rss_cache["t"] = now
+    return xml
+
+
 def _t3n_fetch_rss_xml() -> str:
     now = time.time()
     cached = str(_t3n_rss_cache.get("xml") or "")
@@ -1504,6 +1539,30 @@ def build_computerbase_comments_payload(article_url: str) -> dict:
         },
         "warnings": [
             "ComputerBase: comment totals are not available via RSS feed API; open the article for discussion."
+        ],
+    }
+
+
+def build_bild_comments_payload(article_url: str) -> dict:
+    """Stub: feed has no comment totals; link to article for discussion."""
+    parsed = urlparse(article_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not (host == "bild.de" or host.endswith(".bild.de")):
+        return {"ok": False, "error": "Only https://*.bild.de/ article URLs are allowed."}
+    return {
+        "ok": True,
+        "articleUrl": article_url,
+        "commentCount": None,
+        "discussionUrl": article_url,
+        "forum": {
+            "rss_only": True,
+            "stub": True,
+            "empty": True,
+            "green_count": 0,
+            "red_count": 0,
+        },
+        "warnings": [
+            "BILD: comment totals are not available via RSS feed API; open the article for discussion."
         ],
     }
 
@@ -2011,6 +2070,26 @@ def make_handler(lm_target: str) -> type:
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if path_only == "/api/bild-feed":
+                try:
+                    xml = _bild_fetch_rss_xml()
+                except (HTTPError, URLError, TimeoutError, OSError) as e:
+                    err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(502)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                body = xml.encode("utf-8")
+                self.send_response(200)
+                cors_headers(self)
+                self.send_header("Content-Type", "application/rss+xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path_only == "/api/golem-feed":
                 try:
                     xml = _golem_fetch_rss_xml()
@@ -2124,6 +2203,20 @@ def make_handler(lm_target: str) -> type:
                 raw_url = (qs.get("url") or [""])[0].strip()
                 article_url = unquote(raw_url)
                 payload = build_computerbase_comments_payload(article_url)
+                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                cors_headers(self)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path_only == "/api/bild-comments":
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                raw_url = (qs.get("url") or [""])[0].strip()
+                article_url = unquote(raw_url)
+                payload = build_bild_comments_payload(article_url)
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 cors_headers(self)
@@ -2323,11 +2416,13 @@ def main() -> int:
         f"GET /api/article-image?url=… → same-origin proxy for allowed article thumbnails (PDF export)\n"
         f"GET /api/heise-feed?url=… → Heise Atom/RSS (CORS proxy; url must be https://www.heise.de/…/*.xml)\n"
         f"GET /api/telepolis-feed → Telepolis news-atom.xml (CORS proxy)\n"
+        f"GET /api/bild-feed → BILD RSS home.xml (browser CORS proxy)\n"
         f"GET /api/golem-feed → Golem RSS (browser CORS proxy; same cache as /api/golem-comments)\n"
         f"GET /api/t3n-feed → t3n RSS (browser CORS proxy)\n"
         f"GET /api/it-administrator-feed → IT-Administrator RSS (browser CORS proxy)\n"
         f"GET /api/verge-feed → The Verge Atom (browser CORS proxy); optional ?url=… (https://www.theverge.com/rss/…/*.xml)\n"
         f"GET /api/golem-comments?url=… → Golem comment count + forum URL from RSS (no green/red parse)\n"
+        f"GET /api/bild-comments?url=… → stub (link to article; no feed comment API)\n"
         f"GET /api/computerbase-comments?url=… → stub (link to article; no feed comment API)\n"
         f"GET /api/t3n-comments?url=… → stub (link to article; no feed comment API)\n"
         f"GET /api/verge-comments?url=… → stub (link to #comments; Coral counts not in RSS)\n"

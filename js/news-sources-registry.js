@@ -8,6 +8,7 @@
     /** @type {readonly { id: string, siteUrl: string }[]} */
     const REG = [
         { id: 'heise', siteUrl: 'https://www.heise.de' },
+        { id: 'bild', siteUrl: 'https://www.bild.de' },
         { id: 'telepolis', siteUrl: 'https://www.telepolis.de' },
         { id: 'golem', siteUrl: 'https://www.golem.de' },
         { id: 'computerbase', siteUrl: 'https://www.computerbase.de' },

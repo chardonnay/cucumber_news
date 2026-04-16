@@ -430,7 +430,7 @@ class AISummarizer {
         if (typeof window !== 'undefined' && Array.isArray(window.NEWS_SOURCE_IDS)) {
             return [...window.NEWS_SOURCE_IDS];
         }
-        return ['heise', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+        return ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
     }
 
     /**
@@ -536,6 +536,7 @@ class AISummarizer {
         /** @type {Record<string, (x: string) => boolean>} */
         const map = {
             heise: (x) => x === 'heise.de' || x.endsWith('.heise.de'),
+            bild: (x) => x === 'bild.de' || x.endsWith('.bild.de'),
             telepolis: (x) => x === 'telepolis.de' || x.endsWith('.telepolis.de'),
             golem: (x) => x === 'golem.de' || x.endsWith('.golem.de'),
             computerbase: (x) => x === 'computerbase.de' || x.endsWith('.computerbase.de'),
@@ -668,6 +669,7 @@ class AISummarizer {
     getNewsSourceLabel() {
         const map = {
             heise: 'heise.de',
+            bild: 'BILD (bild.de)',
             telepolis: 'telepolis.de',
             golem: 'golem.de',
             computerbase: 'computerbase.de',
@@ -1431,6 +1433,7 @@ class AISummarizer {
         }
         if (
             u.includes('heise.de') ||
+            u.includes('bild.de') ||
             u.includes('golem.de') ||
             u.includes('computerbase.de') ||
             u.includes('t3n.de') ||

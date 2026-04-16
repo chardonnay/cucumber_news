@@ -11,6 +11,8 @@ const HEISE_BRAND_LOGO_URL = 'https://www.heise.de/icons/ho/favicon/favicon.svg'
 const GOLEM_BRAND_LOGO_URL = 'https://www.golem.de/staticrl/images/Golem-Logo-black-small.png';
 /** Remote SVG from computerbase.de — not bundled (see README). */
 const COMPUTERBASE_BRAND_LOGO_URL = 'https://www.computerbase.de/img/logo-blue.svg';
+/** Remote favicon from bild.de — not bundled (see README). */
+const BILD_BRAND_LOGO_URL = 'https://www.bild.de/favicon.ico';
 /** Remote icon from t3n CDN — not bundled (see README). */
 const T3N_BRAND_LOGO_URL = 'https://cdn.t3n.de/global/images/icons/t3n-favicon-96x96.png';
 /** Remote favicon from The Verge — not bundled (see README). */
@@ -320,7 +322,12 @@ class App {
         if (typeof window !== 'undefined' && Array.isArray(window.NEWS_SOURCE_IDS)) {
             return [...window.NEWS_SOURCE_IDS];
         }
-        return ['heise', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+        return ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+    }
+
+    /** Sources that use a dedicated single-category filter group instead of the generic rubric set. */
+    static singleCategoryNewsSourceSet() {
+        return new Set(['telepolis', 'bild']);
     }
 
     /**
@@ -373,7 +380,10 @@ class App {
 
     /** @returns {Set<string>} */
     static genericRubricNewsSourceSet() {
-        return new Set(App.newsCatalogIds().filter((id) => id !== 'heise' && id !== 'telepolis'));
+        const singleCategorySources = App.singleCategoryNewsSourceSet();
+        return new Set(
+            App.newsCatalogIds().filter((id) => id !== 'heise' && !singleCategorySources.has(id))
+        );
     }
 
     /**
@@ -411,6 +421,9 @@ class App {
         if (s === 'telepolis') {
             return new Set(['telepolis']);
         }
+        if (s === 'bild') {
+            return new Set(['bild']);
+        }
         if (App.isGenericRubricNewsSource(s)) {
             return App.genericRubricCategorySet();
         }
@@ -420,6 +433,11 @@ class App {
     /** Categories used by Telepolis articles (see NewsScraper.inferCategoryTelepolis). */
     static telepolisFeedCategorySet() {
         return new Set(['telepolis', 'ki', 'wissenschaft', 'wirtschaft', 'netzpolitik', 'entertainment']);
+    }
+
+    /** Categories used by BILD feed articles (single-source grouping). */
+    static bildFeedCategorySet() {
+        return new Set(['bild']);
     }
 
     async init() {
@@ -1130,6 +1148,8 @@ class App {
     getBrandLogoUrl() {
         const s = this.settings && this.settings.newsSource;
         switch (s) {
+            case 'bild':
+                return BILD_BRAND_LOGO_URL;
             case 'golem':
                 return GOLEM_BRAND_LOGO_URL;
             case 'computerbase':
@@ -1406,6 +1426,24 @@ class App {
                     });
                 } catch (e) {
                     console.warn('newsSourcesCatalogMigration v3:', e);
+                }
+            }
+            // v4: ensure BILD is in the enabled list once (new catalog entry).
+            if (newsSrcCatalogVer < 4) {
+                const catalog = App.newsCatalogIds();
+                const set = new Set(enabledOrdered);
+                if (catalog.includes('bild')) {
+                    set.add('bild');
+                }
+                enabledOrdered = catalog.filter((id) => set.has(id));
+                newsSrcCatalogVer = 4;
+                try {
+                    await this.storage.saveSettings({
+                        enabledNewsSources: enabledOrdered,
+                        newsSourcesCatalogMigrationVersion: 4
+                    });
+                } catch (e) {
+                    console.warn('newsSourcesCatalogMigration v4:', e);
                 }
             }
             const newsSource = App.normalizeNewsSourceWithEnabled(settings.newsSource, enabledOrdered);
@@ -2579,7 +2617,9 @@ class App {
                     const w = document.getElementById('headerBrandText');
                     if (w) {
                         let wm = headerLoc.brand_wordmark;
-                        if (ns === 'golem' && headerLoc.brand_wordmark_golem) {
+                        if (ns === 'bild' && headerLoc.brand_wordmark_bild) {
+                            wm = headerLoc.brand_wordmark_bild;
+                        } else if (ns === 'golem' && headerLoc.brand_wordmark_golem) {
                             wm = headerLoc.brand_wordmark_golem;
                         } else if (ns === 'computerbase' && headerLoc.brand_wordmark_computerbase) {
                             wm = headerLoc.brand_wordmark_computerbase;
@@ -2605,7 +2645,9 @@ class App {
                 if (headerLoc.logo_alt) {
                     const img = document.getElementById('heiseBrandLogo');
                     let alt = headerLoc.logo_alt;
-                    if (ns === 'golem' && headerLoc.logo_alt_golem) {
+                    if (ns === 'bild' && headerLoc.logo_alt_bild) {
+                        alt = headerLoc.logo_alt_bild;
+                    } else if (ns === 'golem' && headerLoc.logo_alt_golem) {
                         alt = headerLoc.logo_alt_golem;
                     } else if (ns === 'computerbase' && headerLoc.logo_alt_computerbase) {
                         alt = headerLoc.logo_alt_computerbase;
@@ -4076,10 +4118,14 @@ class App {
     syncCategoryFiltersVisibility() {
         const src = this.normalizeNewsSource(this.settings?.newsSource);
         const heiseEl = document.getElementById('categoryFiltersHeise');
+        const bildEl = document.getElementById('categoryFiltersBild');
         const teleEl = document.getElementById('categoryFiltersTelepolis');
         const genericEl = document.getElementById('categoryFiltersGenericSources');
         if (heiseEl) {
             heiseEl.hidden = src !== 'heise';
+        }
+        if (bildEl) {
+            bildEl.hidden = src !== 'bild';
         }
         if (teleEl) {
             teleEl.hidden = src !== 'telepolis';
@@ -4131,7 +4177,7 @@ class App {
     }
 
     /**
-     * When the visible filter group has no selection, check sensible defaults (heise: all; telepolis: on).
+     * When the visible filter group has no selection, check sensible defaults (heise/generic: all; single-source groups: on).
      */
     ensureDefaultCategorySelectionForSource() {
         this.syncCategoryFiltersVisibility();
@@ -4139,8 +4185,8 @@ class App {
         const visibleSet = App.visibleCategoryValuesForSource(src);
         let vis = this.readSelectedCategoriesFromDom();
         if (vis.length === 0 && visibleSet.size > 0) {
-            if (src === 'telepolis') {
-                const cb = document.getElementById('cat-telepolis');
+            if (App.singleCategoryNewsSourceSet().has(src)) {
+                const cb = document.getElementById(`cat-${src}`);
                 if (cb) {
                     cb.checked = true;
                 }
@@ -4191,6 +4237,13 @@ class App {
             } else {
                 const tp = App.telepolisFeedCategorySet();
                 result = base.filter((item) => tp.has(String(item.category || '')));
+            }
+        } else if (src === 'bild') {
+            if (!this.selectedCategories.includes('bild')) {
+                result = [];
+            } else {
+                const bild = App.bildFeedCategorySet();
+                result = base.filter((item) => bild.has(String(item.category || '')));
             }
         } else if (src === 'heise' || App.isGenericRubricNewsSource(src)) {
             if (this.selectedCategories.length === 0) {

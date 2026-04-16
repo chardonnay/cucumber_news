@@ -292,6 +292,8 @@ const HeiseComments = {
         let apiPath = '/api/heise-comments';
         if (u.startsWith('https://www.golem.de/') || u.startsWith('https://golem.de/')) {
             apiPath = '/api/golem-comments';
+        } else if (u.startsWith('https://www.bild.de/') || u.startsWith('https://bild.de/')) {
+            apiPath = '/api/bild-comments';
         } else if (u.startsWith('https://www.computerbase.de/') || u.startsWith('https://computerbase.de/')) {
             apiPath = '/api/computerbase-comments';
         } else if (u.startsWith('https://t3n.de/')) {
@@ -491,7 +493,7 @@ sanitizeHtml(html) {
      * @param {object} data
      */
     /**
-     * ComputerBase / t3n / The Verge: no server-side comment count — link to article (Verge: #comments).
+     * BILD / ComputerBase / t3n / The Verge: no server-side comment count — link to article (Verge: #comments).
      * @param {HTMLElement} row
      * @param {string} articleUrl
      * @param {object} data
@@ -775,6 +777,8 @@ sanitizeHtml(html) {
                 isHeiseCommentsApiArticleUrl(u) ||
                 u.startsWith('https://www.golem.de/') ||
                 u.startsWith('https://golem.de/') ||
+                u.startsWith('https://www.bild.de/') ||
+                u.startsWith('https://bild.de/') ||
                 u.startsWith('https://www.computerbase.de/') ||
                 u.startsWith('https://computerbase.de/') ||
                 u.startsWith('https://t3n.de/') ||
