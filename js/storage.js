@@ -67,6 +67,17 @@ class NewsStorage {
 
     // Save news articles to IndexedDB
     async saveNews(articles) {
+        const rows = Array.isArray(articles) ? articles : [];
+        const sources = [
+            ...new Set(
+                rows
+                    .map((article) => String(article && article.newsSource ? article.newsSource : '').trim())
+                    .filter(Boolean)
+            )
+        ];
+        if (sources.length === 1) {
+            return this.replaceNewsForSource(sources[0], rows);
+        }
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['news'], 'readwrite');
             const store = transaction.objectStore('news');
@@ -101,6 +112,94 @@ class NewsStorage {
 
             transaction.onerror = () => {
                 console.error('Transaction error:', transaction.error);
+                reject(transaction.error);
+            };
+        });
+    }
+
+    /**
+     * Replace only one source's articles in IndexedDB and keep the others intact.
+     * @param {string} sourceId
+     * @param {Array<Record<string, unknown>>} articles
+     */
+    async replaceNewsForSource(sourceId, articles) {
+        const targetSource = String(sourceId || '').trim();
+        const rows = Array.isArray(articles) ? articles : [];
+        if (!targetSource) {
+            return 0;
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['news'], 'readwrite');
+            const store = transaction.objectStore('news');
+            /** @type {Array<string|number|Date|IDBValidKey>} */
+            const keysToDelete = [];
+
+            const writeRows = () => {
+                if (rows.length === 0) {
+                    resolve(0);
+                    return;
+                }
+                let pending = rows.length;
+                let failed = false;
+                rows.forEach((article) => {
+                    const data = {
+                        ...article,
+                        newsSource: targetSource
+                    };
+                    const req = store.put(data);
+                    req.onsuccess = () => {
+                        pending -= 1;
+                        if (pending === 0 && !failed) {
+                            resolve(rows.length);
+                        }
+                    };
+                    req.onerror = () => {
+                        if (failed) {
+                            return;
+                        }
+                        failed = true;
+                        reject(req.error);
+                    };
+                });
+            };
+
+            const deleteCollected = () => {
+                if (keysToDelete.length === 0) {
+                    writeRows();
+                    return;
+                }
+                let index = 0;
+                const deleteNext = () => {
+                    if (index >= keysToDelete.length) {
+                        writeRows();
+                        return;
+                    }
+                    const key = keysToDelete[index];
+                    index += 1;
+                    const req = store.delete(key);
+                    req.onsuccess = () => deleteNext();
+                    req.onerror = () => reject(req.error);
+                };
+                deleteNext();
+            };
+
+            const cursorRequest = store.openCursor();
+            cursorRequest.onsuccess = () => {
+                const cursor = cursorRequest.result;
+                if (cursor) {
+                    const row = cursor.value;
+                    const rowSource = String(row && row.newsSource ? row.newsSource : '').trim();
+                    if (rowSource === targetSource) {
+                        keysToDelete.push(cursor.primaryKey);
+                    }
+                    cursor.continue();
+                    return;
+                }
+                deleteCollected();
+            };
+            cursorRequest.onerror = () => reject(cursorRequest.error);
+
+            transaction.onerror = () => {
                 reject(transaction.error);
             };
         });
@@ -288,8 +387,10 @@ class NewsStorage {
             summaryConcurrency: 4,
             /** Per-request HTTP timeout for KI calls (seconds); LM REST includes model resolve + chat in one controller */
             summaryRequestTimeoutSeconds: 120,
-            /** Reasoning level for LM Studio REST: off | low | medium | high | on */
+            /** Selected reasoning level for LM Studio REST: off | low | medium | high | on */
             reasoning: 'off',
+            /** Whether the LM Studio REST `reasoning` field should be sent at all. */
+            reasoningEnabled: false,
             /** How many alternative article URLs the KI may suggest (0 = off) */
             alternativeLinksCount: 5,
             /** expanded = show links under summary; collapsed = show after “Weitere Quellen” */
@@ -324,6 +425,8 @@ class NewsStorage {
              * @type {string[]}
              */
             enabledNewsSources: [],
+            /** Refresh all enabled article sources on the header timer and prewarm KI/links/Reddit in the background. */
+            backgroundSelectedSourcesRefreshEnabled: false,
             /** Bumped when catalog migrations run (see App.loadSettings); v2 Telepolis, v3 IT-Administrator. */
             newsSourcesCatalogMigrationVersion: 0
         };

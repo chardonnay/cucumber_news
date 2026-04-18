@@ -190,7 +190,15 @@
         const chunk = q.length > 480 ? `${q.slice(0, 477)}…` : q;
         const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${encodeURIComponent(fp)}|${encodeURIComponent(tp)}`;
         const r = await fetch(url, { method: 'GET', cache: 'no-store' });
-        const j = await r.json();
+        if (!r.ok) {
+            throw new Error(`mymemory_http_${r.status}`);
+        }
+        let j;
+        try {
+            j = await r.json();
+        } catch (_) {
+            throw new Error('mymemory_invalid_json');
+        }
         if (j.quotaFinished === true) {
             throw new Error('mymemory_quota');
         }
@@ -202,6 +210,7 @@
             j.responseData && typeof j.responseData.translatedText === 'string'
                 ? String(j.responseData.translatedText).trim()
                 : '';
+        const finalText = out || q;
         myMemoryCache.set(cacheKey, finalText);
         return finalText;
     }

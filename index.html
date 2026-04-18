@@ -1877,6 +1877,49 @@
             font-variant-numeric: tabular-nums;
         }
 
+        .selected-sources-generation-modal {
+            max-width: min(92vw, 42rem);
+        }
+
+        .selected-sources-generation-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+            gap: 0.85rem;
+            margin-top: 1rem;
+        }
+
+        .selected-sources-generation-status__card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .selected-sources-generation-status__label {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+
+        .selected-sources-generation-status__value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            word-break: break-word;
+        }
+
+        .selected-sources-generation-state {
+            margin: 0;
+            padding: 0.9rem 1rem;
+            border-radius: var(--radius-md);
+            background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+            border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
+            color: var(--text-primary);
+        }
+
         .ki-stats-token-hint {
             font-size: 0.85rem;
             margin-bottom: 1rem;
@@ -2329,6 +2372,15 @@
             <button type="button" class="refresh-btn" id="refreshBtn" aria-label="Nachrichten aktualisieren">
                 ↻ Aktualisieren
             </button>
+            <button
+                type="button"
+                class="summarize-refresh-btn"
+                id="generateSelectedSourcesBtn"
+                title="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
+                aria-label="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
+            >
+                ⚡ Quellen erzeugen
+            </button>
             <button type="button" class="summarize-all-btn" id="summarizeAllBtn"
                 title="Erzeugt KI-Zusammenfassungen für alle aktuell gefilterten Nachrichten (nutzt Cache, sofern gültig)"
                 aria-label="Alle KI-Zusammenfassungen für die aktuellen Filter erzeugen">
@@ -2701,6 +2753,17 @@
                 </button>
             </div>
             <ul id="newsSourcesSettingsList" class="news-sources-settings__list" aria-label="Newsquellen"></ul>
+            <div class="setting-group" id="backgroundSelectedSourcesRefreshSettingsGroup">
+                <label class="setting-label" style="display: flex; align-items: flex-start; gap: 0.5rem; font-weight: normal; cursor: pointer;">
+                    <input type="checkbox" id="backgroundSelectedSourcesRefreshEnabled" style="width: auto; margin-top: 0.2rem;">
+                    <span>
+                        <strong id="backgroundSelectedSourcesRefreshEnabledTitle">Ausgewählte Quellen im Hintergrund aktualisieren</strong>
+                        <span id="backgroundSelectedSourcesRefreshEnabledHint" class="modal-hint" style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.35rem;">
+                            Nutzt das eingestellte Aktualisierungsintervall aus dem Kopfbereich auch für alle hier aktivierten Quellen und lädt neue Artikel im Hintergrund vor, inklusive KI-Zusammenfassung, alternativer Links und Reddit-Ergebnissen.
+                        </span>
+                    </span>
+                </label>
+            </div>
             <div class="modal-actions modal-actions--sources-footer">
                 <button type="button" class="btn-secondary" id="dashboardOpenKiLangBtn" title="KI-Server: Sprache der Zusammenfassung">
                     🌐 KI-Zusammenfassung: Sprache …
@@ -2708,6 +2771,97 @@
                 <span class="modal-actions--sources-footer__spacer" aria-hidden="true"></span>
                 <button type="button" class="btn-secondary" id="cancelDashboardSettings">Schließen</button>
                 <button type="button" class="btn-primary" id="saveDashboardSettings">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <div
+        class="modal-overlay notranslate"
+        id="selectedSourcesGenerationModal"
+        role="dialog"
+        aria-labelledby="selectedSourcesGenerationTitle"
+        aria-modal="true"
+    >
+        <div class="modal selected-sources-generation-modal">
+            <h2 id="selectedSourcesGenerationTitle">Ausgewählte Quellen vollständig erzeugen</h2>
+            <p
+                id="selectedSourcesGenerationHint"
+                class="modal-hint"
+                style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;"
+            >
+                Lädt alle aktivierten Quellen nacheinander neu und erzeugt für deren Artikel KI-Zusammenfassungen, alternative Links und Reddit-Ergebnisse.
+            </p>
+            <p
+                id="selectedSourcesGenerationState"
+                class="selected-sources-generation-state"
+                role="status"
+                aria-live="polite"
+            >
+                Vorbereitung …
+            </p>
+            <div class="selected-sources-generation-status" aria-live="polite">
+                <div class="selected-sources-generation-status__card">
+                    <span
+                        id="selectedSourcesGenerationCurrentLabel"
+                        class="selected-sources-generation-status__label"
+                    >
+                        Aktuelle Quelle
+                    </span>
+                    <span
+                        id="selectedSourcesGenerationCurrentValue"
+                        class="selected-sources-generation-status__value"
+                    >
+                        —
+                    </span>
+                </div>
+                <div class="selected-sources-generation-status__card">
+                    <span
+                        id="selectedSourcesGenerationRemainingLabel"
+                        class="selected-sources-generation-status__label"
+                    >
+                        Verbleibende Quellen
+                    </span>
+                    <span
+                        id="selectedSourcesGenerationRemainingValue"
+                        class="selected-sources-generation-status__value"
+                    >
+                        0
+                    </span>
+                </div>
+                <div class="selected-sources-generation-status__card">
+                    <span
+                        id="selectedSourcesGenerationProgressLabel"
+                        class="selected-sources-generation-status__label"
+                    >
+                        Fortschritt
+                    </span>
+                    <span
+                        id="selectedSourcesGenerationProgressValue"
+                        class="selected-sources-generation-status__value"
+                    >
+                        0 / 0
+                    </span>
+                </div>
+                <div class="selected-sources-generation-status__card">
+                    <span
+                        id="selectedSourcesGenerationEtaLabel"
+                        class="selected-sources-generation-status__label"
+                    >
+                        Voraussichtliche Restzeit
+                    </span>
+                    <span
+                        id="selectedSourcesGenerationEtaValue"
+                        class="selected-sources-generation-status__value"
+                    >
+                        —
+                    </span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <span class="modal-actions__spacer" aria-hidden="true"></span>
+                <button type="button" class="btn-secondary" id="cancelSelectedSourcesGenerationBtn">
+                    Abbrechen
+                </button>
             </div>
         </div>
     </div>
@@ -2926,7 +3080,7 @@
                 <legend class="setting-label">Reasoning aktivieren</legend>
                 <div class="setting-input">
                     <label class="toggle-switch">
-                        <input type="checkbox" id="reasoningEnabledCheckbox" checked>
+                        <input type="checkbox" id="reasoningEnabledCheckbox">
                         <span class="toggle-slider"></span>
                     </label>
                     <p id="reasoningEnabledHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary);">
@@ -3184,20 +3338,27 @@
             var _hr = localStorage.getItem('heise_reasoning');
             if (_hr != null && String(_hr).trim().toLowerCase() === 'none') {
                 localStorage.setItem('heise_reasoning', 'off');
+                _hr = 'off';
+            }
+            if (localStorage.getItem('heise_reasoning_enabled') == null && _hr != null) {
+                localStorage.setItem(
+                    'heise_reasoning_enabled',
+                    String(_hr).trim().toLowerCase() !== 'off' ? '1' : '0'
+                );
             }
         } catch (e) { /* ignore */ }
     </script>
     <!-- Application Scripts -->
-    <script src="js/storage.js?v=magmirror2"></script>
-    <script src="js/news-sources-registry.js?v=sourcecatalog20260417a"></script>
-    <script src="js/news-scraper.js?v=thumbfeeds20260415a"></script>
-    <script src="js/ki-stats.js?v=tokchart1"></script>
-    <script src="js/ai-summarizer.js?v=altblk1"></script>
-    <script src="js/heise-comments.js?v=telepolis-comments1"></script>
+    <script src="js/storage.js?v=magmirror3"></script>
+    <script src="js/news-sources-registry.js?v=sourcecatalog20260417e"></script>
+    <script src="js/news-scraper.js?v=thumbfeeds20260417e"></script>
+    <script src="js/ki-stats.js?v=tokchart20260417b"></script>
+    <script src="js/ai-summarizer.js?v=altblk20260417c"></script>
+    <script src="js/heise-comments.js?v=telepolis-comments20260417a"></script>
     <script src="js/youtube-related.js"></script>
-    <script src="js/article-translation.js?v=1"></script>
+    <script src="js/article-translation.js?v=titletranslate20260417b"></script>
     <script src="js/article-exporter.js?v=thumbpdf20260415c"></script>
-    <script src="js/app.js?v=cardicons20260415a"></script>
+    <script src="js/app.js?v=cardicons20260417i"></script>
     
 </body>
 </html>

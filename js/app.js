@@ -115,6 +115,8 @@ class App {
         this._articleInPlaceTranslationPending = false;
         /** @type {ReturnType<typeof setTimeout>|0} */
         this._articleInPlaceTranslationDebounce = 0;
+        /** @type {Map<string, string>} */
+        this._uiTranslationCache = new Map();
 
         // DOM Elements
         this.elements = {
@@ -124,6 +126,7 @@ class App {
             showAllNewsBtn: document.getElementById('showAllNewsBtn'),
             themeToggle: document.getElementById('themeToggle'),
             refreshBtn: document.getElementById('refreshBtn'),
+            generateSelectedSourcesBtn: document.getElementById('generateSelectedSourcesBtn'),
             summarizeAllBtn: document.getElementById('summarizeAllBtn'),
             summarizeAllRefreshBtn: document.getElementById('summarizeAllRefreshBtn'),
             exportBtn: document.getElementById('exportBtn'),
@@ -221,11 +224,49 @@ class App {
             themeLightHeaderBorder: document.getElementById('themeLightHeaderBorder'),
             themeDarkHeaderSurface: document.getElementById('themeDarkHeaderSurface'),
             themeDarkHeaderText: document.getElementById('themeDarkHeaderText'),
-            themeDarkHeaderBorder: document.getElementById('themeDarkHeaderBorder')
+            themeDarkHeaderBorder: document.getElementById('themeDarkHeaderBorder'),
+            selectedSourcesGenerationModal: document.getElementById(
+                'selectedSourcesGenerationModal'
+            ),
+            selectedSourcesGenerationState: document.getElementById(
+                'selectedSourcesGenerationState'
+            ),
+            selectedSourcesGenerationCurrentValue: document.getElementById(
+                'selectedSourcesGenerationCurrentValue'
+            ),
+            selectedSourcesGenerationRemainingValue: document.getElementById(
+                'selectedSourcesGenerationRemainingValue'
+            ),
+            selectedSourcesGenerationProgressValue: document.getElementById(
+                'selectedSourcesGenerationProgressValue'
+            ),
+            selectedSourcesGenerationEtaValue: document.getElementById(
+                'selectedSourcesGenerationEtaValue'
+            ),
+            cancelSelectedSourcesGenerationBtn: document.getElementById(
+                'cancelSelectedSourcesGenerationBtn'
+            ),
+            backgroundSelectedSourcesRefreshEnabled: document.getElementById(
+                'backgroundSelectedSourcesRefreshEnabled'
+            )
         };
 
         // Timer reference
         this.updateTimer = null;
+        this._scheduledAutoUpdateInProgress = false;
+        this._selectedSourcesGenerationInProgress = false;
+        this._selectedSourcesGenerationCancelRequested = false;
+        this._selectedSourcesGenerationState = {
+            phase: 'idle',
+            currentSourceId: '',
+            totalSources: 0,
+            completedSources: 0,
+            remainingSources: 0,
+            failedSources: 0,
+            currentSourceTotalArticles: 0,
+            currentSourceCompletedArticles: 0,
+            estimatedRemainingArticles: 0
+        };
 
         /** Wall-clock when the tab became hidden (Page Visibility); used to resume refresh when visible again. */
         this._tabBecameHiddenAt = null;
@@ -251,6 +292,26 @@ class App {
         this._i18nHeiseMagazineById = {};
         this._i18nBatchSummarizeProgress = '';
         this._i18nBatchSummarizeProgressRefresh = '';
+        this._i18nSelectedSourcesGenerationConfirm = '';
+        this._i18nSelectedSourcesGenerationStatusPreparing = 'Vorbereitung …';
+        this._i18nSelectedSourcesGenerationStatusFetching = 'Artikel werden geladen …';
+        this._i18nSelectedSourcesGenerationStatusGenerating =
+            'KI-Zusammenfassungen, alternative Links und Reddit werden erzeugt …';
+        this._i18nSelectedSourcesGenerationStatusCancelRequested =
+            'Abbruch angefordert — laufende Anfragen werden noch sauber beendet.';
+        this._i18nSelectedSourcesGenerationStatusCancelled = 'Vorgang abgebrochen.';
+        this._i18nSelectedSourcesGenerationStatusDone = 'Vorgang abgeschlossen.';
+        this._i18nSelectedSourcesGenerationStatusDoneWithFailures =
+            'Vorgang abgeschlossen — {count} Quelle(n) konnten nicht verarbeitet werden.';
+        this._i18nSelectedSourcesGenerationStatusBusy =
+            'Die Vollgenerierung läuft bereits.';
+        this._i18nSelectedSourcesGenerationStatusBlocked =
+            'Bitte warten, bis laufende KI- oder Aktualisierungsjobs beendet sind.';
+        this._i18nSelectedSourcesGenerationCurrentNone = '—';
+        this._i18nSelectedSourcesGenerationEtaUnavailable = '—';
+        this._i18nSelectedSourcesGenerationCancelBtn = 'Abbrechen';
+        this._i18nSelectedSourcesGenerationCancelPendingBtn = 'Abbruch läuft …';
+        this._i18nSelectedSourcesGenerationCloseBtn = 'Schließen';
         this._i18nKiStatsTokenNa = '—';
         this._i18nKiStatsTokenHint = '';
         this._i18nKiStatsChartTpl = '';
@@ -325,9 +386,143 @@ class App {
         return ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
     }
 
+    /** @returns {{ getSourceEntry?: Function, getSourceDisplayName?: Function, getSourceSiteUrl?: Function, getSourceLanguage?: Function, getSourceLanguageByHostname?: Function, getSourceFilterMode?: Function }|null} */
+    static sourceRegistryUtils() {
+        if (
+            typeof window !== 'undefined' &&
+            window.NEWS_SOURCE_REGISTRY_UTILS &&
+            typeof window.NEWS_SOURCE_REGISTRY_UTILS === 'object'
+        ) {
+            return window.NEWS_SOURCE_REGISTRY_UTILS;
+        }
+        return null;
+    }
+
+    /**
+     * @param {string} source
+     * @returns {{ id?: string, siteUrl?: string, displayName?: string, language?: string, filterMode?: string }|null}
+     */
+    static getSourceRegistryEntry(source) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceEntry === 'function') {
+            return utils.getSourceEntry(source);
+        }
+        return null;
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceDisplayName(source) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceDisplayName === 'function') {
+            const label = String(utils.getSourceDisplayName(source) || '').trim();
+            if (label) {
+                return label;
+            }
+        }
+        const fallback = {
+            heise: 'heise.de',
+            bild: 'BILD',
+            telepolis: 'Telepolis',
+            golem: 'golem.de',
+            computerbase: 'ComputerBase',
+            t3n: 't3n.de',
+            it_administrator: 'IT-Administrator',
+            verge: 'The Verge'
+        };
+        return fallback[String(source || '').trim()] || String(source || '').trim();
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceSiteUrl(source) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceSiteUrl === 'function') {
+            const siteUrl = String(utils.getSourceSiteUrl(source) || '').trim();
+            if (siteUrl) {
+                return siteUrl;
+            }
+        }
+        const fallback = {
+            heise: 'https://www.heise.de',
+            bild: 'https://www.bild.de',
+            telepolis: 'https://www.telepolis.de',
+            golem: 'https://www.golem.de',
+            computerbase: 'https://www.computerbase.de',
+            t3n: 'https://t3n.de',
+            it_administrator: 'https://www.it-administrator.de',
+            verge: 'https://www.theverge.com'
+        };
+        return fallback[String(source || '').trim()] || '';
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceLanguage(source) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceLanguage === 'function') {
+            const lang = String(utils.getSourceLanguage(source) || '').trim().toLowerCase();
+            if (lang) {
+                return lang;
+            }
+        }
+        const id = String(source || '').trim();
+        if (id === 'verge') {
+            return 'en';
+        }
+        return 'de';
+    }
+
+    /**
+     * @param {string} hostname
+     * @returns {string}
+     */
+    static getSourceLanguageByHostname(hostname) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceLanguageByHostname === 'function') {
+            return String(utils.getSourceLanguageByHostname(hostname) || '')
+                .trim()
+                .toLowerCase();
+        }
+        return '';
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceFilterMode(source) {
+        const utils = App.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceFilterMode === 'function') {
+            const mode = String(utils.getSourceFilterMode(source) || '').trim().toLowerCase();
+            if (mode) {
+                return mode;
+            }
+        }
+        const id = String(source || '').trim();
+        if (id === 'heise') {
+            return 'heise';
+        }
+        if (id === 'bild' || id === 'telepolis') {
+            return 'single';
+        }
+        if (['golem', 'computerbase', 't3n', 'it_administrator', 'verge'].includes(id)) {
+            return 'generic';
+        }
+        return 'none';
+    }
+
     /** Sources that use a dedicated single-category filter group instead of the generic rubric set. */
     static singleCategoryNewsSourceSet() {
-        return new Set(['telepolis', 'bild']);
+        return new Set(
+            App.newsCatalogIds().filter((id) => App.getSourceFilterMode(id) === 'single')
+        );
     }
 
     /**
@@ -363,6 +558,16 @@ class App {
         return enabledOrderedIds.length > 0 ? enabledOrderedIds[0] : 'heise';
     }
 
+    /**
+     * Exact stored source id from cached rows; unlike `normalizeNewsSource`, this must not remap disabled sources.
+     * @param {unknown} raw
+     * @returns {string}
+     */
+    static normalizeStoredNewsSourceId(raw) {
+        const s = String(raw || '').trim();
+        return App.newsCatalogIds().includes(s) ? s : '';
+    }
+
     /** Shared rubric keys (no heise magazines) — used by Golem, ComputerBase, t3n, The Verge, etc. */
     static genericRubricCategorySet() {
         return new Set([
@@ -380,9 +585,8 @@ class App {
 
     /** @returns {Set<string>} */
     static genericRubricNewsSourceSet() {
-        const singleCategorySources = App.singleCategoryNewsSourceSet();
         return new Set(
-            App.newsCatalogIds().filter((id) => id !== 'heise' && !singleCategorySources.has(id))
+            App.newsCatalogIds().filter((id) => App.getSourceFilterMode(id) === 'generic')
         );
     }
 
@@ -575,6 +779,11 @@ class App {
 
         // Refresh button
         this.elements.refreshBtn.addEventListener('click', () => this.fetchNews(true));
+        if (this.elements.generateSelectedSourcesBtn) {
+            this.elements.generateSelectedSourcesBtn.addEventListener('click', () =>
+                void this.confirmAndRunSelectedSourcesGeneration()
+            );
+        }
 
         // Batch: all summaries for current filter
         if (this.elements.summarizeAllBtn) {
@@ -873,6 +1082,26 @@ class App {
                 }
             });
         }
+        if (this.elements.selectedSourcesGenerationModal) {
+            this.elements.selectedSourcesGenerationModal.addEventListener('click', (e) => {
+                if (e.target !== this.elements.selectedSourcesGenerationModal) {
+                    return;
+                }
+                if (this._selectedSourcesGenerationInProgress) {
+                    return;
+                }
+                this.closeSelectedSourcesGenerationModal();
+            });
+        }
+        if (this.elements.cancelSelectedSourcesGenerationBtn) {
+            this.elements.cancelSelectedSourcesGenerationBtn.addEventListener('click', () => {
+                if (this._selectedSourcesGenerationInProgress) {
+                    this.requestSelectedSourcesGenerationCancel();
+                    return;
+                }
+                this.closeSelectedSourcesGenerationModal();
+            });
+        }
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
@@ -884,6 +1113,15 @@ class App {
                     this.closeKiStatsModal();
                 } else if (this.elements.settingsModal.classList.contains('active')) {
                     this.closeSettingsModal();
+                } else if (
+                    this.elements.selectedSourcesGenerationModal &&
+                    this.elements.selectedSourcesGenerationModal.classList.contains('active')
+                ) {
+                    if (this._selectedSourcesGenerationInProgress) {
+                        this.requestSelectedSourcesGenerationCancel();
+                    } else {
+                        this.closeSelectedSourcesGenerationModal();
+                    }
                 } else if (
                     this.elements.dashboardSettingsModal &&
                     this.elements.dashboardSettingsModal.classList.contains('active')
@@ -1145,6 +1383,222 @@ class App {
         return App.normalizeEnabledNewsSourcesArray(this.settings.enabledNewsSources);
     }
 
+    /** @returns {boolean} */
+    isBackgroundSelectedSourcesRefreshEnabled() {
+        return App.normalizeBackgroundSelectedSourcesRefreshEnabled(
+            this.settings?.backgroundSelectedSourcesRefreshEnabled
+        );
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {string}
+     */
+    getNewsSourceDisplayLabel(sourceId) {
+        const normalized = this.normalizeNewsSource(sourceId);
+        if (!normalized) {
+            return this._i18nSelectedSourcesGenerationCurrentNone || '—';
+        }
+        return (
+            (this._i18nNewsSourceLabels && this._i18nNewsSourceLabels[normalized]) ||
+            App.getSourceDisplayName(normalized) ||
+            normalized
+        );
+    }
+
+    openSelectedSourcesGenerationModal() {
+        if (this.elements.selectedSourcesGenerationModal) {
+            this.elements.selectedSourcesGenerationModal.classList.add('active');
+        }
+    }
+
+    closeSelectedSourcesGenerationModal() {
+        if (
+            this._selectedSourcesGenerationInProgress &&
+            this.elements.selectedSourcesGenerationModal &&
+            this.elements.selectedSourcesGenerationModal.classList.contains('active')
+        ) {
+            return;
+        }
+        if (this.elements.selectedSourcesGenerationModal) {
+            this.elements.selectedSourcesGenerationModal.classList.remove('active');
+        }
+    }
+
+    renderSelectedSourcesGenerationState() {
+        const state = this._selectedSourcesGenerationState || {};
+        const currentLabel = state.currentSourceId
+            ? this.getNewsSourceDisplayLabel(state.currentSourceId)
+            : this._i18nSelectedSourcesGenerationCurrentNone || '—';
+        const total = Number.isFinite(state.totalSources) ? state.totalSources : 0;
+        const completed = Number.isFinite(state.completedSources) ? state.completedSources : 0;
+        const remaining = Number.isFinite(state.remainingSources)
+            ? state.remainingSources
+            : Math.max(total - completed, 0);
+
+        let phaseText = this._i18nSelectedSourcesGenerationStatusPreparing || 'Vorbereitung …';
+        switch (state.phase) {
+            case 'fetching':
+                phaseText =
+                    this._i18nSelectedSourcesGenerationStatusFetching ||
+                    'Artikel werden geladen …';
+                break;
+            case 'generating':
+                phaseText =
+                    this._i18nSelectedSourcesGenerationStatusGenerating ||
+                    'KI-Zusammenfassungen, alternative Links und Reddit werden erzeugt …';
+                break;
+            case 'cancel_requested':
+                phaseText =
+                    this._i18nSelectedSourcesGenerationStatusCancelRequested ||
+                    'Abbruch angefordert — laufende Anfragen werden noch sauber beendet.';
+                break;
+            case 'cancelled':
+                phaseText =
+                    this._i18nSelectedSourcesGenerationStatusCancelled ||
+                    'Vorgang abgebrochen.';
+                break;
+            case 'done':
+                if (state.failedSources > 0) {
+                    phaseText = (
+                        this._i18nSelectedSourcesGenerationStatusDoneWithFailures ||
+                        'Vorgang abgeschlossen — {count} Quelle(n) konnten nicht verarbeitet werden.'
+                    ).replace(/\{count\}/g, String(state.failedSources));
+                } else {
+                    phaseText =
+                        this._i18nSelectedSourcesGenerationStatusDone || 'Vorgang abgeschlossen.';
+                }
+                break;
+            default:
+                break;
+        }
+
+        if (this.elements.selectedSourcesGenerationState) {
+            this.elements.selectedSourcesGenerationState.textContent = phaseText;
+        }
+        if (this.elements.selectedSourcesGenerationCurrentValue) {
+            this.elements.selectedSourcesGenerationCurrentValue.textContent = currentLabel;
+        }
+        if (this.elements.selectedSourcesGenerationRemainingValue) {
+            this.elements.selectedSourcesGenerationRemainingValue.textContent = String(remaining);
+        }
+        if (this.elements.selectedSourcesGenerationProgressValue) {
+            this.elements.selectedSourcesGenerationProgressValue.textContent =
+                `${completed} / ${total}`;
+        }
+        if (this.elements.selectedSourcesGenerationEtaValue) {
+            this.elements.selectedSourcesGenerationEtaValue.textContent =
+                this.formatSelectedSourcesGenerationEta(
+                    state.estimatedRemainingArticles,
+                    state.phase
+                );
+        }
+        if (this.elements.generateSelectedSourcesBtn) {
+            this.elements.generateSelectedSourcesBtn.disabled =
+                this._selectedSourcesGenerationInProgress;
+        }
+        if (this.elements.cancelSelectedSourcesGenerationBtn) {
+            this.elements.cancelSelectedSourcesGenerationBtn.disabled =
+                this._selectedSourcesGenerationInProgress &&
+                this._selectedSourcesGenerationCancelRequested;
+            this.elements.cancelSelectedSourcesGenerationBtn.textContent =
+                this._selectedSourcesGenerationInProgress
+                    ? this._selectedSourcesGenerationCancelRequested
+                        ? this._i18nSelectedSourcesGenerationCancelPendingBtn ||
+                          'Abbruch läuft …'
+                        : this._i18nSelectedSourcesGenerationCancelBtn || 'Abbrechen'
+                    : this._i18nSelectedSourcesGenerationCloseBtn || 'Schließen';
+        }
+    }
+
+    setSelectedSourcesGenerationState(patch = {}) {
+        this._selectedSourcesGenerationState = {
+            ...(this._selectedSourcesGenerationState || {}),
+            ...patch
+        };
+        this.renderSelectedSourcesGenerationState();
+    }
+
+    requestSelectedSourcesGenerationCancel() {
+        if (!this._selectedSourcesGenerationInProgress || this._selectedSourcesGenerationCancelRequested) {
+            return;
+        }
+        this._selectedSourcesGenerationCancelRequested = true;
+        this.setSelectedSourcesGenerationState({ phase: 'cancel_requested' });
+    }
+
+    async confirmAndRunSelectedSourcesGeneration() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBusy ||
+                    'Die Vollgenerierung läuft bereits.',
+                true
+            );
+            this.openSelectedSourcesGenerationModal();
+            return;
+        }
+        if (
+            this._scheduledAutoUpdateInProgress ||
+            this._summarizeAllInProgress ||
+            this._autoSummarizeNewInProgress
+        ) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBlocked ||
+                    'Bitte warten, bis laufende KI- oder Aktualisierungsjobs beendet sind.',
+                true
+            );
+            return;
+        }
+
+        const enabled = this.getEnabledNewsSourceIds();
+        if (!Array.isArray(enabled) || enabled.length === 0) {
+            this.showStatus(this._i18nDashboardNeedOne || 'Mindestens eine Newsquelle muss aktiviert sein.', true);
+            return;
+        }
+
+        const msg =
+            this._i18nSelectedSourcesGenerationConfirm ||
+            'Alle unter Einstellungen aktivierten Quellen jetzt vollständig laden und erzeugen?';
+        if (typeof window !== 'undefined' && window.confirm && !window.confirm(msg)) {
+            return;
+        }
+
+        await this.runSelectedSourcesGeneration(enabled);
+    }
+
+    /**
+     * @returns {number|null}
+     */
+    getSelectedSourcesGenerationAvgDurationMs() {
+        if (typeof KiStats === 'undefined' || !KiStats.getSnapshot) {
+            return null;
+        }
+        const snap = KiStats.getSnapshot();
+        if (!snap || !Number.isFinite(snap.avgDurationMs) || snap.avgDurationMs <= 0) {
+            return null;
+        }
+        return snap.avgDurationMs;
+    }
+
+    /**
+     * @param {number|undefined|null} remainingArticles
+     * @param {string} [phase]
+     * @returns {string}
+     */
+    formatSelectedSourcesGenerationEta(remainingArticles, phase = '') {
+        if (phase === 'done' || phase === 'cancelled') {
+            return '0 s';
+        }
+        const avgDurationMs = this.getSelectedSourcesGenerationAvgDurationMs();
+        const articleCount = Number(remainingArticles);
+        if (!(avgDurationMs > 0) || !Number.isFinite(articleCount) || articleCount <= 0) {
+            return this._i18nSelectedSourcesGenerationEtaUnavailable || '—';
+        }
+        const concurrency = App.normalizeSummaryConcurrency(this.settings?.summaryConcurrency);
+        const etaMs = Math.max(1000, Math.round((avgDurationMs * articleCount) / concurrency));
+        return this.formatKiDuration(etaMs);
+    }
+
     getBrandLogoUrl() {
         const s = this.settings && this.settings.newsSource;
         switch (s) {
@@ -1163,6 +1617,17 @@ class App {
             case 'it_administrator':
                 return IT_ADMINISTRATOR_BRAND_LOGO_URL;
             default:
+                if (s === 'heise' || !s) {
+                    return HEISE_BRAND_LOGO_URL;
+                }
+                try {
+                    const siteUrl = App.getSourceSiteUrl(String(s || ''));
+                    if (siteUrl) {
+                        return `${new URL(siteUrl).origin}/favicon.ico`;
+                    }
+                } catch (_) {
+                    /* fallback below */
+                }
                 return HEISE_BRAND_LOGO_URL;
         }
     }
@@ -1446,10 +1911,30 @@ class App {
                     console.warn('newsSourcesCatalogMigration v4:', e);
                 }
             }
+            // v5: ensure every registry source is present once in the enabled list.
+            if (newsSrcCatalogVer < 5) {
+                const catalog = App.newsCatalogIds();
+                const set = new Set(enabledOrdered);
+                catalog.forEach((id) => set.add(id));
+                enabledOrdered = catalog.filter((id) => set.has(id));
+                newsSrcCatalogVer = 5;
+                try {
+                    await this.storage.saveSettings({
+                        enabledNewsSources: enabledOrdered,
+                        newsSourcesCatalogMigrationVersion: 5
+                    });
+                } catch (e) {
+                    console.warn('newsSourcesCatalogMigration v5:', e);
+                }
+            }
             const newsSource = App.normalizeNewsSourceWithEnabled(settings.newsSource, enabledOrdered);
             const summaryLangMode = settings.summaryLangMode === 'browser' ? 'browser' : 'site';
 
             const reasoningStored = AISummarizer.normalizeLmReasoningParam(settings.reasoning);
+            const reasoningEnabledStored = AISummarizer.normalizeLmReasoningEnabled(
+                settings.reasoningEnabled,
+                reasoningStored
+            );
 
             let alternativeLinksCount = 5;
             if (settings.alternativeLinksCount != null && settings.alternativeLinksCount !== '') {
@@ -1487,6 +1972,10 @@ class App {
             const articleThumbnailsEnabled = App.normalizeArticleThumbnailsEnabled(
                 settings.articleThumbnailsEnabled
             );
+            const backgroundSelectedSourcesRefreshEnabled =
+                App.normalizeBackgroundSelectedSourcesRefreshEnabled(
+                    settings.backgroundSelectedSourcesRefreshEnabled
+                );
 
             const summaryConcurrency = App.normalizeSummaryConcurrency(settings.summaryConcurrency);
             const summaryRequestTimeoutSeconds = App.normalizeKiRequestTimeoutSeconds(
@@ -1516,11 +2005,13 @@ class App {
                 newsSource,
                 summaryLangMode,
                 reasoning: reasoningStored,
+                reasoningEnabled: reasoningEnabledStored,
                 alternativeLinksCount,
                 alternativeLinksDisplayMode,
                 forumEntriesDiscoveryMode,
                 alternativeLinksDomainBlacklist,
                 articleThumbnailsEnabled,
+                backgroundSelectedSourcesRefreshEnabled,
                 webSearchEngine,
                 articleTranslationEnabled,
                 articleTranslationTargetLang,
@@ -1660,6 +2151,7 @@ class App {
                 localStorage.setItem('heise_summary_concurrency', String(summaryConcurrency));
                 localStorage.setItem('heise_ki_request_timeout_sec', String(summaryRequestTimeoutSeconds));
                 localStorage.setItem('heise_reasoning', reasoningStored);
+                localStorage.setItem('heise_reasoning_enabled', reasoningEnabledStored ? '1' : '0');
                 localStorage.setItem('heise_alternative_links_count', String(alternativeLinksCount));
                 localStorage.setItem('heise_web_search_engine', webSearchEngine);
                 localStorage.setItem('heise_alternative_links_display_mode', alternativeLinksDisplayMode);
@@ -1973,6 +2465,19 @@ class App {
         }
         const s = String(raw == null ? 'true' : raw).trim().toLowerCase();
         return !(s === 'false' || s === '0' || s === 'off' || s === 'no');
+    }
+
+    /**
+     * Whether the header refresh timer should also refresh all enabled sources in the background.
+     * @param {unknown} raw
+     * @returns {boolean}
+     */
+    static normalizeBackgroundSelectedSourcesRefreshEnabled(raw) {
+        if (raw === true || raw === 1) {
+            return true;
+        }
+        const s = String(raw == null ? 'false' : raw).trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'on' || s === 'yes';
     }
 
     /**
@@ -2610,27 +3115,36 @@ class App {
                         this.elements.exportBtn.setAttribute('aria-label', headerLoc.export_btn_title);
                     }
                 }
+                if (this.elements.generateSelectedSourcesBtn) {
+                    if (headerLoc.generate_selected_sources_btn) {
+                        this.elements.generateSelectedSourcesBtn.textContent =
+                            headerLoc.generate_selected_sources_btn;
+                    }
+                    if (headerLoc.generate_selected_sources_title) {
+                        this.elements.generateSelectedSourcesBtn.setAttribute(
+                            'title',
+                            headerLoc.generate_selected_sources_title
+                        );
+                        this.elements.generateSelectedSourcesBtn.setAttribute(
+                            'aria-label',
+                            headerLoc.generate_selected_sources_title
+                        );
+                    }
+                }
                 const ns = this.settings && this.settings.newsSource
                     ? this.normalizeNewsSource(this.settings.newsSource)
                     : 'heise';
+                const sourceDisplayName = App.getSourceDisplayName(ns) || 'heise.de';
                 if (headerLoc.brand_wordmark) {
                     const w = document.getElementById('headerBrandText');
                     if (w) {
-                        let wm = headerLoc.brand_wordmark;
-                        if (ns === 'bild' && headerLoc.brand_wordmark_bild) {
-                            wm = headerLoc.brand_wordmark_bild;
-                        } else if (ns === 'golem' && headerLoc.brand_wordmark_golem) {
-                            wm = headerLoc.brand_wordmark_golem;
-                        } else if (ns === 'computerbase' && headerLoc.brand_wordmark_computerbase) {
-                            wm = headerLoc.brand_wordmark_computerbase;
-                        } else if (ns === 't3n' && headerLoc.brand_wordmark_t3n) {
-                            wm = headerLoc.brand_wordmark_t3n;
-                        } else if (ns === 'verge' && headerLoc.brand_wordmark_verge) {
-                            wm = headerLoc.brand_wordmark_verge;
-                        } else if (ns === 'telepolis' && headerLoc.brand_wordmark_telepolis) {
-                            wm = headerLoc.brand_wordmark_telepolis;
-                        } else if (ns === 'it_administrator' && headerLoc.brand_wordmark_it_administrator) {
-                            wm = headerLoc.brand_wordmark_it_administrator;
+                        const specificWordmark = headerLoc[`brand_wordmark_${ns}`];
+                        let wm =
+                            typeof specificWordmark === 'string' && specificWordmark.trim()
+                                ? specificWordmark
+                                : sourceDisplayName;
+                        if (ns === 'heise' && typeof headerLoc.brand_wordmark === 'string' && headerLoc.brand_wordmark.trim()) {
+                            wm = headerLoc.brand_wordmark;
                         }
                         w.textContent = wm;
                     }
@@ -2644,21 +3158,13 @@ class App {
                 }
                 if (headerLoc.logo_alt) {
                     const img = document.getElementById('heiseBrandLogo');
-                    let alt = headerLoc.logo_alt;
-                    if (ns === 'bild' && headerLoc.logo_alt_bild) {
-                        alt = headerLoc.logo_alt_bild;
-                    } else if (ns === 'golem' && headerLoc.logo_alt_golem) {
-                        alt = headerLoc.logo_alt_golem;
-                    } else if (ns === 'computerbase' && headerLoc.logo_alt_computerbase) {
-                        alt = headerLoc.logo_alt_computerbase;
-                    } else if (ns === 't3n' && headerLoc.logo_alt_t3n) {
-                        alt = headerLoc.logo_alt_t3n;
-                    } else if (ns === 'verge' && headerLoc.logo_alt_verge) {
-                        alt = headerLoc.logo_alt_verge;
-                    } else if (ns === 'telepolis' && headerLoc.logo_alt_telepolis) {
-                        alt = headerLoc.logo_alt_telepolis;
-                    } else if (ns === 'it_administrator' && headerLoc.logo_alt_it_administrator) {
-                        alt = headerLoc.logo_alt_it_administrator;
+                    const specificAlt = headerLoc[`logo_alt_${ns}`];
+                    let alt =
+                        typeof specificAlt === 'string' && specificAlt.trim()
+                            ? specificAlt
+                            : `${sourceDisplayName} Logo`;
+                    if (ns === 'heise' && typeof headerLoc.logo_alt === 'string' && headerLoc.logo_alt.trim()) {
+                        alt = headerLoc.logo_alt;
                     }
                     this._i18nHeaderLogoAlt = alt;
                     if (img) {
@@ -2675,10 +3181,13 @@ class App {
                     nss.querySelectorAll('option').forEach((opt) => {
                         const id = opt.value;
                         const k = `news_source_${id}`;
-                        if (headerLoc[k]) {
-                            opt.textContent = headerLoc[k];
-                            this._i18nNewsSourceLabels[id] = headerLoc[k];
-                        }
+                        const fallbackLabel = App.getSourceDisplayName(id) || id;
+                        const nextLabel =
+                            typeof headerLoc[k] === 'string' && headerLoc[k].trim()
+                                ? headerLoc[k]
+                                : fallbackLabel;
+                        opt.textContent = nextLabel;
+                        this._i18nNewsSourceLabels[id] = nextLabel;
                     });
                 }
                 if (headerLoc.settings_dashboard_btn && this.elements.dashboardSettingsBtn) {
@@ -2824,6 +3333,14 @@ class App {
                 if (dash && dash.need_one) {
                     this._i18nDashboardNeedOne = dash.need_one;
                 }
+                const bgTitle = document.getElementById('backgroundSelectedSourcesRefreshEnabledTitle');
+                if (bgTitle && dash && dash.background_selected_sources_refresh_title) {
+                    bgTitle.textContent = dash.background_selected_sources_refresh_title;
+                }
+                const bgHint = document.getElementById('backgroundSelectedSourcesRefreshEnabledHint');
+                if (bgHint && dash && dash.background_selected_sources_refresh_hint) {
+                    bgHint.textContent = dash.background_selected_sources_refresh_hint;
+                }
                 if (dash && dash.heise_magazines_heading) {
                     this._i18nHeiseMagazineHeading = dash.heise_magazines_heading;
                 }
@@ -2838,6 +3355,90 @@ class App {
                     dKi.setAttribute('title', dash.open_ki_lang_title);
                     dKi.setAttribute('aria-label', dash.open_ki_lang_title);
                 }
+            }
+
+            const selectedSourcesGen = data.selected_sources_generation;
+            if (selectedSourcesGen) {
+                if (selectedSourcesGen.confirm) {
+                    this._i18nSelectedSourcesGenerationConfirm =
+                        selectedSourcesGen.confirm;
+                }
+                if (selectedSourcesGen.status_preparing) {
+                    this._i18nSelectedSourcesGenerationStatusPreparing =
+                        selectedSourcesGen.status_preparing;
+                }
+                if (selectedSourcesGen.status_fetching) {
+                    this._i18nSelectedSourcesGenerationStatusFetching =
+                        selectedSourcesGen.status_fetching;
+                }
+                if (selectedSourcesGen.status_generating) {
+                    this._i18nSelectedSourcesGenerationStatusGenerating =
+                        selectedSourcesGen.status_generating;
+                }
+                if (selectedSourcesGen.status_cancel_requested) {
+                    this._i18nSelectedSourcesGenerationStatusCancelRequested =
+                        selectedSourcesGen.status_cancel_requested;
+                }
+                if (selectedSourcesGen.status_cancelled) {
+                    this._i18nSelectedSourcesGenerationStatusCancelled =
+                        selectedSourcesGen.status_cancelled;
+                }
+                if (selectedSourcesGen.status_done) {
+                    this._i18nSelectedSourcesGenerationStatusDone =
+                        selectedSourcesGen.status_done;
+                }
+                if (selectedSourcesGen.status_done_with_failures) {
+                    this._i18nSelectedSourcesGenerationStatusDoneWithFailures =
+                        selectedSourcesGen.status_done_with_failures;
+                }
+                if (selectedSourcesGen.status_busy) {
+                    this._i18nSelectedSourcesGenerationStatusBusy =
+                        selectedSourcesGen.status_busy;
+                }
+                if (selectedSourcesGen.status_blocked) {
+                    this._i18nSelectedSourcesGenerationStatusBlocked =
+                        selectedSourcesGen.status_blocked;
+                }
+                if (selectedSourcesGen.current_none) {
+                    this._i18nSelectedSourcesGenerationCurrentNone =
+                        selectedSourcesGen.current_none;
+                }
+                if (selectedSourcesGen.eta_unavailable) {
+                    this._i18nSelectedSourcesGenerationEtaUnavailable =
+                        selectedSourcesGen.eta_unavailable;
+                }
+                if (selectedSourcesGen.cancel_btn) {
+                    this._i18nSelectedSourcesGenerationCancelBtn =
+                        selectedSourcesGen.cancel_btn;
+                }
+                if (selectedSourcesGen.cancel_pending_btn) {
+                    this._i18nSelectedSourcesGenerationCancelPendingBtn =
+                        selectedSourcesGen.cancel_pending_btn;
+                }
+                if (selectedSourcesGen.close_btn) {
+                    this._i18nSelectedSourcesGenerationCloseBtn =
+                        selectedSourcesGen.close_btn;
+                }
+
+                const setText = (id, text) => {
+                    const el = document.getElementById(id);
+                    if (el && text) {
+                        el.textContent = text;
+                    }
+                };
+                setText('selectedSourcesGenerationTitle', selectedSourcesGen.modal_title);
+                setText('selectedSourcesGenerationHint', selectedSourcesGen.modal_hint);
+                setText('selectedSourcesGenerationCurrentLabel', selectedSourcesGen.label_current);
+                setText(
+                    'selectedSourcesGenerationRemainingLabel',
+                    selectedSourcesGen.label_remaining
+                );
+                setText(
+                    'selectedSourcesGenerationProgressLabel',
+                    selectedSourcesGen.label_progress
+                );
+                setText('selectedSourcesGenerationEtaLabel', selectedSourcesGen.label_eta);
+                this.renderSelectedSourcesGenerationState();
             }
 
             const ki = data.ki_modal;
@@ -3470,6 +4071,10 @@ class App {
      */
     static hostnameLikelyEnglishArticleHost(hostname) {
         try {
+            const lang = App.getSourceLanguageByHostname(hostname);
+            if (lang === 'en') {
+                return true;
+            }
             const h = AISummarizer.normalizeHostnameForMatch(hostname);
             for (const r of ENGLISH_CONTENT_HOST_SUFFIXES) {
                 if (h === r || h.endsWith(`.${r}`)) {
@@ -3493,15 +4098,17 @@ class App {
         const srcView = String(activeNewsSource || '')
             .trim()
             .toLowerCase();
-        if (srcItem === 'verge' || (srcItem === '' && srcView === 'verge')) {
-            return 'en';
+        const sourceLang = App.getSourceLanguage(srcItem || srcView);
+        if (sourceLang) {
+            return sourceLang;
         }
         const primary = App.articlePrimaryUrl(item) || (item && item.link != null ? String(item.link).trim() : '') || '';
         const link = App.unwrapArticleUrlForLangDetection(primary);
         try {
             const h = new URL(link).hostname.toLowerCase();
-            if (h === 'theverge.com' || h.endsWith('.theverge.com')) {
-                return 'en';
+            const registryLang = App.getSourceLanguageByHostname(h);
+            if (registryLang) {
+                return registryLang;
             }
             if (App.hostnameLikelyEnglishArticleHost(h)) {
                 return 'en';
@@ -3585,10 +4192,28 @@ class App {
     }
 
     /**
+     * Title sync when summary language follows the browser language without full article translation.
+     * @returns {boolean}
+     */
+    shouldAutoTranslateTitlesForBrowserSummary() {
+        return !!(
+            this.settings &&
+            this.settings.summaryLangMode === 'browser' &&
+            this.settings.articleTranslationEnabled !== true
+        );
+    }
+
+    /**
      * Debounced MyMemory translation pass after the grid or summaries change.
      */
     scheduleArticleInPlaceTranslation() {
-        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
+        if (
+            !this.settings ||
+            (
+                this.settings.articleTranslationEnabled !== true &&
+                !this.shouldAutoTranslateTitlesForBrowserSummary()
+            )
+        ) {
             return;
         }
         if (this._articleInPlaceTranslationDebounce) {
@@ -3609,13 +4234,19 @@ class App {
             return;
         }
         const AT = typeof window !== 'undefined' ? window.ArticleTranslation : null;
-        if (!AT || !this.settings || this.settings.articleTranslationEnabled !== true) {
+        const fullArticleTranslation = this.settings && this.settings.articleTranslationEnabled === true;
+        const titleOnlyBrowserSync = this.shouldAutoTranslateTitlesForBrowserSummary();
+        if (!AT || !this.settings || (!fullArticleTranslation && !titleOnlyBrowserSync)) {
             return;
         }
-        this.refreshArticleTranslationToolbarFromSettings();
+        if (fullArticleTranslation) {
+            this.refreshArticleTranslationToolbarFromSettings();
+        }
         this._articleInPlaceTranslationRunning = true;
         try {
-            await this.translateNewsCardsWithMyMemory(AT);
+            await this.translateNewsCardsWithMyMemory(AT, {
+                titlesOnly: titleOnlyBrowserSync && !fullArticleTranslation
+            });
         } catch (e) {
             console.warn('In-place article translation:', e);
             const msg = String((e && e.message) || e);
@@ -3636,22 +4267,113 @@ class App {
     }
 
     /**
-     * @param {{ normalizeTargetLang: Function, shouldMachineTranslateInPlace: Function, translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
+     * @returns {{ fullArticleTranslation: boolean, titlesOnly: boolean }}
      */
-    async translateNewsCardsWithMyMemory(AT) {
-        const target = AT.normalizeTargetLang(this.settings.articleTranslationTargetLang);
+    getInPlaceTranslationMode() {
+        const fullArticleTranslation = this.settings && this.settings.articleTranslationEnabled === true;
+        const titlesOnly = this.shouldAutoTranslateTitlesForBrowserSummary() && !fullArticleTranslation;
+        return {
+            fullArticleTranslation,
+            titlesOnly
+        };
+    }
+
+    /**
+     * @param {{ normalizeTargetLang: Function }} AT
+     * @param {boolean} titlesOnly
+     * @returns {string}
+     */
+    getInPlaceTranslationTargetLang(AT, titlesOnly) {
+        return titlesOnly
+            ? AT.normalizeTargetLang(
+                  String(
+                      typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en'
+                  )
+                      .split('-')[0]
+                      .toLowerCase()
+              )
+            : AT.normalizeTargetLang(this.settings.articleTranslationTargetLang);
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {{ normalizeTargetLang: Function, shouldMachineTranslateInPlace: Function, translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
+     * @param {{ titlesOnly?: boolean }} [options]
+     * @returns {Promise<boolean>}
+     */
+    async translateRenderedNewsCardWithMyMemory(card, AT, options = {}) {
+        if (!(card instanceof HTMLElement)) {
+            return false;
+        }
+        const titlesOnly = options && options.titlesOnly === true;
+        const target = this.getInPlaceTranslationTargetLang(AT, titlesOnly);
+        const from = (card.getAttribute('lang') || 'de').trim();
+        if (!AT.shouldMachineTranslateInPlace(from, target)) {
+            return false;
+        }
+        if (titlesOnly) {
+            await this.translateOneNewsCardTitleWithMyMemory(card, from, target, AT);
+            await this.translateHeadlineNodeListWithMyMemory(
+                card,
+                '.summary-alt-link-title, .summary-reddit-line',
+                from,
+                target,
+                AT
+            );
+            return true;
+        }
+        await this.translateOneNewsCardWithMyMemory(card, from, target, AT);
+        return true;
+    }
+
+    /**
+     * @param {HTMLElement|null|undefined} card
+     * @returns {Promise<void>}
+     */
+    async runImmediateInPlaceTranslationForCard(card) {
+        if (!(card instanceof HTMLElement)) {
+            return;
+        }
+        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+            return;
+        }
+        const AT = typeof window !== 'undefined' ? window.ArticleTranslation : null;
+        const { fullArticleTranslation, titlesOnly } = this.getInPlaceTranslationMode();
+        if (!AT || !this.settings || (!fullArticleTranslation && !titlesOnly)) {
+            return;
+        }
+        try {
+            await this.translateRenderedNewsCardWithMyMemory(card, AT, { titlesOnly });
+        } catch (e) {
+            console.warn('runImmediateInPlaceTranslationForCard:', e);
+            const msg = String((e && e.message) || e);
+            if (msg.includes('mymemory_quota')) {
+                this.showStatus(
+                    this._i18nArticleTranslationQuota ||
+                        'Daily translation quota exceeded (MyMemory). Try again tomorrow.',
+                    true
+                );
+            }
+        }
+    }
+
+    /**
+     * @param {{ normalizeTargetLang: Function, shouldMachineTranslateInPlace: Function, translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
+     * @param {{ titlesOnly?: boolean }} [options]
+     */
+    async translateNewsCardsWithMyMemory(AT, options = {}) {
+        const titlesOnly = options && options.titlesOnly === true;
         const grid = this.elements.newsGrid;
         if (!grid) {
             return;
         }
         const cards = Array.from(grid.querySelectorAll('.news-card'));
         for (const card of cards) {
-            const from = (card.getAttribute('lang') || 'de').trim();
-            if (!AT.shouldMachineTranslateInPlace(from, target)) {
-                continue;
-            }
             try {
-                await this.translateOneNewsCardWithMyMemory(card, from, target, AT);
+                const didTranslate = await this.translateRenderedNewsCardWithMyMemory(card, AT, { titlesOnly });
+                if (!didTranslate) {
+                    continue;
+                }
             } catch (e) {
                 const m = String((e && e.message) || e);
                 if (m.includes('mymemory_quota')) {
@@ -3667,22 +4389,137 @@ class App {
      * @param {HTMLElement} card
      * @param {string} from
      * @param {string} target
+     * @param {{ translateTextMyMemory: Function }} AT
+     */
+    async translateOneNewsCardTitleWithMyMemory(card, from, target, AT) {
+        const titleSpan = card.querySelector('.news-title-translate');
+        if (!titleSpan) {
+            return;
+        }
+        const raw = String(titleSpan.dataset.originalText || titleSpan.textContent || '').trim();
+        if (!raw) {
+            return;
+        }
+        if (titleSpan.dataset.mtmTitleLang === target) {
+            return;
+        }
+        titleSpan.textContent = await this.translateShortUiText(raw, from, target, AT);
+        titleSpan.dataset.mtmTitleLang = target;
+    }
+
+    /**
+     * @param {string} text
+     * @param {string} from
+     * @param {string} target
+     * @returns {Promise<string>}
+     */
+    async translateShortUiTextWithKi(text, from, target) {
+        const raw = String(text || '').trim();
+        if (!raw || /^https?:\/\//i.test(raw)) {
+            return raw;
+        }
+        if (!this.summarizer || typeof this.summarizer.completePrompt !== 'function') {
+            return raw;
+        }
+        const fromLabel =
+            typeof this.summarizer.formatLanguageNameForPrompt === 'function'
+                ? this.summarizer.formatLanguageNameForPrompt(from)
+                : from;
+        const targetLabel =
+            typeof this.summarizer.formatLanguageNameForPrompt === 'function'
+                ? this.summarizer.formatLanguageNameForPrompt(target)
+                : target;
+        const systemPrompt =
+            `You are a translation engine. Translate the user's text from ${fromLabel} to ${targetLabel}. ` +
+            'Return only the translated text. Preserve URLs, @mentions, hashtags, emojis, punctuation, and brand or product names.';
+        try {
+            const out = await this.summarizer.completePrompt(systemPrompt, raw);
+            const finalText = String(out || '').trim();
+            return finalText || raw;
+        } catch (e) {
+            console.warn('translateShortUiTextWithKi:', e);
+            return raw;
+        }
+    }
+
+    /**
+     * @param {string} text
+     * @param {string} from
+     * @param {string} target
+     * @param {{ translateTextMyMemory: Function }} AT
+     * @returns {Promise<string>}
+     */
+    async translateShortUiText(text, from, target, AT) {
+        const raw = String(text || '').trim();
+        if (!raw) {
+            return '';
+        }
+        const cacheKey = `${from}|${target}|${raw}`;
+        if (this._uiTranslationCache.has(cacheKey)) {
+            return this._uiTranslationCache.get(cacheKey) || raw;
+        }
+        let translated = raw;
+        try {
+            translated = await AT.translateTextMyMemory(raw, from, target);
+        } catch (e) {
+            console.warn('translateShortUiText: MyMemory fallback to KI', e);
+            translated = await this.translateShortUiTextWithKi(raw, from, target);
+        }
+        const finalText = String(translated || '').trim() || raw;
+        this._uiTranslationCache.set(cacheKey, finalText);
+        return finalText;
+    }
+
+    /**
+     * @param {HTMLElement} root
+     * @param {string} selector
+     * @param {string} from
+     * @param {string} target
+     * @param {{ translateTextMyMemory: Function }} AT
+     */
+    async translateHeadlineNodeListWithMyMemory(root, selector, from, target, AT) {
+        const nodes = Array.from(root.querySelectorAll(selector));
+        for (const el of nodes) {
+            const raw = String(el.dataset.originalText || el.textContent || '').trim();
+            if (!raw) {
+                continue;
+            }
+            if (!el.dataset.originalText) {
+                el.dataset.originalText = raw;
+            }
+            if (el.dataset.mtmTitleLang === target) {
+                continue;
+            }
+            el.textContent = await this.translateShortUiText(raw, from, target, AT);
+            el.dataset.mtmTitleLang = target;
+            await new Promise((r) => window.setTimeout(r, 380));
+        }
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {string} from
+     * @param {string} target
      * @param {{ translateTextMyMemory: Function, translateLongTextMyMemory: Function }} AT
      */
     async translateOneNewsCardWithMyMemory(card, from, target, AT) {
+        await this.translateOneNewsCardTitleWithMyMemory(card, from, target, AT);
+        await this.translateHeadlineNodeListWithMyMemory(
+            card,
+            '.summary-alt-link-title, .summary-reddit-line',
+            from,
+            target,
+            AT
+        );
         const titleSpan = card.querySelector('.news-title-translate');
-        if (titleSpan && titleSpan.dataset.mtm !== '1') {
-            const raw = (titleSpan.textContent || '').trim();
-            if (raw) {
-                titleSpan.textContent = await AT.translateTextMyMemory(raw, from, target);
-                titleSpan.dataset.mtm = '1';
-            }
+        if (titleSpan) {
+            titleSpan.dataset.mtm = '1';
         }
         const badge = card.querySelector('.category-badge');
         if (badge && badge.dataset.mtm !== '1') {
             const raw = (badge.textContent || '').trim();
             if (raw) {
-                badge.textContent = await AT.translateTextMyMemory(raw, from, target);
+                badge.textContent = await this.translateShortUiText(raw, from, target, AT);
                 badge.dataset.mtm = '1';
             }
         }
@@ -3690,30 +4527,6 @@ class App {
         if (sc && sc.textContent && sc.textContent.trim() && sc.dataset.mtm !== '1') {
             sc.textContent = await AT.translateLongTextMyMemory(sc.textContent.trim(), from, target);
             sc.dataset.mtm = '1';
-        }
-        const altTitles = card.querySelectorAll('.summary-alt-link-title');
-        for (const el of altTitles) {
-            if (el.dataset.mtm === '1') {
-                continue;
-            }
-            const tx = (el.textContent || '').trim();
-            if (tx) {
-                el.textContent = await AT.translateTextMyMemory(tx, from, target);
-                el.dataset.mtm = '1';
-                await new Promise((r) => window.setTimeout(r, 380));
-            }
-        }
-        const redditLines = card.querySelectorAll('.summary-reddit-line');
-        for (const el of redditLines) {
-            if (el.dataset.mtm === '1') {
-                continue;
-            }
-            const tx = (el.textContent || '').trim();
-            if (tx) {
-                el.textContent = await AT.translateTextMyMemory(tx, from, target);
-                el.dataset.mtm = '1';
-                await new Promise((r) => window.setTimeout(r, 380));
-            }
         }
     }
 
@@ -4638,8 +5451,11 @@ class App {
         await this.fetchNews();
     }
 
-    async fetchNews(forceRefresh = false) {
+    async fetchNews(forceRefresh = false, options = {}) {
         const gen = ++this._newsFetchGeneration;
+        const suppressStatus = options && options.suppressStatus === true;
+        const suppressAutoSummarize = options && options.suppressAutoSummarize === true;
+        let currentSource = this.normalizeNewsSource(this.settings?.newsSource);
         try {
             // Show loading state
             this.showLoadingState();
@@ -4662,9 +5478,10 @@ class App {
                     .filter(Boolean)
             );
             const hadPrevious = prevUrls.size > 0;
+            currentSource = this.normalizeNewsSource(this.settings?.newsSource);
 
             // Save to IndexedDB
-            await this.storage.saveNews(newsItems);
+            await this.storage.replaceNewsForSource(currentSource, newsItems);
             if (gen !== this._newsFetchGeneration) {
                 return;
             }
@@ -4699,40 +5516,59 @@ class App {
             this.elements.lastUpdate.textContent = `Letzte Aktualisierung: ${lastUpdate}`;
 
             // Show status message
-            if (this._newArticleIds.size > 0) {
-                const tpl =
-                    this._i18nStatusNew || 'Nachrichten aktualisiert — {count} neue Artikel.';
-                this.showStatus(tpl.replace(/\{count\}/g, String(this._newArticleIds.size)));
-            } else {
-                const message =
-                    forceRefresh ? 'Nachrichten wurden aktualisiert.' :
-                    this.newsItems.length > 0 ? 'Nachrichten erfolgreich geladen.' :
-                    'Keine Nachrichten gefunden.';
-                this.showStatus(message);
+            if (!suppressStatus) {
+                if (this._newArticleIds.size > 0) {
+                    const tpl =
+                        this._i18nStatusNew || 'Nachrichten aktualisiert — {count} neue Artikel.';
+                    this.showStatus(tpl.replace(/\{count\}/g, String(this._newArticleIds.size)));
+                } else {
+                    const message =
+                        forceRefresh ? 'Nachrichten wurden aktualisiert.' :
+                        this.newsItems.length > 0 ? 'Nachrichten erfolgreich geladen.' :
+                        'Keine Nachrichten gefunden.';
+                    this.showStatus(message);
+                }
             }
 
-            if (this.newsItems.length > 0) {
+            if (this.newsItems.length > 0 && !suppressAutoSummarize) {
                 void this.autoSummarizeAfterRefresh(forceRefresh);
             }
+
+            return {
+                ok: true,
+                source: currentSource,
+                items: Array.isArray(this.newsItems) ? [...this.newsItems] : [],
+                usedCache: false
+            };
 
         } catch (error) {
             console.error('Error fetching news:', error);
             if (gen !== this._newsFetchGeneration) {
                 return;
             }
-            this.showStatus('Fehler beim Laden der Nachrichten', true);
+            if (!suppressStatus) {
+                this.showStatus('Fehler beim Laden der Nachrichten', true);
+            }
 
             // Try to load from cache
-            await this.loadCachedNews();
+            await this.loadCachedNews({ suppressStatus });
+            return {
+                ok: false,
+                source: currentSource,
+                items: Array.isArray(this.newsItems) ? [...this.newsItems] : [],
+                usedCache: true,
+                error
+            };
         }
     }
 
-    async loadCachedNews() {
+    async loadCachedNews(options = {}) {
+        const suppressStatus = options && options.suppressStatus === true;
         try {
             const cachedNews = await this.storage.getAllNews();
             const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
             const forCurrentSource = (cachedNews || []).filter(
-                (a) => this.normalizeNewsSource(a && a.newsSource) === currentSource
+                (a) => App.normalizeStoredNewsSourceId(a && a.newsSource) === currentSource
             );
             const filteredCached = NewsScraper.filterOutAdvertorialItems(forCurrentSource);
 
@@ -4751,18 +5587,569 @@ class App {
                 });
                 this.elements.lastUpdate.textContent = `Letzte Aktualisierung: ${lastUpdate}`;
 
-                this.showStatus('Geladene aus dem Cache (keine Netzwerkverbindung)');
+                if (!suppressStatus) {
+                    this.showStatus('Geladene aus dem Cache (keine Netzwerkverbindung)');
+                }
             } else {
                 this.filteredNewsItems = [];
                 this.currentPage = 1;
                 this.renderNews([], false);
                 this.syncLoadMoreAndCount();
-                this.showStatus('Keine cacheden Nachrichten verfügbar', true);
+                if (!suppressStatus) {
+                    this.showStatus('Keine cacheden Nachrichten verfügbar', true);
+                }
             }
         } catch (error) {
             console.error('Error loading cached news:', error);
             this.renderNews([], false);
         }
+    }
+
+    /**
+     * Build known article URL sets per source from cached rows.
+     * @param {Array<Record<string, unknown>>} rows
+     * @returns {Map<string, Set<string>>}
+     */
+    buildKnownArticleUrlSetsBySource(rows) {
+        /** @type {Map<string, Set<string>>} */
+        const out = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const sourceId = App.normalizeStoredNewsSourceId(row && row.newsSource);
+            const url = App.canonicalArticleUrl(row && (row.url || row.link || ''));
+            if (!sourceId || !url) {
+                return;
+            }
+            if (!out.has(sourceId)) {
+                out.set(sourceId, new Set());
+            }
+            out.get(sourceId).add(url);
+        });
+        return out;
+    }
+
+    /**
+     * Build article counts per source from cached rows.
+     * @param {Array<Record<string, unknown>>} rows
+     * @returns {Map<string, number>}
+     */
+    buildArticleCountsBySource(rows) {
+        /** @type {Map<string, number>} */
+        const out = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const sourceId = App.normalizeStoredNewsSourceId(row && row.newsSource);
+            if (!sourceId) {
+                return;
+            }
+            out.set(sourceId, (out.get(sourceId) || 0) + 1);
+        });
+        return out;
+    }
+
+    /**
+     * @param {string[]} sourceIds
+     * @param {Map<string, number>} countsBySource
+     * @returns {number}
+     */
+    sumEstimatedArticlesForSources(sourceIds, countsBySource) {
+        return (Array.isArray(sourceIds) ? sourceIds : []).reduce((sum, sourceId) => {
+            const normalized = this.normalizeNewsSource(sourceId);
+            if (!normalized) {
+                return sum;
+            }
+            const count = countsBySource instanceof Map ? countsBySource.get(normalized) : 0;
+            return sum + (Number.isFinite(count) && count > 0 ? count : 0);
+        }, 0);
+    }
+
+    /**
+     * Wait briefly until current visible auto-summary work has drained, to avoid overloading the KI backend.
+     * @param {number} [maxWaitMs]
+     * @returns {Promise<void>}
+     */
+    async waitForVisibleAutoSummariesToSettle(maxWaitMs = 120000) {
+        const startedAt = Date.now();
+        while (
+            (this._autoSummarizeNewInProgress || this._summarizeAllInProgress) &&
+            Date.now() - startedAt < maxWaitMs
+        ) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+    }
+
+    /**
+     * Fetch one source without switching the UI source and store it in IndexedDB.
+     * @param {string} sourceId
+     * @param {{ forceRefresh?: boolean }} [options]
+     * @returns {Promise<Array<Record<string, unknown>>>}
+     */
+    async fetchSourceArticlesForGeneration(sourceId, options = {}) {
+        const source = this.normalizeNewsSource(sourceId);
+        if (!source) {
+            return [];
+        }
+
+        const scraper = new NewsScraper();
+        scraper.configureSource(source);
+        if (options && options.forceRefresh === true) {
+            await scraper.clearCache();
+        }
+
+        let newsItems = await scraper.fetchNews();
+        newsItems = NewsScraper.filterOutAdvertorialItems(newsItems);
+
+        if (
+            newsItems.length === 0 ||
+            newsItems.every((item) => App.isOfflineDemoNewsItem(item))
+        ) {
+            throw new Error(`offline-demo-or-empty:${source}`);
+        }
+
+        await this.storage.replaceNewsForSource(source, newsItems);
+        return newsItems;
+    }
+
+    /**
+     * Fetch one source without switching the UI source and return newly discovered articles.
+     * @param {string} sourceId
+     * @param {Set<string>} knownUrls
+     * @returns {Promise<Array<Record<string, unknown>>>}
+     */
+    async refreshBackgroundSource(sourceId, knownUrls) {
+        const source = this.normalizeNewsSource(sourceId);
+        if (!source) {
+            return [];
+        }
+
+        let newsItems = [];
+        try {
+            newsItems = await this.fetchSourceArticlesForGeneration(source, { forceRefresh: true });
+        } catch (error) {
+            console.warn(`Background refresh skipped source ${source}:`, error);
+            return [];
+        }
+
+        const seen = knownUrls instanceof Set ? knownUrls : new Set();
+        const newItems = newsItems.filter((item) => {
+            const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
+            return !!(url && !seen.has(url));
+        });
+
+        console.info(
+            'Background refresh source=%s articles=%d new=%d',
+            source,
+            newsItems.length,
+            newItems.length
+        );
+        return newItems;
+    }
+
+    /**
+     * Prewarm KI summaries, alternative links and Reddit cache for new background articles.
+     * @param {Array<Record<string, unknown>>} items
+     * @param {{ shouldCancel?: () => boolean, updateVisibleCards?: boolean, onProgress?: (done: number, total: number) => void }} [options]
+     * @returns {Promise<boolean>}
+     */
+    async prewarmBackgroundArtifactsForArticles(items, options = {}) {
+        const queue = (Array.isArray(items) ? items : []).filter((item) => App.articlePrimaryUrl(item));
+        if (queue.length === 0) {
+            return true;
+        }
+        const limit = App.normalizeSummaryConcurrency(this.settings?.summaryConcurrency);
+        const shouldCancel =
+            options && typeof options.shouldCancel === 'function' ? options.shouldCancel : () => false;
+        const updateVisibleCards = options && options.updateVisibleCards === true;
+        const onProgress =
+            options && typeof options.onProgress === 'function' ? options.onProgress : null;
+        let canceled = false;
+        let done = 0;
+        await App.runWithConcurrency(queue, limit, async (item) => {
+            if (shouldCancel()) {
+                canceled = true;
+                return;
+            }
+            const url = App.articlePrimaryUrl(item);
+            if (!url) {
+                return;
+            }
+
+            try {
+                const summary = await this.summarizer.generateSummary(
+                    url,
+                    String(item.title || ''),
+                    String(item.description || ''),
+                    { forceRefresh: false }
+                );
+                const isFail = App.isAiFailureMessage(summary);
+                const trimmed =
+                    summary && typeof summary === 'object' && typeof summary.summary === 'string'
+                        ? summary.summary.trim()
+                        : '';
+                if (updateVisibleCards) {
+                    if (isFail || !trimmed) {
+                        this._updateCardSummaryIfVisible(
+                            item.id,
+                            isFail ? summary : 'Zusammenfassung leer — bitte „Neu erstellen“.',
+                            true
+                        );
+                    } else {
+                        this._updateCardSummaryIfVisible(item.id, summary, false);
+                    }
+                }
+            } catch (e) {
+                console.warn('background summary prewarm:', url, e);
+                if (updateVisibleCards) {
+                    this._updateCardSummaryIfVisible(
+                        item.id,
+                        `Zusammenfassung nicht möglich: ${e.message || String(e)}`,
+                        true
+                    );
+                }
+            }
+
+            if (shouldCancel()) {
+                canceled = true;
+                return;
+            }
+
+            try {
+                await this.prefetchRedditThreadsForItem(item);
+            } catch (e) {
+                console.warn('background reddit prewarm:', url, e);
+            }
+
+            done += 1;
+            if (onProgress) {
+                onProgress(done, queue.length);
+            }
+            await App.yieldForUiCooperation();
+        });
+        return canceled === false;
+    }
+
+    /**
+     * Load Reddit threads for one article without requiring a visible card in the DOM.
+     * @param {Record<string, unknown>} item
+     * @returns {Promise<void>}
+     */
+    async prefetchRedditThreadsForItem(item) {
+        const title = item && item.title ? String(item.title).trim() : '';
+        const articleKey = App.articleFlagKey(item);
+        if (!title || !articleKey) {
+            return;
+        }
+        if (typeof window === 'undefined' || !window.location || window.location.protocol === 'file:') {
+            return;
+        }
+        const origin = window.location.origin;
+        if (origin === 'null' || String(origin).startsWith('file')) {
+            return;
+        }
+
+        const query = await this.resolveRedditQuery(item, null);
+        if (!query) {
+            return;
+        }
+
+        const reasoningConfig = this.summarizer
+            ? this.summarizer.getLmReasoningConfig()
+            : { enabled: false, level: 'off' };
+        const params = new URLSearchParams({ q: query, limit: '5', ai: '1' });
+        if (reasoningConfig.enabled) {
+            params.set('reasoning', reasoningConfig.level);
+        }
+
+        const response = await fetch(`${origin}/api/reddit-search?${params}`, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+        if (!data || data.ok !== true || !Array.isArray(data.results) || data.results.length === 0) {
+            return;
+        }
+
+        const relevantResults = await this.filterRedditThreadsByAiRelevance(item, null, data.results);
+        if (relevantResults.length === 0) {
+            return;
+        }
+
+        const aiQueries = Array.isArray(data.ai_queries) ? data.ai_queries : [];
+        if (this.storage && this.storage.db) {
+            await this.storage.saveRedditThreads(articleKey, relevantResults, aiQueries);
+        }
+    }
+
+    /**
+     * Runs on the header refresh interval. Optionally refreshes all enabled sources in the background.
+     * @returns {Promise<void>}
+     */
+    async runScheduledAutoUpdate() {
+        if (this._selectedSourcesGenerationInProgress) {
+            console.info('Scheduled auto-update skipped because selected-source generation is active.');
+            return;
+        }
+        if (this._scheduledAutoUpdateInProgress) {
+            console.info('Scheduled auto-update skipped because the previous run is still active.');
+            return;
+        }
+        this._scheduledAutoUpdateInProgress = true;
+
+        try {
+            if (!this.isBackgroundSelectedSourcesRefreshEnabled()) {
+                await this.fetchNews(true);
+                return;
+            }
+
+            const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+            await this.fetchNews(true);
+            await this.waitForVisibleAutoSummariesToSettle();
+
+            const cachedNews = await this.storage.getAllNews();
+            const knownUrlsBySource = this.buildKnownArticleUrlSetsBySource(cachedNews);
+            const backgroundSources = this.getEnabledNewsSourceIds().filter((id) => id !== currentSource);
+
+            for (const sourceId of backgroundSources) {
+                try {
+                    const newItems = await this.refreshBackgroundSource(
+                        sourceId,
+                        knownUrlsBySource.get(sourceId) || new Set()
+                    );
+                    await this.prewarmBackgroundArtifactsForArticles(newItems);
+                } catch (e) {
+                    console.warn(`Background refresh failed for source ${sourceId}:`, e);
+                }
+            }
+        } finally {
+            this._scheduledAutoUpdateInProgress = false;
+        }
+    }
+
+    /**
+     * Fetch and fully prewarm every enabled source from the settings dialog.
+     * @param {string[]} sourceIds
+     * @returns {Promise<void>}
+     */
+    async runSelectedSourcesGeneration(sourceIds) {
+        const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const ordered = [];
+        const seen = new Set();
+        if (currentSource) {
+            ordered.push(currentSource);
+            seen.add(currentSource);
+        }
+        (Array.isArray(sourceIds) ? sourceIds : []).forEach((sourceId) => {
+            const normalized = this.normalizeNewsSource(sourceId);
+            if (!normalized || seen.has(normalized)) {
+                return;
+            }
+            seen.add(normalized);
+            ordered.push(normalized);
+        });
+
+        if (ordered.length === 0) {
+            this.showStatus(this._i18nDashboardNeedOne || 'Mindestens eine Newsquelle muss aktiviert sein.', true);
+            return;
+        }
+
+        const cachedNews = await this.storage.getAllNews();
+        const articleCountsBySource = this.buildArticleCountsBySource(cachedNews);
+        const initialEstimatedArticles = this.sumEstimatedArticlesForSources(
+            ordered,
+            articleCountsBySource
+        );
+
+        this._selectedSourcesGenerationInProgress = true;
+        this._selectedSourcesGenerationCancelRequested = false;
+        this.setSelectedSourcesGenerationState({
+            phase: 'preparing',
+            currentSourceId: '',
+            totalSources: ordered.length,
+            completedSources: 0,
+            remainingSources: ordered.length,
+            failedSources: 0,
+            currentSourceTotalArticles: 0,
+            currentSourceCompletedArticles: 0,
+            estimatedRemainingArticles: initialEstimatedArticles
+        });
+        this.openSelectedSourcesGenerationModal();
+
+        let completed = 0;
+        let failedSources = 0;
+        let cancelled = false;
+
+        try {
+            for (const sourceId of ordered) {
+                const remainingAfterCurrent = Math.max(ordered.length - completed - 1, 0);
+                const remainingSourceIds = ordered.slice(completed);
+                const estimatedArticlesBeforeFetch = this.sumEstimatedArticlesForSources(
+                    remainingSourceIds,
+                    articleCountsBySource
+                );
+                this.setSelectedSourcesGenerationState({
+                    phase: this._selectedSourcesGenerationCancelRequested ? 'cancel_requested' : 'fetching',
+                    currentSourceId: sourceId,
+                    completedSources: completed,
+                    remainingSources: remainingAfterCurrent,
+                    failedSources,
+                    currentSourceTotalArticles:
+                        articleCountsBySource.get(sourceId) || 0,
+                    currentSourceCompletedArticles: 0,
+                    estimatedRemainingArticles: estimatedArticlesBeforeFetch
+                });
+
+                if (this._selectedSourcesGenerationCancelRequested) {
+                    cancelled = true;
+                    break;
+                }
+
+                let items = [];
+                try {
+                    if (sourceId === currentSource) {
+                        const result = await this.fetchNews(true, {
+                            suppressStatus: true,
+                            suppressAutoSummarize: true
+                        });
+                        items =
+                            result && Array.isArray(result.items)
+                                ? result.items
+                                : [];
+                        const hasOfflineDemo =
+                            items.length > 0 &&
+                            items.every((item) => App.isOfflineDemoNewsItem(item));
+                        if (!result || result.ok !== true || hasOfflineDemo) {
+                            throw result && result.error ? result.error : new Error(`fetch-failed:${sourceId}`);
+                        }
+                    } else {
+                        items = await this.fetchSourceArticlesForGeneration(sourceId, {
+                            forceRefresh: true
+                        });
+                    }
+                    articleCountsBySource.set(sourceId, items.length);
+                } catch (error) {
+                    failedSources += 1;
+                    console.warn(`Selected sources generation fetch failed for ${sourceId}:`, error);
+                    articleCountsBySource.set(sourceId, 0);
+                    completed += 1;
+                    this.setSelectedSourcesGenerationState({
+                        phase: this._selectedSourcesGenerationCancelRequested ? 'cancel_requested' : 'fetching',
+                        currentSourceId: sourceId,
+                        completedSources: completed,
+                        remainingSources: Math.max(ordered.length - completed, 0),
+                        failedSources,
+                        currentSourceTotalArticles: 0,
+                        currentSourceCompletedArticles: 0,
+                        estimatedRemainingArticles: this.sumEstimatedArticlesForSources(
+                            ordered.slice(completed),
+                            articleCountsBySource
+                        )
+                    });
+                    if (this._selectedSourcesGenerationCancelRequested) {
+                        cancelled = true;
+                        break;
+                    }
+                    continue;
+                }
+
+                this.setSelectedSourcesGenerationState({
+                    phase: this._selectedSourcesGenerationCancelRequested ? 'cancel_requested' : 'generating',
+                    currentSourceId: sourceId,
+                    completedSources: completed,
+                    remainingSources: remainingAfterCurrent,
+                    failedSources,
+                    currentSourceTotalArticles: items.length,
+                    currentSourceCompletedArticles: 0,
+                    estimatedRemainingArticles:
+                        items.length +
+                        this.sumEstimatedArticlesForSources(
+                            ordered.slice(completed + 1),
+                            articleCountsBySource
+                        )
+                });
+
+                const finishedSource = await this.prewarmBackgroundArtifactsForArticles(items, {
+                    shouldCancel: () => this._selectedSourcesGenerationCancelRequested,
+                    updateVisibleCards: sourceId === currentSource,
+                    onProgress: (doneArticles, totalArticles) => {
+                        this.setSelectedSourcesGenerationState({
+                            phase: this._selectedSourcesGenerationCancelRequested
+                                ? 'cancel_requested'
+                                : 'generating',
+                            currentSourceId: sourceId,
+                            completedSources: completed,
+                            remainingSources: remainingAfterCurrent,
+                            failedSources,
+                            currentSourceTotalArticles: totalArticles,
+                            currentSourceCompletedArticles: doneArticles,
+                            estimatedRemainingArticles:
+                                Math.max(totalArticles - doneArticles, 0) +
+                                this.sumEstimatedArticlesForSources(
+                                    ordered.slice(completed + 1),
+                                    articleCountsBySource
+                                )
+                        });
+                    }
+                });
+
+                if (!finishedSource && this._selectedSourcesGenerationCancelRequested) {
+                    cancelled = true;
+                    break;
+                }
+
+                completed += 1;
+                this.setSelectedSourcesGenerationState({
+                    phase: 'generating',
+                    currentSourceId: sourceId,
+                    completedSources: completed,
+                    remainingSources: Math.max(ordered.length - completed, 0),
+                    failedSources,
+                    currentSourceTotalArticles: items.length,
+                    currentSourceCompletedArticles: items.length,
+                    estimatedRemainingArticles: this.sumEstimatedArticlesForSources(
+                        ordered.slice(completed),
+                        articleCountsBySource
+                    )
+                });
+            }
+        } finally {
+            this._selectedSourcesGenerationInProgress = false;
+            cancelled = cancelled || this._selectedSourcesGenerationCancelRequested;
+            this._selectedSourcesGenerationCancelRequested = false;
+            this.setSelectedSourcesGenerationState({
+                phase: cancelled ? 'cancelled' : 'done',
+                currentSourceId: cancelled
+                    ? this._selectedSourcesGenerationState.currentSourceId || ''
+                    : '',
+                completedSources: completed,
+                remainingSources: Math.max(ordered.length - completed, 0),
+                failedSources,
+                currentSourceTotalArticles: 0,
+                currentSourceCompletedArticles: 0,
+                estimatedRemainingArticles: 0
+            });
+        }
+
+        if (cancelled) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusCancelled || 'Vorgang abgebrochen.',
+                false
+            );
+            return;
+        }
+
+        if (failedSources > 0) {
+            this.showStatus(
+                (
+                    this._i18nSelectedSourcesGenerationStatusDoneWithFailures ||
+                    'Vorgang abgeschlossen — {count} Quelle(n) konnten nicht verarbeitet werden.'
+                ).replace(/\{count\}/g, String(failedSources)),
+                false
+            );
+            return;
+        }
+
+        this.showStatus(
+            this._i18nSelectedSourcesGenerationStatusDone || 'Vorgang abgeschlossen.'
+        );
     }
 
     loadMoreNews() {
@@ -5346,6 +6733,10 @@ class App {
         const model = (this.settings && this.settings.lmModel) || '';
         const kiMode = (this.settings && this.settings.kiApiMode) || '';
         const reasoning = (this.settings && this.settings.reasoning) || '';
+        const reasoningEnabled = AISummarizer.normalizeLmReasoningEnabled(
+            this.settings && this.settings.reasoningEnabled,
+            reasoning
+        );
         const rows = [];
         for (const item of items) {
             const rec = {
@@ -5381,7 +6772,7 @@ class App {
                         rec.kiMeta = {
                             model,
                             apiMode: kiMode,
-                            reasoning,
+                            reasoning: reasoningEnabled ? reasoning : '',
                             summaryCachedAt: cached.cachedAt || ''
                         };
                     }
@@ -5635,7 +7026,7 @@ class App {
                 <h3 class="news-title">
                     <a href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(item.link))}" target="_blank" rel="noopener noreferrer">
                         ${titleFavoriteMarker}
-                        <span class="news-title-translate">${this.escapeHtml(item.title)}</span>
+                        <span class="news-title-translate" data-original-text="${this.escapeHtml(item.title)}">${this.escapeHtml(item.title)}</span>
                     </a>
                 </h3>
 
@@ -5815,6 +7206,20 @@ class App {
                 ? text.summary
                 : text;
         return typeof s === 'string' && s.startsWith('Zusammenfassung nicht möglich:');
+    }
+
+    /**
+     * Offline demo / fallback rows should not overwrite real cached source data in background refresh.
+     * @param {Record<string, unknown>|null|undefined} item
+     * @returns {boolean}
+     */
+    static isOfflineDemoNewsItem(item) {
+        if (!item || typeof item !== 'object') {
+            return false;
+        }
+        const id = String(item.id || '').trim().toLowerCase();
+        const title = String(item.title || '').trim();
+        return id.includes('fallback-') || /\(Offline-Demo\)/i.test(title);
     }
 
     /**
@@ -6116,8 +7521,13 @@ class App {
                 this.showStatus(this._i18nRedditError, true);
                 return;
             }
-            const reasoning = this.summarizer ? this.summarizer.getLmReasoningLevel() : 'off';
-            const params = new URLSearchParams({ q: query, limit: '5', ai: '1', reasoning });
+            const reasoningConfig = this.summarizer
+                ? this.summarizer.getLmReasoningConfig()
+                : { enabled: false, level: 'off' };
+            const params = new URLSearchParams({ q: query, limit: '5', ai: '1' });
+            if (reasoningConfig.enabled) {
+                params.set('reasoning', reasoningConfig.level);
+            }
             const r = await fetch(`${origin}/api/reddit-search?${params}`, {
                 method: 'GET',
                 cache: 'no-store',
@@ -6358,18 +7768,27 @@ class App {
      * @param {HTMLElement} summaryDiv
      */
     queueInPlaceTranslationForSummaryCard(summaryDiv) {
-        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
+        if (
+            !this.settings ||
+            (
+                this.settings.articleTranslationEnabled !== true &&
+                !this.shouldAutoTranslateTitlesForBrowserSummary()
+            )
+        ) {
             return;
         }
         if (!summaryDiv) {
             return;
         }
         const sc = summaryDiv.querySelector('.summary-content');
-        if (sc) {
+        if (sc && this.settings.articleTranslationEnabled === true) {
             sc.removeAttribute('data-mtm');
         }
-        summaryDiv.querySelectorAll('.summary-alt-link-title').forEach((el) => el.removeAttribute('data-mtm'));
-        summaryDiv.querySelectorAll('.summary-reddit-line').forEach((el) => el.removeAttribute('data-mtm'));
+        summaryDiv.querySelectorAll('.summary-alt-link-title, .summary-reddit-line').forEach((el) => {
+            el.removeAttribute('data-mtm');
+            el.removeAttribute('data-mtm-title-lang');
+        });
+        void this.runImmediateInPlaceTranslationForCard(summaryDiv.closest('.news-card'));
         this.scheduleArticleInPlaceTranslation();
     }
 
@@ -6716,7 +8135,11 @@ class App {
      * @param {boolean} [forceRefresh] True when user clicked Aktualisieren (not first load).
      */
     async autoSummarizeAfterRefresh(forceRefresh = false) {
-        if (this._summarizeAllInProgress || this._autoSummarizeNewInProgress) {
+        if (
+            this._summarizeAllInProgress ||
+            this._autoSummarizeNewInProgress ||
+            this._selectedSourcesGenerationInProgress
+        ) {
             return;
         }
 
@@ -6841,7 +8264,11 @@ class App {
      * @param {{ forceRefresh?: boolean }} [options]
      */
     async summarizeAllFilteredNews(options = {}) {
-        if (this._summarizeAllInProgress || this._autoSummarizeNewInProgress) {
+        if (
+            this._summarizeAllInProgress ||
+            this._autoSummarizeNewInProgress ||
+            this._selectedSourcesGenerationInProgress
+        ) {
             return;
         }
 
@@ -7680,21 +9107,36 @@ class App {
         this.syncArticleTranslationFormDisabled();
 
         let reasoningUi = 'off';
+        let reasoningEnabledUi = false;
         try {
-            reasoningUi = AISummarizer.normalizeLmReasoningParam(
-                localStorage.getItem('heise_reasoning') || this.settings?.reasoning
+            let reasoningSource = this.settings?.reasoning;
+            let reasoningEnabledSource = this.settings?.reasoningEnabled;
+            const lsReasoning = localStorage.getItem('heise_reasoning');
+            if (lsReasoning != null && lsReasoning !== '') {
+                reasoningSource = lsReasoning;
+            }
+            const lsReasoningEnabled = localStorage.getItem('heise_reasoning_enabled');
+            if (lsReasoningEnabled != null && lsReasoningEnabled !== '') {
+                reasoningEnabledSource = lsReasoningEnabled;
+            }
+            reasoningUi = AISummarizer.normalizeLmReasoningParam(reasoningSource);
+            reasoningEnabledUi = AISummarizer.normalizeLmReasoningEnabled(
+                reasoningEnabledSource,
+                reasoningUi
             );
         } catch (_) {
-            reasoningUi = 'off';
+            reasoningUi = AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
+            reasoningEnabledUi = AISummarizer.normalizeLmReasoningEnabled(
+                this.settings?.reasoningEnabled,
+                reasoningUi
+            );
         }
         if (this.elements.reasoningSelect) {
             this.elements.reasoningSelect.value = reasoningUi;
         }
-        
-        // Checkbox für Reasoning aktivieren/deaktivieren
+
         if (this.elements.reasoningEnabledCheckbox) {
-            const reasoningIsOff = reasoningUi === 'off';
-            this.elements.reasoningEnabledCheckbox.checked = !reasoningIsOff;
+            this.elements.reasoningEnabledCheckbox.checked = reasoningEnabledUi;
         }
 
         let altLinksCount = 5;
@@ -8426,9 +9868,14 @@ class App {
             const opt = document.createElement('option');
             opt.value = id;
             const entry = byId.get(id);
-            opt.textContent = entry ? entry.siteUrl : id;
-            if (entry && entry.siteUrl) {
-                opt.setAttribute('data-site-url', entry.siteUrl);
+            opt.textContent =
+                (this._i18nNewsSourceLabels && this._i18nNewsSourceLabels[id]) ||
+                (entry && (entry.displayName || entry.siteUrl)) ||
+                App.getSourceDisplayName(id) ||
+                id;
+            const siteUrl = (entry && entry.siteUrl) || App.getSourceSiteUrl(id);
+            if (siteUrl) {
+                opt.setAttribute('data-site-url', siteUrl);
             }
             sel.appendChild(opt);
         }
@@ -8447,7 +9894,7 @@ class App {
         const labels = this._i18nNewsSourceLabels || {};
         ul.innerHTML = '';
         for (const row of reg) {
-            const name = labels[row.id] || row.id;
+            const name = labels[row.id] || row.displayName || row.siteUrl || row.id;
             const li = document.createElement('li');
             li.className = 'news-sources-settings__item';
             li.dataset.sourceId = row.id;
@@ -8629,6 +10076,10 @@ class App {
         if (this.elements.articleThumbnailsEnabled) {
             this.elements.articleThumbnailsEnabled.checked = this.areArticleThumbnailsEnabled();
         }
+        if (this.elements.backgroundSelectedSourcesRefreshEnabled) {
+            this.elements.backgroundSelectedSourcesRefreshEnabled.checked =
+                this.isBackgroundSelectedSourcesRefreshEnabled();
+        }
         if (this.elements.dashboardSettingsModal) {
             this.elements.dashboardSettingsModal.classList.add('active');
         }
@@ -8719,6 +10170,12 @@ class App {
             ? App.normalizeArticleThumbnailsEnabled(this.elements.articleThumbnailsEnabled.checked)
             : prevArticleThumbnailsEnabled;
         const thumbnailsChanged = articleThumbnailsEnabledSaved !== prevArticleThumbnailsEnabled;
+        const backgroundSelectedSourcesRefreshEnabledSaved =
+            this.elements.backgroundSelectedSourcesRefreshEnabled
+                ? App.normalizeBackgroundSelectedSourcesRefreshEnabled(
+                      this.elements.backgroundSelectedSourcesRefreshEnabled.checked
+                  )
+                : this.isBackgroundSelectedSourcesRefreshEnabled();
 
         try {
             localStorage.setItem('theme', themePrefSaved);
@@ -8740,6 +10197,8 @@ class App {
         this.settings.themeCustomHeaderColors = themeCustomHeaderColorsSaved;
         this.settings.themeSurfaceBrightness = themeSurfaceBrightnessSaved;
         this.settings.articleThumbnailsEnabled = articleThumbnailsEnabledSaved;
+        this.settings.backgroundSelectedSourcesRefreshEnabled =
+            backgroundSelectedSourcesRefreshEnabledSaved;
         try {
             localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabled));
             localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(nextMagazines));
@@ -8755,7 +10214,9 @@ class App {
                 themeCustomColors: themeCustomColorsSaved,
                 themeCustomHeaderColors: themeCustomHeaderColorsSaved,
                 themeSurfaceBrightness: themeSurfaceBrightnessSaved,
-                articleThumbnailsEnabled: articleThumbnailsEnabledSaved
+                articleThumbnailsEnabled: articleThumbnailsEnabledSaved,
+                backgroundSelectedSourcesRefreshEnabled:
+                    backgroundSelectedSourcesRefreshEnabledSaved
             });
         } catch (e) {
             console.warn('saveDashboardSettings:', e);
@@ -8834,13 +10295,12 @@ class App {
         const reasoningLevel = this.elements.reasoningSelect
             ? AISummarizer.normalizeLmReasoningParam(this.elements.reasoningSelect.value)
             : AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
-        
-        // Reasoning deaktivieren wenn Checkbox unchecked ist
-        const reasoningEnabled = this.elements.reasoningEnabledCheckbox 
-            ? this.elements.reasoningEnabledCheckbox.checked 
-            : (this.settings?.reasoning !== 'off');
-        
-        const reasoningLevelForStorage = reasoningEnabled ? reasoningLevel : 'off';
+
+        const reasoningEnabled = this.elements.reasoningEnabledCheckbox
+            ? this.elements.reasoningEnabledCheckbox.checked === true
+            : AISummarizer.normalizeLmReasoningEnabled(this.settings?.reasoningEnabled, reasoningLevel);
+
+        const reasoningLevelForStorage = reasoningLevel;
 
         let alternativeLinksCount = 5;
         if (this.elements.alternativeLinksCount) {
@@ -8895,6 +10355,7 @@ class App {
             localStorage.setItem('heise_summary_concurrency', String(summaryConcurrencySaved));
             localStorage.setItem('heise_ki_request_timeout_sec', String(summaryRequestTimeoutSaved));
             localStorage.setItem('heise_reasoning', reasoningLevelForStorage);
+            localStorage.setItem('heise_reasoning_enabled', reasoningEnabled ? '1' : '0');
 
             try {
                 localStorage.setItem('heise_alternative_links_count', String(alternativeLinksCount));
@@ -8964,6 +10425,7 @@ class App {
             summaryRequestTimeoutSeconds: summaryRequestTimeoutSaved,
             lmModel,
             reasoning: reasoningLevelForStorage,
+            reasoningEnabled,
             alternativeLinksCount,
             alternativeLinksDisplayMode: alternativeLinksDisplayModeSaved,
             forumEntriesDiscoveryMode: forumEntriesDiscoveryModeSaved,
@@ -9054,7 +10516,7 @@ class App {
         }
 
         this.updateTimer = setInterval(() => {
-            this.fetchNews(true);
+            void this.runScheduledAutoUpdate();
         }, interval * 60 * 1000);
 
         console.log(`Auto-update timer: alle ${interval} Minuten`);

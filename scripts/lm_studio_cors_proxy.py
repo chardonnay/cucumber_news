@@ -43,8 +43,7 @@ def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
     """
     Fix invalid `reasoning` in POST JSON before forwarding to LM Studio.
     Legacy value `none` is treated like `off`.
-    Some models reject any `reasoning` key (including `"off"`) if they do not expose
-    reasoning configuration — omit the field when disabled or invalid.
+    Invalid values are normalized to `off`.
     """
     if not body:
         return body
@@ -59,10 +58,7 @@ def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
         s = "off"
     if s not in _LM_REASONING_ALLOWED:
         s = "off"
-    if s == "off":
-        del data["reasoning"]
-    else:
-        data["reasoning"] = s
+    data["reasoning"] = s
     try:
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError):

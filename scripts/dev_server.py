@@ -36,8 +36,11 @@ import xml.etree.ElementTree as ET
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from typing import Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
+
+MEDIA_RSS_NS = "http://search.yahoo.com/mrss/"
+ET.register_namespace("media", MEDIA_RSS_NS)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_LM = "http://127.0.0.1:1234"
@@ -69,11 +72,14 @@ VERGE_FEED_URL = "https://www.theverge.com/rss/index.xml"
 VERGE_RSS_PREFIX = "https://www.theverge.com/rss/"
 # url -> {"t": float, "xml": str}
 _verge_feed_cache_by_url: dict[str, dict[str, object]] = {}
+_source_feed_cache_by_key: dict[str, dict[str, object]] = {}
 COMPUTERBASE_PREFIX = "https://www.computerbase.de/"
 T3N_ART_PREFIX = "https://t3n.de/"
 VERGE_PREFIX = "https://www.theverge.com/"
 FETCH_TIMEOUT = 25
 FETCH_UA = "Mozilla/5.0 (compatible; HeiseDashboard/1.0; +local dev_server)"
+SOURCE_FEED_CACHE_TTL = 300.0
+SOURCE_FEED_OG_IMAGE_ENRICH_HOST_SUFFIXES = ("arabnews.com",)
 REDDIT_SEARCH_TIMEOUT = 18
 REDDIT_SEARCH_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -349,8 +355,7 @@ def _lm_call_reddit_chat(
         "stream": False,
         "store": False,
     }
-    # Omit key when "off": LM Studio may error on any `reasoning` for models without it.
-    if reasoning is not None and str(reasoning).strip().lower() != "off":
+    if reasoning is not None:
         body_obj["reasoning"] = reasoning
     body = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
     parsed = urlparse(lm_target)
@@ -393,13 +398,16 @@ def _lm_call_reddit_chat(
     return [q.strip() for q in queries if isinstance(q, str) and q.strip()]
 
 
-def _lm_optimize_reddit_queries(headline: str, lm_target: str, reasoning: str = "off") -> list[str]:
+def _lm_optimize_reddit_queries(headline: str, lm_target: str, reasoning: str | None = None) -> list[str]:
     """Ask LM Studio to generate optimized Reddit search queries from a headline."""
     model = _lm_get_model_name(lm_target)
     if not model:
         return []
 
-    r = reasoning if reasoning in _LM_REASONING_ALLOWED else "off"
+    if reasoning is None:
+        r = None
+    else:
+        r = reasoning if reasoning in _LM_REASONING_ALLOWED else "off"
 
     try:
         out = _lm_call_reddit_chat(model, headline, lm_target, r)
@@ -427,7 +435,7 @@ def _lm_optimize_reddit_queries(headline: str, lm_target: str, reasoning: str = 
 
 
 def build_reddit_search_payload_ai(
-    query: str, limit: int, lm_target: str, reasoning: str = "off"
+    query: str, limit: int, lm_target: str, reasoning: str | None = None
 ) -> dict[str, object]:
     """
     AI-enhanced Reddit search: asks LM Studio for optimized queries, searches Reddit
@@ -637,6 +645,311 @@ def _bing_news_extract_article_url(bing_link: str) -> str:
     return s
 
 
+def _normalize_source_feed_label(raw: str) -> str:
+    s = " ".join(str(raw or "").split()).strip()
+    if not s:
+        return ""
+    return s[:120]
+
+
+def _normalize_source_feed_lang(raw: str) -> str:
+    s = str(raw or "").strip().lower()
+    if re.fullmatch(r"[a-z]{2,8}", s):
+        return s
+    return "en"
+
+
+def _normalize_source_feed_site(raw: str) -> str:
+    s = str(raw or "").strip().lower()
+    if not s:
+        return ""
+    try:
+        if "://" in s:
+            u = urlparse(s)
+            host = (u.hostname or "").lower()
+            if host.startswith("www."):
+                host = host[4:]
+            s = host + (u.path or "")
+    except Exception:
+        pass
+    if s.startswith("www."):
+        s = s[4:]
+    cut = len(s)
+    for sep in ("?", "#"):
+        pos = s.find(sep)
+        if pos >= 0:
+            cut = min(cut, pos)
+    s = s[:cut]
+    s = re.sub(r"/{2,}", "/", s).rstrip("/")
+    if " " in s or "." not in s or not re.fullmatch(r"[a-z0-9./-]+", s):
+        return ""
+    return s
+
+
+def _normalize_source_feed_site_url(raw: str) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    try:
+        u = urlparse(s)
+        if u.scheme != "https" or not u.hostname:
+            return ""
+        host = u.hostname.lower()
+        path = re.sub(r"/{2,}", "/", u.path or "")
+        if path != "/" and path.endswith("/"):
+            path = path[:-1]
+        return f"https://{host}{path or ''}"
+    except Exception:
+        return ""
+
+
+def _normalize_source_feed_direct_url(raw: str) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    try:
+        u = urlparse(s)
+        if u.scheme != "https" or not u.hostname:
+            return ""
+        host = u.hostname.lower()
+        path = re.sub(r"/{2,}", "/", u.path or "")
+        query = f"?{u.query}" if u.query else ""
+        return f"https://{host}{path or '/'}{query}"
+    except Exception:
+        return ""
+
+
+def _default_bing_market_for_language(lang: str) -> str:
+    code = _normalize_source_feed_lang(lang)
+    mapping = {
+        "de": "de-DE",
+        "fr": "fr-FR",
+        "it": "it-IT",
+        "es": "es-ES",
+        "pt": "pt-BR",
+        "ja": "ja-JP",
+        "ko": "ko-KR",
+    }
+    return mapping.get(code, "en-US")
+
+
+def _build_bing_site_query(sites: list[str]) -> str:
+    normalized = [f"site:{s}" for s in sites if s]
+    return " OR ".join(normalized).strip()
+
+
+def _bing_news_rss_search_with_fallback(query: str, limit: int, lang: str, mkt: str) -> dict[str, object]:
+    attempts: list[str] = []
+    preferred = (mkt or "").strip() or _default_bing_market_for_language(lang)
+    fallback = _default_bing_market_for_language(lang)
+    for mk in (preferred, fallback, "en-US"):
+        if not mk or mk in attempts:
+            continue
+        attempts.append(mk)
+        payload = bing_news_rss_search(query, limit, mk)
+        if payload.get("ok") is True and payload.get("results"):
+            payload["mkt_used"] = mk
+            return payload
+        last = payload
+    if attempts:
+        last["mkt_used"] = attempts[-1]
+    return last
+
+
+def _build_source_feed_rss_xml(
+    label: str,
+    site_url: str,
+    lang: str,
+    items: list[dict[str, str]],
+    description: str | None = None,
+) -> str:
+    rss = ET.Element("rss", version="2.0")
+    channel = ET.SubElement(rss, "channel")
+    ET.SubElement(channel, "title").text = label
+    ET.SubElement(channel, "link").text = site_url
+    ET.SubElement(channel, "description").text = (
+        str(description).strip() if description and str(description).strip() else f"{label} feed"
+    )
+    ET.SubElement(channel, "language").text = _normalize_source_feed_lang(lang)
+    ET.SubElement(channel, "generator").text = "Cucumber NewsScraper dev_server.py"
+    ET.SubElement(channel, "lastBuildDate").text = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime())
+    for row in items:
+        title = str(row.get("title") or "").strip()
+        url = str(row.get("url") or "").strip()
+        if not title or not url:
+            continue
+        item = ET.SubElement(channel, "item")
+        ET.SubElement(item, "title").text = title
+        ET.SubElement(item, "link").text = url
+        guid = ET.SubElement(item, "guid")
+        guid.set("isPermaLink", "true")
+        guid.text = url
+        published_at = str(row.get("publishedAt") or "").strip()
+        if published_at:
+            ET.SubElement(item, "pubDate").text = published_at
+        thumbnail_url = str(row.get("thumbnailUrl") or "").strip()
+        if thumbnail_url:
+            media_content = ET.SubElement(item, f"{{{MEDIA_RSS_NS}}}content")
+            media_content.set("url", thumbnail_url)
+            media_content.set("medium", "image")
+        source_name = str(row.get("sourceName") or row.get("source") or "").strip()
+        source_url = str(row.get("sourceUrl") or "").strip()
+        if source_name:
+            source_el = ET.SubElement(item, "source")
+            if source_url:
+                source_el.set("url", source_url)
+            source_el.text = source_name
+    xml = ET.tostring(rss, encoding="utf-8", xml_declaration=True)
+    return xml.decode("utf-8", errors="replace")
+
+
+def _google_news_feed_url_for_language(lang: str) -> str:
+    code = _normalize_source_feed_lang(lang)
+    mapping = {
+        "de": "https://news.google.com/rss?hl=de&gl=DE&ceid=DE:de",
+        "fr": "https://news.google.com/rss?hl=fr&gl=FR&ceid=FR:fr",
+        "it": "https://news.google.com/rss?hl=it&gl=IT&ceid=IT:it",
+        "es": "https://news.google.com/rss?hl=es-419&gl=US&ceid=US:es-419",
+        "pt": "https://news.google.com/rss?hl=pt-BR&gl=BR&ceid=BR:pt-419",
+        "ja": "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja",
+        "ko": "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko",
+    }
+    return mapping.get(code, "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en")
+
+
+def _get_cached_source_feed_xml(cache_key: str) -> str:
+    slot = _source_feed_cache_by_key.get(cache_key)
+    if not slot:
+        return ""
+    xml = str(slot.get("xml") or "")
+    t0 = float(slot.get("t") or 0.0)
+    if xml and time.time() - t0 < SOURCE_FEED_CACHE_TTL:
+        return xml
+    return ""
+
+
+def _put_cached_source_feed_xml(cache_key: str, xml: str) -> None:
+    _source_feed_cache_by_key[cache_key] = {"xml": xml, "t": time.time()}
+
+
+def _source_feed_host_in_allowlist(url: str, allowed_suffixes: tuple[str, ...]) -> bool:
+    target = str(url or "").strip()
+    if not target:
+        return False
+    try:
+        parsed = urlparse(target)
+    except Exception:
+        return False
+    if parsed.scheme != "https":
+        return False
+    return _host_matches_allowed_suffix(parsed.hostname or "", allowed_suffixes)
+
+
+def _extract_meta_content_value(tag_html: str, key: str) -> str:
+    pattern = re.compile(
+        rf"""\b{re.escape(key)}\s*=\s*(['"])(.*?)\1""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(tag_html)
+    if not match:
+        return ""
+    return html.unescape((match.group(2) or "").strip())
+
+
+def _extract_article_og_image_from_html(doc_html: str, article_url: str) -> str:
+    raw = str(doc_html or "")
+    if not raw:
+        return ""
+    for meta_tag in re.findall(r"<meta\b[^>]*>", raw, flags=re.IGNORECASE):
+        prop = _extract_meta_content_value(meta_tag, "property").lower()
+        name = _extract_meta_content_value(meta_tag, "name").lower()
+        if prop not in ("og:image", "og:image:url") and name not in ("twitter:image", "twitter:image:src"):
+            continue
+        content = _extract_meta_content_value(meta_tag, "content")
+        if not content:
+            continue
+        try:
+            resolved = urljoin(article_url, content)
+            parsed = urlparse(resolved)
+            if parsed.scheme != "https" or not parsed.hostname:
+                continue
+            return resolved
+        except Exception:
+            continue
+    return ""
+
+
+def _fetch_article_og_image_url(article_url: str) -> str:
+    target = str(article_url or "").strip()
+    if not target:
+        return ""
+    req = Request(
+        target,
+        headers={
+            "User-Agent": FETCH_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    )
+    with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+        content_type = str(resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type and "html" not in content_type:
+            return ""
+        doc_html = resp.read(512 * 1024).decode("utf-8", errors="replace")
+    return _extract_article_og_image_from_html(doc_html, target)
+
+
+def _rss_item_has_image_node(item: ET.Element) -> bool:
+    for child in list(item):
+        local_name = str(child.tag or "").split("}", 1)[-1].strip().lower()
+        if not local_name:
+            continue
+        rel = str(child.attrib.get("rel") or "").strip().lower()
+        medium = str(child.attrib.get("medium") or "").strip().lower()
+        content_type = str(child.attrib.get("type") or "").strip().lower()
+        if local_name == "thumbnail" or local_name.endswith(":thumbnail"):
+            return True
+        is_image_carrier = (
+            local_name == "enclosure"
+            or local_name == "content"
+            or local_name.endswith(":content")
+            or (local_name == "link" and rel == "enclosure")
+        )
+        is_image_type = medium == "image" or content_type.startswith("image/")
+        if is_image_carrier and is_image_type:
+            return True
+    return False
+
+
+def _enrich_direct_rss_with_article_images(feed_xml: str, feed_url: str) -> str:
+    if not _source_feed_host_in_allowlist(feed_url, SOURCE_FEED_OG_IMAGE_ENRICH_HOST_SUFFIXES):
+        return feed_xml
+    try:
+        root = ET.fromstring(feed_xml.encode("utf-8"))
+    except ET.ParseError:
+        return feed_xml
+    changed = False
+    for item in root.findall("./channel/item"):
+        if _rss_item_has_image_node(item):
+            continue
+        article_url = str(item.findtext("link") or "").strip()
+        if not _source_feed_host_in_allowlist(article_url, SOURCE_FEED_OG_IMAGE_ENRICH_HOST_SUFFIXES):
+            continue
+        try:
+            image_url = _fetch_article_og_image_url(article_url)
+        except (HTTPError, URLError, TimeoutError, OSError):
+            image_url = ""
+        if not image_url:
+            continue
+        media_content = ET.SubElement(item, f"{{{MEDIA_RSS_NS}}}content")
+        media_content.set("url", image_url)
+        media_content.set("medium", "image")
+        changed = True
+    if not changed:
+        return feed_xml
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return xml_bytes.decode("utf-8", errors="replace")
+
+
 def build_reddit_search_payload(query: str, limit: int = 5) -> dict[str, object]:
     """
     Reddit global search (JSON API). Normalizes the article headline, uses a short keyword query,
@@ -790,6 +1103,10 @@ def bing_news_rss_search(query: str, limit: int, mkt: str) -> dict[str, object]:
         if article_url in seen:
             continue
         seen.add(article_url)
+        pub_raw = (item.findtext("pubDate") or "").strip()
+        thumbnail_url = ""
+        thumbnail_raw = ""
+        thumbnail_size_hint = ""
 
         src_tag = source_txt.upper() if source_txt else ""
         if not src_tag:
@@ -801,12 +1118,33 @@ def bing_news_rss_search(query: str, limit: int, mkt: str) -> dict[str, object]:
                 src_tag = part.upper()
             except Exception:
                 src_tag = "NEWS"
+        source_label = source_txt or src_tag
+        source_url = ""
+        try:
+            host = (urlparse(article_url).hostname or "").lower()
+            if host:
+                source_url = f"https://{host}"
+        except Exception:
+            source_url = ""
+        for ch in item:
+            local_tag = str(ch.tag or "").split("}", 1)[-1]
+            if local_tag == "ImageSize":
+                thumbnail_size_hint = str(ch.text or "").strip()
+                continue
+            if local_tag == "Image":
+                thumbnail_raw = str(ch.text or "").strip()
+        if thumbnail_raw:
+            thumbnail_url = _normalize_bing_news_image_url(thumbnail_raw, thumbnail_size_hint)
 
         results.append(
             {
                 "title": headline,
                 "url": article_url,
-                "source": src_tag,
+                "source": source_label,
+                "sourceName": source_label,
+                "sourceUrl": source_url,
+                "publishedAt": pub_raw,
+                "thumbnailUrl": thumbnail_url,
             }
         )
         if len(results) >= lim:
@@ -817,12 +1155,31 @@ def bing_news_rss_search(query: str, limit: int, mkt: str) -> dict[str, object]:
     return out
 
 
+def _normalize_bing_news_image_url(raw_url: str, size_hint: str = "") -> str:
+    s = str(raw_url or "").strip()
+    if not s:
+        return ""
+    try:
+        u = urlparse(s)
+    except Exception:
+        return ""
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return ""
+    if u.scheme == "http":
+        u = u._replace(scheme="https")
+    out = u.geturl()
+    size_tpl = str(size_hint or "").strip()
+    if size_tpl and "{0}" in size_tpl and "{1}" in size_tpl:
+        sized = size_tpl.replace("{0}", "640").replace("{1}", "360")
+        glue = "&" if "?" in out else "?"
+        out = f"{out}{glue}{sized.lstrip('?&')}"
+    return out
+
+
 def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
     """
     Normalize JSON `reasoning` before forwarding to /api/v1/chat.
-    Maps legacy `none` to omitting the field (same as `off`).
-    Some LM Studio models reject any `reasoning` parameter (including `"off"`) if they
-    do not expose reasoning configuration — omit the field when disabled or invalid.
+    Maps legacy `none` to `off` and normalizes invalid values to `off`.
     """
     if not body:
         return body
@@ -837,10 +1194,7 @@ def _normalize_lm_chat_reasoning_body(body: bytes) -> bytes:
         s = "off"
     if s not in _LM_REASONING_ALLOWED:
         s = "off"
-    if s == "off":
-        del data["reasoning"]
-    else:
-        data["reasoning"] = s
+    data["reasoning"] = s
     try:
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError):
@@ -2267,6 +2621,142 @@ def make_handler(lm_target: str) -> type:
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if path_only == "/api/source-feed":
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                engine = ((qs.get("engine") or [""])[0] or "").strip().lower()
+                raw_label = unquote((qs.get("label") or [""])[0])
+                label = _normalize_source_feed_label(raw_label)
+                raw_site_url = unquote((qs.get("site_url") or [""])[0])
+                site_url = _normalize_source_feed_site_url(raw_site_url)
+                raw_feed_url = unquote((qs.get("feed_url") or [""])[0])
+                feed_url = _normalize_source_feed_direct_url(raw_feed_url)
+                lang = _normalize_source_feed_lang((qs.get("lang") or ["en"])[0])
+                try:
+                    lim = int((qs.get("limit") or ["30"])[0])
+                except (TypeError, ValueError):
+                    lim = 30
+                lim = max(1, min(30, lim))
+                if engine not in ("bing_news", "google_news", "direct_rss"):
+                    err = json.dumps({"ok": False, "error": "invalid_engine"}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(400)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                if not label or not site_url:
+                    err = json.dumps({"ok": False, "error": "missing_label_or_site_url"}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(400)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                sites: list[str] = []
+                seen_sites: set[str] = set()
+                for raw_site in qs.get("site") or []:
+                    site = _normalize_source_feed_site(unquote(raw_site))
+                    if site and site not in seen_sites:
+                        seen_sites.add(site)
+                        sites.append(site)
+                if not sites:
+                    derived_site = _normalize_source_feed_site(site_url)
+                    if derived_site:
+                        sites.append(derived_site)
+                mkt = ((qs.get("mkt") or [""])[0] or "").strip()
+                cache_key = json.dumps(
+                    {
+                        "engine": engine,
+                        "label": label,
+                        "site_url": site_url,
+                        "feed_url": feed_url,
+                        "lang": lang,
+                        "limit": lim,
+                        "sites": sites,
+                        "mkt": mkt,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                cached_xml = _get_cached_source_feed_xml(cache_key)
+                if cached_xml:
+                    body = cached_xml.encode("utf-8")
+                    self.send_response(200)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/rss+xml; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                try:
+                    if engine == "bing_news":
+                        query = _build_bing_site_query(sites)
+                        if not query:
+                            raise ValueError("missing_site")
+                        payload = _bing_news_rss_search_with_fallback(query, lim, lang, mkt)
+                        if payload.get("ok") is not True:
+                            raise RuntimeError(str(payload.get("error") or "bing_news_failed"))
+                        xml = _build_source_feed_rss_xml(
+                            label,
+                            site_url,
+                            lang,
+                            list(payload.get("results") or []),
+                            description=f"{label} (via Bing News search proxy)",
+                        )
+                    elif engine == "direct_rss":
+                        if not feed_url:
+                            raise ValueError("missing_feed_url")
+                        req = Request(
+                            feed_url,
+                            headers={
+                                "User-Agent": FETCH_UA,
+                                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                            },
+                        )
+                        with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+                            xml = resp.read().decode("utf-8", errors="replace")
+                        xml = _enrich_direct_rss_with_article_images(xml, feed_url)
+                    else:
+                        feed_url = _google_news_feed_url_for_language(lang)
+                        req = Request(
+                            feed_url,
+                            headers={
+                                "User-Agent": FETCH_UA,
+                                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                            },
+                        )
+                        with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+                            xml = resp.read().decode("utf-8", errors="replace")
+                except ValueError as e:
+                    err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(400)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                except (HTTPError, URLError, TimeoutError, OSError, RuntimeError) as e:
+                    err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_response(502)
+                    cors_headers(self)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(err)))
+                    self.end_headers()
+                    self.wfile.write(err)
+                    return
+                _put_cached_source_feed_xml(cache_key, xml)
+                body = xml.encode("utf-8")
+                self.send_response(200)
+                cors_headers(self)
+                self.send_header("Content-Type", "application/rss+xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path_only == "/api/search-news":
                 parsed = urlparse(self.path)
                 qs = parse_qs(parsed.query)
@@ -2296,7 +2786,13 @@ def make_handler(lm_target: str) -> type:
                 except (TypeError, ValueError):
                     lim = 5
                 use_ai = (qs.get("ai") or [""])[0].strip() == "1"
-                reasoning = (qs.get("reasoning") or ["off"])[0].strip().lower()
+                reasoning_values = qs.get("reasoning")
+                reasoning = None
+                if reasoning_values:
+                    raw_reasoning = reasoning_values[0].strip().lower()
+                    if raw_reasoning == "none":
+                        raw_reasoning = "off"
+                    reasoning = raw_reasoning if raw_reasoning in _LM_REASONING_ALLOWED else "off"
                 if use_ai:
                     payload = build_reddit_search_payload_ai(query, lim, lm_target, reasoning)
                 else:
@@ -2421,6 +2917,7 @@ def main() -> int:
         f"GET /api/t3n-feed → t3n RSS (browser CORS proxy)\n"
         f"GET /api/it-administrator-feed → IT-Administrator RSS (browser CORS proxy)\n"
         f"GET /api/verge-feed → The Verge Atom (browser CORS proxy); optional ?url=… (https://www.theverge.com/rss/…/*.xml)\n"
+        f"GET /api/source-feed?engine=… → registry-backed source feed proxy (Bing News → synthetic RSS, Google News → proxied RSS)\n"
         f"GET /api/golem-comments?url=… → Golem comment count + forum URL from RSS (no green/red parse)\n"
         f"GET /api/bild-comments?url=… → stub (link to article; no feed comment API)\n"
         f"GET /api/computerbase-comments?url=… → stub (link to article; no feed comment API)\n"

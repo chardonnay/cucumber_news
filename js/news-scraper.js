@@ -5,23 +5,183 @@
  * Copyright (c) 2026 Daniel Mengel
  */
 
-/** @typedef {'heise'|'bild'|'telepolis'|'golem'|'computerbase'|'t3n'|'it_administrator'|'verge'} NewsSourceId */
+/** @typedef {string} NewsSourceId */
 
 class NewsScraper {
     constructor() {
         this.configureSource('heise');
     }
 
+    /** @returns {{ getSourceEntry?: Function, getSourceDisplayName?: Function, getSourceSiteUrl?: Function, getSourceHosts?: Function, getSourceSearchSites?: Function }|null} */
+    static sourceRegistryUtils() {
+        if (
+            typeof window !== 'undefined' &&
+            window.NEWS_SOURCE_REGISTRY_UTILS &&
+            typeof window.NEWS_SOURCE_REGISTRY_UTILS === 'object'
+        ) {
+            return window.NEWS_SOURCE_REGISTRY_UTILS;
+        }
+        return null;
+    }
+
+    /** @returns {string[]} */
+    static newsCatalogIds() {
+        if (typeof window !== 'undefined' && Array.isArray(window.NEWS_SOURCE_IDS)) {
+            return [...window.NEWS_SOURCE_IDS];
+        }
+        return ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+    }
+
+    /**
+     * @param {string} source
+     * @returns {{ id?: string, siteUrl?: string, displayName?: string, language?: string, feedStrategy?: string, feedUrl?: string, feedVersion?: string }|null}
+     */
+    static getSourceEntry(source) {
+        const utils = NewsScraper.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceEntry === 'function') {
+            return utils.getSourceEntry(source);
+        }
+        return null;
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceDisplayName(source) {
+        const utils = NewsScraper.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceDisplayName === 'function') {
+            const label = String(utils.getSourceDisplayName(source) || '').trim();
+            if (label) {
+                return label;
+            }
+        }
+        return String(source || '').trim();
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static getSourceSiteUrl(source) {
+        const utils = NewsScraper.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceSiteUrl === 'function') {
+            return String(utils.getSourceSiteUrl(source) || '').trim();
+        }
+        return '';
+    }
+
+    /**
+     * @param {string|{ id?: string, siteUrl?: string, hosts?: string[] }} sourceOrEntry
+     * @returns {string[]}
+     */
+    static getSourceHosts(sourceOrEntry) {
+        const utils = NewsScraper.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceHosts === 'function') {
+            const out = utils.getSourceHosts(sourceOrEntry);
+            if (Array.isArray(out) && out.length > 0) {
+                return out.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+            }
+        }
+        const entry =
+            sourceOrEntry && typeof sourceOrEntry === 'object' && sourceOrEntry.siteUrl
+                ? sourceOrEntry
+                : NewsScraper.getSourceEntry(String(sourceOrEntry || ''));
+        if (!entry || !entry.siteUrl) {
+            return [];
+        }
+        try {
+            return [new URL(entry.siteUrl).hostname.toLowerCase().replace(/^www\./, '')];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    /**
+     * @param {string|{ id?: string, siteUrl?: string, searchSites?: string[] }} sourceOrEntry
+     * @returns {string[]}
+     */
+    static getSourceSearchSites(sourceOrEntry) {
+        const utils = NewsScraper.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceSearchSites === 'function') {
+            const out = utils.getSourceSearchSites(sourceOrEntry);
+            if (Array.isArray(out) && out.length > 0) {
+                return out.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+            }
+        }
+        const entry =
+            sourceOrEntry && typeof sourceOrEntry === 'object' && sourceOrEntry.siteUrl
+                ? sourceOrEntry
+                : NewsScraper.getSourceEntry(String(sourceOrEntry || ''));
+        if (!entry || !entry.siteUrl) {
+            return [];
+        }
+        try {
+            const u = new URL(entry.siteUrl);
+            const host = u.hostname.toLowerCase().replace(/^www\./, '');
+            const path = String(u.pathname || '').replace(/\/$/, '');
+            return [`${host}${path}`.replace(/\/$/, '')];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string}
+     */
+    static cacheNameForSource(source) {
+        const id = String(source || '').trim();
+        const map = {
+            heise: 'heise-news-cache',
+            bild: 'bild-news-cache',
+            telepolis: 'telepolis-news-cache',
+            golem: 'golem-news-cache',
+            computerbase: 'computerbase-news-cache',
+            t3n: 't3n-news-cache',
+            it_administrator: 'it-administrator-news-cache',
+            verge: 'verge-news-cache'
+        };
+        return map[id] || `${id}-news-cache`;
+    }
+
+    /**
+     * @param {{ id?: string, siteUrl?: string, displayName?: string, language?: string, feedStrategy?: string, feedUrl?: string, feedVersion?: string }} entry
+     * @returns {string}
+     */
+    static buildSourceFeedProxyPath(entry) {
+        if (!entry || !entry.feedStrategy) {
+            return '';
+        }
+        const params = new URLSearchParams();
+        params.set('engine', String(entry.feedStrategy || ''));
+        params.set('id', String(entry.id || ''));
+        params.set('label', NewsScraper.getSourceDisplayName(String(entry.id || '')));
+        params.set('site_url', String(entry.siteUrl || ''));
+        params.set('lang', String(entry.language || 'en'));
+        params.set('limit', '30');
+        if (entry.feedVersion) {
+            params.set('rev', String(entry.feedVersion));
+        }
+        if (entry.feedStrategy === 'direct_rss' && entry.feedUrl) {
+            params.set('feed_url', String(entry.feedUrl));
+        }
+        if (entry.feedStrategy === 'bing_news') {
+            const sites = NewsScraper.getSourceSearchSites(entry);
+            sites.forEach((site) => params.append('site', site));
+        }
+        return `/api/source-feed?${params.toString()}`;
+    }
+
     /**
      * @param {NewsSourceId|string} source
      */
     configureSource(source) {
-        const catalog =
-            typeof window !== 'undefined' && window.NEWS_SOURCE_IDS
-                ? window.NEWS_SOURCE_IDS
-                : ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
+        const catalog = NewsScraper.newsCatalogIds();
         const allowed = new Set(catalog);
         this.source = allowed.has(String(source)) ? String(source) : 'heise';
+        const registryEntry = NewsScraper.getSourceEntry(this.source);
+        this.sourceDisplayName = NewsScraper.getSourceDisplayName(this.source) || this.source;
 
         /** @type {string[]} Extra Verge section Atom URLs merged with the main feed (deduped by article URL). */
         this.vergeSectionFeeds = [];
@@ -31,9 +191,55 @@ class NewsScraper {
         this.rssItemHost = '';
         this.feedProxyPath = '';
         this.feedUrl = '';
+        this.directFeedUrl = '';
+        this.feedCacheKey = '';
         this.baseUrl = '';
-        this.cacheName = 'heise-news-cache';
+        this.allowedHosts = [];
+        this.cacheName = NewsScraper.cacheNameForSource(this.source);
         this.rubricFeeds = [];
+
+        this.categoryMap = {
+            it: 'IT & Tech',
+            security: 'Security',
+            ki: 'KI',
+            wissenschaft: 'Wissenschaft',
+            mobiles: 'Mobiles',
+            entertainment: 'Entertainment',
+            wirtschaft: 'Wirtschaft',
+            netzpolitik: 'Netzpolitik',
+            journal: 'Journal',
+            heise_ix: 'iX',
+            heise_ct: "c't",
+            heise_foto: "c't Fotografie",
+            heise_mac: 'Mac & i',
+            heise_make: 'Make',
+            heise_autos: 'heise autos',
+            bild: 'BILD',
+            telepolis: 'Telepolis'
+        };
+
+        if (
+            registryEntry &&
+            (
+                registryEntry.feedStrategy === 'bing_news' ||
+                registryEntry.feedStrategy === 'google_news' ||
+                registryEntry.feedStrategy === 'direct_rss'
+            )
+        ) {
+            this.baseUrl = String(registryEntry.siteUrl || '');
+            this.feedType = 'rss';
+            this.feedUrl = NewsScraper.buildSourceFeedProxyPath(registryEntry);
+            this.feedProxyPath = this.feedUrl;
+            this.directFeedUrl =
+                registryEntry.feedStrategy === 'google_news'
+                    ? 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'
+                    : '';
+            this.feedCacheKey = this.feedUrl || this.cacheName;
+            this.allowedHosts = NewsScraper.getSourceHosts(registryEntry);
+            this.rssItemHost = this.allowedHosts[0] || '';
+            this.categoryMap[this.source] = this.sourceDisplayName;
+            return;
+        }
 
         switch (this.source) {
             case 'bild':
@@ -120,26 +326,23 @@ class NewsScraper {
                     { url: `${this.baseUrl}/thema/Kuenstliche-Intelligenz.xml`, category: 'ki' }
                 ];
         }
-
-        this.categoryMap = {
-            it: 'IT & Tech',
-            security: 'Security',
-            ki: 'KI',
-            wissenschaft: 'Wissenschaft',
-            mobiles: 'Mobiles',
-            entertainment: 'Entertainment',
-            wirtschaft: 'Wirtschaft',
-            netzpolitik: 'Netzpolitik',
-            journal: 'Journal',
-            heise_ix: 'iX',
-            heise_ct: "c't",
-            heise_foto: "c't Fotografie",
-            heise_mac: 'Mac & i',
-            heise_make: 'Make',
-            heise_autos: 'heise autos',
-            bild: 'BILD',
-            telepolis: 'Telepolis'
-        };
+        this.allowedHosts = NewsScraper.getSourceHosts(this.source);
+        if (this.allowedHosts.length === 0) {
+            if (this.feedType === 'atom' && this.atomLinkHost) {
+                this.allowedHosts = [this.atomLinkHost];
+            } else if (this.feedType === 'rss' && this.rssItemHost) {
+                this.allowedHosts = [this.rssItemHost];
+            }
+        }
+        this.directFeedUrl = this.feedUrl;
+        this.feedCacheKey = this.feedUrl || this.cacheName;
+        if (this.source === 'telepolis' && !this.allowedHosts.includes('heise.de')) {
+            // Telepolis Atom currently emits heise.de shortlinks (e.g. https://www.heise.de/-11257981).
+            this.allowedHosts = [...this.allowedHosts, 'heise.de'];
+        }
+        if (this.sourceDisplayName) {
+            this.categoryMap[this.source] = this.sourceDisplayName;
+        }
     }
 
     /**
@@ -206,18 +409,21 @@ class NewsScraper {
 
     async fetchNews() {
         try {
-            const cached = await caches.open(this.cacheName);
-            const hit = await cached.match(this.feedUrl);
-            if (hit) {
-                const xml = await hit.text();
-                let parsed =
-                    this.feedType === 'rss' ? this.parseRss2Feed(xml) : this.parseAtomFeed(xml);
-                if (parsed.length > 0) {
-                    if (this.source === 'heise') {
-                        const extra = await this.fetchHeiseMagazineFeedArticles();
-                        parsed = parsed.concat(extra);
+            const cacheKey = this.feedCacheKey || this.feedUrl;
+            if (cacheKey) {
+                const cached = await caches.open(this.cacheName);
+                const hit = await cached.match(cacheKey);
+                if (hit) {
+                    const xml = await hit.text();
+                    let parsed =
+                        this.feedType === 'rss' ? this.parseRss2Feed(xml) : this.parseAtomFeed(xml);
+                    if (parsed.length > 0) {
+                        if (this.source === 'heise') {
+                            const extra = await this.fetchHeiseMagazineFeedArticles();
+                            parsed = parsed.concat(extra);
+                        }
+                        return this.dedupeAndSort(parsed);
                     }
-                    return this.dedupeAndSort(parsed);
                 }
             }
 
@@ -269,16 +475,18 @@ class NewsScraper {
                 throw new Error('Feed lieferte keine Einträge');
             }
 
-            try {
-                const c = await caches.open(this.cacheName);
-                await c.put(
-                    this.feedUrl,
-                    new Response(main, {
-                        headers: { 'Content-Type': 'application/xml; charset=utf-8' }
-                    })
-                );
-            } catch (e) {
-                console.warn('Cache API (optional):', e);
+            if (cacheKey) {
+                try {
+                    const c = await caches.open(this.cacheName);
+                    await c.put(
+                        cacheKey,
+                        new Response(main, {
+                            headers: { 'Content-Type': 'application/xml; charset=utf-8' }
+                        })
+                    );
+                } catch (e) {
+                    console.warn('Cache API (optional):', e);
+                }
             }
 
             return this.dedupeAndSort(articles);
@@ -364,12 +572,12 @@ class NewsScraper {
      * @param {AbortSignal} [signal]
      */
     async fetchFeedWithOptionalProxy(proxyPath, signal) {
-        const direct = this.feedUrl;
+        const direct = this.directFeedUrl || '';
         const canUseOrigin =
             typeof window !== 'undefined' &&
             (window.location.protocol === 'http:' || window.location.protocol === 'https:');
         if (canUseOrigin && proxyPath) {
-            const proxied = `${window.location.origin}${proxyPath}`;
+            const proxied = proxyPath.startsWith('http') ? proxyPath : `${window.location.origin}${proxyPath}`;
             try {
                 const response = await fetch(proxied, {
                     signal,
@@ -385,6 +593,9 @@ class NewsScraper {
             } catch (e) {
                 console.warn(`Feed proxy failed (${proxyPath}), trying direct URL:`, e);
             }
+        }
+        if (!direct) {
+            throw new Error(`Feed requires dev_server proxy: ${proxyPath}`);
         }
         return this.fetchAtomText(direct, signal);
     }
@@ -722,6 +933,38 @@ class NewsScraper {
     }
 
     /**
+     * @param {Element|null|undefined} node
+     * @returns {boolean}
+     */
+    isLikelyTrackingPixelElement(node) {
+        if (!node || typeof node.getAttribute !== 'function') {
+            return false;
+        }
+        const width = Number.parseInt(String(node.getAttribute('width') || '').trim(), 10);
+        const height = Number.parseInt(String(node.getAttribute('height') || '').trim(), 10);
+        return Number.isFinite(width) && Number.isFinite(height) && width <= 1 && height <= 1;
+    }
+
+    /**
+     * @param {string} url
+     * @returns {boolean}
+     */
+    isLikelyTrackingPixelUrl(url) {
+        const href = String(url || '').trim();
+        if (!href) {
+            return false;
+        }
+        try {
+            const parsed = new URL(href);
+            const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+            const path = parsed.pathname.toLowerCase();
+            return host === 'cpx.golem.de' && path === '/cpx.php';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    /**
      * @param {string} markup
      * @param {string} articleUrl
      * @returns {string}
@@ -733,29 +976,84 @@ class NewsScraper {
         }
         try {
             const doc = new DOMParser().parseFromString(rawMarkup, 'text/html');
-            const directImg = doc.querySelector('img[src]');
-            if (directImg) {
+            const directImgs = doc.querySelectorAll('img[src]');
+            for (let i = 0; i < directImgs.length; i++) {
+                const directImg = directImgs[i];
                 const directImgUrl = this.normalizeThumbnailUrl(directImg.getAttribute('src') || '', articleUrl);
-                if (directImgUrl) {
-                    return directImgUrl;
+                if (!directImgUrl) {
+                    continue;
                 }
+                if (this.isLikelyTrackingPixelElement(directImg) || this.isLikelyTrackingPixelUrl(directImgUrl)) {
+                    continue;
+                }
+                return directImgUrl;
             }
 
-            const srcSetNode = doc.querySelector('img[srcset], source[srcset]');
-            if (srcSetNode) {
+            const srcSetNodes = doc.querySelectorAll('img[srcset], source[srcset]');
+            for (let i = 0; i < srcSetNodes.length; i++) {
+                const srcSetNode = srcSetNodes[i];
                 const srcSet = String(srcSetNode.getAttribute('srcset') || '').trim();
-                if (srcSet) {
-                    const firstCandidate = srcSet.split(',')[0].trim().split(/\s+/)[0];
-                    const srcSetUrl = this.normalizeThumbnailUrl(firstCandidate, articleUrl);
-                    if (srcSetUrl) {
-                        return srcSetUrl;
-                    }
+                if (!srcSet) {
+                    continue;
                 }
+                const firstCandidate = srcSet.split(',')[0].trim().split(/\s+/)[0];
+                const srcSetUrl = this.normalizeThumbnailUrl(firstCandidate, articleUrl);
+                if (!srcSetUrl) {
+                    continue;
+                }
+                if (this.isLikelyTrackingPixelElement(srcSetNode) || this.isLikelyTrackingPixelUrl(srcSetUrl)) {
+                    continue;
+                }
+                return srcSetUrl;
             }
         } catch (_) {
             return '';
         }
         return '';
+    }
+
+    /**
+     * @param {string} url
+     * @returns {boolean}
+     */
+    matchesAllowedHost(url) {
+        const href = String(url || '').trim();
+        if (!href) {
+            return false;
+        }
+        try {
+            const host = new URL(href).hostname.toLowerCase().replace(/^www\./, '');
+            const allowed = Array.isArray(this.allowedHosts) ? this.allowedHosts : [];
+            if (allowed.length === 0) {
+                return true;
+            }
+            return allowed.some((pattern) => host === pattern || host.endsWith(`.${pattern}`));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    usesRegistryFeedStrategy() {
+        const entry = NewsScraper.getSourceEntry(this.source);
+        return !!(
+            entry &&
+            (
+                entry.feedStrategy === 'bing_news' ||
+                entry.feedStrategy === 'google_news' ||
+                entry.feedStrategy === 'direct_rss'
+            )
+        );
+    }
+
+    /**
+     * @param {string} category
+     * @returns {string}
+     */
+    getCategoryDisplayName(category) {
+        return this.categoryMap[category] || NewsScraper.getSourceDisplayName(category) || category;
     }
 
     /**
@@ -771,7 +1069,6 @@ class NewsScraper {
             return [];
         }
 
-        const host = this.rssItemHost || 'golem.de';
         const items = doc.getElementsByTagName('item');
         const articles = [];
 
@@ -791,7 +1088,7 @@ class NewsScraper {
                 href = (linkEl.textContent || linkEl.getAttribute('href') || '').trim();
             }
 
-            if (!title || !href || !href.includes(host)) {
+            if (!title || !href || !this.matchesAllowedHost(href)) {
                 continue;
             }
 
@@ -826,15 +1123,16 @@ class NewsScraper {
             const pubRaw = pubDateEl ? pubDateEl.textContent.trim() : '';
             const publishedMs = pubRaw ? Date.parse(pubRaw) : Date.now();
 
-            const category =
-                this.source === 'bild'
-                    ? this.inferCategoryBild(entry, title, href)
-                    : this.source === 't3n'
+            const category = this.usesRegistryFeedStrategy()
+                ? this.source
+                : this.source === 'bild'
+                  ? this.inferCategoryBild(entry, title, href)
+                  : this.source === 't3n'
                     ? this.inferCategoryT3n(title, href)
                     : this.source === 'it_administrator'
                       ? this.inferCategoryItAdministrator(entry, title, href)
                       : this.inferCategoryGolem(title, href);
-            const categoryName = this.categoryMap[category] || category;
+            const categoryName = this.getCategoryDisplayName(category);
 
             articles.push({
                 id: this.generateId(cleanUrl),
@@ -871,7 +1169,6 @@ class NewsScraper {
             return [];
         }
 
-        const host = this.atomLinkHost || 'heise.de';
         const entries = doc.getElementsByTagName('entry');
         const articles = [];
 
@@ -890,7 +1187,7 @@ class NewsScraper {
             for (let j = 0; j < links.length; j++) {
                 const L = links[j];
                 const h = L.getAttribute('href');
-                if (!h || !h.includes(host)) {
+                if (!h || !this.matchesAllowedHost(h)) {
                     continue;
                 }
                 const rel = (L.getAttribute('rel') || '').toLowerCase();
@@ -902,7 +1199,7 @@ class NewsScraper {
             if (!href) {
                 for (let j = 0; j < links.length; j++) {
                     const h = links[j].getAttribute('href');
-                    if (h && h.includes(host)) {
+                    if (h && this.matchesAllowedHost(h)) {
                         href = h;
                         break;
                     }
@@ -941,6 +1238,8 @@ class NewsScraper {
             let category;
             if (forcedCategory) {
                 category = forcedCategory;
+            } else if (this.usesRegistryFeedStrategy()) {
+                category = this.source;
             } else if (this.source === 'computerbase') {
                 category = this.inferCategoryComputerbase(title, href);
             } else if (this.source === 'verge') {
@@ -950,7 +1249,7 @@ class NewsScraper {
             } else {
                 category = this.inferCategory(title, href);
             }
-            const categoryName = this.categoryMap[category] || category;
+            const categoryName = this.getCategoryDisplayName(category);
 
             articles.push({
                 id: this.generateId(cleanUrl),
@@ -1383,6 +1682,8 @@ class NewsScraper {
         console.warn('Nutze lokale Fallback-Artikel (Feed nicht erreichbar oder leer).');
         const today = new Date();
         const formatTime = (hoursAgo) => `vor ${hoursAgo} Stunden`;
+        const sourceDisplayName = this.sourceDisplayName || NewsScraper.getSourceDisplayName(this.source) || this.source;
+        const sourceSiteUrl = this.baseUrl || NewsScraper.getSourceSiteUrl(this.source) || 'https://www.heise.de/';
 
         const demos = {
             golem: {
@@ -1458,6 +1759,24 @@ class NewsScraper {
             ];
         }
 
+        if (this.source !== 'heise') {
+            return [
+                {
+                    id: `${this.source}-fallback-1`,
+                    title: `Beispiel: ${sourceDisplayName} (Offline-Demo)`,
+                    link: sourceSiteUrl,
+                    category: this.source,
+                    categoryName: this.getCategoryDisplayName(this.source),
+                    timestamp: formatTime(1),
+                    description: 'Nur sichtbar, wenn der Feed nicht geladen werden kann.',
+                    url: sourceSiteUrl,
+                    publishedMs: today.getTime(),
+                    fetchedAt: new Date().toISOString(),
+                    newsSource: this.source
+                }
+            ];
+        }
+
         return [
             {
                 id: 'fallback-1',
@@ -1499,14 +1818,9 @@ class NewsScraper {
     /** Clear all source caches (e.g. when switching source). */
     async clearAllFeedCaches() {
         try {
-            await caches.delete('heise-news-cache');
-            await caches.delete('golem-news-cache');
-            await caches.delete('computerbase-news-cache');
-            await caches.delete('t3n-news-cache');
-            await caches.delete('verge-news-cache');
-            await caches.delete('telepolis-news-cache');
-            await caches.delete('bild-news-cache');
-            await caches.delete('it-administrator-news-cache');
+            for (const id of NewsScraper.newsCatalogIds()) {
+                await caches.delete(NewsScraper.cacheNameForSource(id));
+            }
         } catch (e) {
             console.warn(e);
         }

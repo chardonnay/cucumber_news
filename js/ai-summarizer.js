@@ -215,7 +215,33 @@ class AISummarizer {
     }
 
     /**
-     * Current reasoning level for LM REST (reads `heise_reasoning` from localStorage).
+     * Whether the LM REST `reasoning` field should be sent at all.
+     * Missing legacy flag falls back to the old behavior (`off` meant disabled).
+     * @param {unknown} raw
+     * @param {unknown} fallbackLevel
+     * @returns {boolean}
+     */
+    static normalizeLmReasoningEnabled(raw, fallbackLevel = 'off') {
+        if (raw === true || raw === 1) {
+            return true;
+        }
+        if (raw === false || raw === 0) {
+            return false;
+        }
+        const s = String(raw ?? '')
+            .trim()
+            .toLowerCase();
+        if (s === '1' || s === 'true' || s === 'yes' || s === 'on') {
+            return true;
+        }
+        if (s === '0' || s === 'false' || s === 'no' || s === 'off') {
+            return false;
+        }
+        return AISummarizer.normalizeLmReasoningParam(fallbackLevel) !== 'off';
+    }
+
+    /**
+     * Current selected reasoning level for LM REST (reads `heise_reasoning` from localStorage).
      * @returns {'off'|'low'|'medium'|'high'|'on'}
      */
     getLmReasoningLevel() {
@@ -226,6 +252,25 @@ class AISummarizer {
             /* ignore */
         }
         return AISummarizer.normalizeLmReasoningParam(fromLs);
+    }
+
+    /**
+     * Current reasoning config for LM REST.
+     * `enabled=false` omits the field entirely; `enabled=true` sends the selected level, including `off`.
+     * @returns {{ enabled: boolean, level: 'off'|'low'|'medium'|'high'|'on' }}
+     */
+    getLmReasoningConfig() {
+        const level = this.getLmReasoningLevel();
+        let fromLs = '';
+        try {
+            fromLs = localStorage.getItem('heise_reasoning_enabled') || '';
+        } catch (_) {
+            /* ignore */
+        }
+        return {
+            enabled: AISummarizer.normalizeLmReasoningEnabled(fromLs, level),
+            level
+        };
     }
 
     /**
@@ -316,7 +361,7 @@ class AISummarizer {
             }
         }
         const lang = AISummarizer.siteLanguageFromArticleUrl(articleUrl);
-        return lang === 'en' ? 'en-US' : 'de-DE';
+        return AISummarizer.languageToBingMarket(lang);
     }
 
     /**
@@ -433,6 +478,85 @@ class AISummarizer {
         return ['heise', 'bild', 'telepolis', 'golem', 'computerbase', 't3n', 'it_administrator', 'verge'];
     }
 
+    /** @returns {{ getSourceEntry?: Function, getSourceDisplayName?: Function, getSourceLanguage?: Function, getSourceSiteUrl?: Function, hostMatchesEntry?: Function, getSourceIdByHostname?: Function, getSourceLanguageByHostname?: Function }|null} */
+    static sourceRegistryUtils() {
+        if (
+            typeof window !== 'undefined' &&
+            window.NEWS_SOURCE_REGISTRY_UTILS &&
+            typeof window.NEWS_SOURCE_REGISTRY_UTILS === 'object'
+        ) {
+            return window.NEWS_SOURCE_REGISTRY_UTILS;
+        }
+        return null;
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {string}
+     */
+    static getSourceDisplayName(sourceId) {
+        const utils = AISummarizer.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceDisplayName === 'function') {
+            const label = String(utils.getSourceDisplayName(sourceId) || '').trim();
+            if (label) {
+                return label;
+            }
+        }
+        return String(sourceId || '').trim();
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {string}
+     */
+    static getSourceLanguage(sourceId) {
+        const utils = AISummarizer.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceLanguage === 'function') {
+            return String(utils.getSourceLanguage(sourceId) || '')
+                .trim()
+                .toLowerCase();
+        }
+        return sourceId === 'verge' ? 'en' : 'de';
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {string}
+     */
+    static getSourceSiteUrl(sourceId) {
+        const utils = AISummarizer.sourceRegistryUtils();
+        if (utils && typeof utils.getSourceSiteUrl === 'function') {
+            return String(utils.getSourceSiteUrl(sourceId) || '').trim();
+        }
+        return '';
+    }
+
+    /**
+     * @param {string} lang
+     * @returns {string}
+     */
+    static languageToBingMarket(lang) {
+        switch (String(lang || '').trim().toLowerCase()) {
+            case 'de':
+                return 'de-DE';
+            case 'fr':
+                return 'fr-FR';
+            case 'it':
+                return 'it-IT';
+            case 'es':
+                return 'es-ES';
+            case 'pt':
+                return 'pt-BR';
+            case 'ja':
+                return 'ja-JP';
+            case 'ko':
+                return 'ko-KR';
+            case 'en':
+            default:
+                return 'en-US';
+        }
+    }
+
     /**
      * News sources whose domains must not appear in alternative links (same as header „Quelle“ catalog).
      * Empty `heise_enabled_news_sources` in storage means all sources are enabled → exclude all catalog domains.
@@ -533,20 +657,20 @@ class AISummarizer {
      */
     static newsSourceIdMatchesHostname(sourceId, hostname) {
         const h = AISummarizer.normalizeHostnameForMatch(hostname);
-        /** @type {Record<string, (x: string) => boolean>} */
-        const map = {
-            heise: (x) => x === 'heise.de' || x.endsWith('.heise.de'),
-            bild: (x) => x === 'bild.de' || x.endsWith('.bild.de'),
-            telepolis: (x) => x === 'telepolis.de' || x.endsWith('.telepolis.de'),
-            golem: (x) => x === 'golem.de' || x.endsWith('.golem.de'),
-            computerbase: (x) => x === 'computerbase.de' || x.endsWith('.computerbase.de'),
-            t3n: (x) => x === 't3n.de' || x.endsWith('.t3n.de'),
-            it_administrator: (x) =>
-                x === 'it-administrator.de' || x.endsWith('.it-administrator.de'),
-            verge: (x) => x === 'theverge.com' || x.endsWith('.theverge.com')
-        };
-        const fn = map[sourceId];
-        return fn ? fn(h) : false;
+        const utils = AISummarizer.sourceRegistryUtils();
+        if (utils && typeof utils.hostMatchesEntry === 'function') {
+            return utils.hostMatchesEntry(sourceId, h);
+        }
+        const siteUrl = AISummarizer.getSourceSiteUrl(sourceId);
+        if (siteUrl) {
+            try {
+                const base = AISummarizer.normalizeHostnameForMatch(new URL(siteUrl).hostname);
+                return h === base || h.endsWith(`.${base}`);
+            } catch (_) {
+                /* ignore */
+            }
+        }
+        return false;
     }
 
     /**
@@ -667,26 +791,39 @@ class AISummarizer {
      * @returns {string} domain label for the prompt
      */
     getNewsSourceLabel() {
-        const map = {
-            heise: 'heise.de',
-            bild: 'BILD (bild.de)',
-            telepolis: 'telepolis.de',
-            golem: 'golem.de',
-            computerbase: 'computerbase.de',
-            t3n: 't3n.de',
-            it_administrator: 'IT-Administrator (it-administrator.de)',
-            verge: 'The Verge (theverge.com)'
+        const formatLabel = (sourceId) => {
+            const displayName = AISummarizer.getSourceDisplayName(sourceId);
+            const siteUrl = AISummarizer.getSourceSiteUrl(sourceId);
+            if (!siteUrl) {
+                return displayName || 'heise.de';
+            }
+            try {
+                const host = AISummarizer.normalizeHostnameForMatch(new URL(siteUrl).hostname);
+                if (!displayName || displayName === host) {
+                    return host || displayName || 'heise.de';
+                }
+                if (host && displayName.toLowerCase().includes(host)) {
+                    return displayName;
+                }
+                return `${displayName} (${host})`;
+            } catch (_) {
+                return displayName || siteUrl || 'heise.de';
+            }
         };
         try {
             const s = localStorage.getItem('heise_news_source');
-            if (s && map[s]) {
-                return map[s];
+            if (s && AISummarizer.newsCatalogIds().includes(s)) {
+                return formatLabel(s);
             }
         } catch (_) {
             /* ignore */
         }
-        if (typeof window !== 'undefined' && window.__newsSource && map[window.__newsSource]) {
-            return map[window.__newsSource];
+        if (
+            typeof window !== 'undefined' &&
+            window.__newsSource &&
+            AISummarizer.newsCatalogIds().includes(window.__newsSource)
+        ) {
+            return formatLabel(window.__newsSource);
         }
         return 'heise.de';
     }
@@ -1293,9 +1430,6 @@ class AISummarizer {
                 if (cacheKey) {
                     await this.storage.deleteSummary(cacheKey);
                 }
-                if (legacyKey && legacyKey !== cacheKey) {
-                    await this.storage.deleteSummary(legacyKey);
-                }
             } catch (e) {
                 console.warn('KI: Cache löschen fehlgeschlagen:', e);
             }
@@ -1427,20 +1561,32 @@ class AISummarizer {
      * @returns {string}
      */
     static siteLanguageFromArticleUrl(articleUrl) {
-        const u = String(articleUrl || '').toLowerCase();
-        if (u.includes('theverge.com')) {
-            return 'en';
-        }
-        if (
-            u.includes('heise.de') ||
-            u.includes('bild.de') ||
-            u.includes('golem.de') ||
-            u.includes('computerbase.de') ||
-            u.includes('t3n.de') ||
-            u.includes('telepolis.de') ||
-            u.includes('it-administrator.de')
-        ) {
+        const raw = String(articleUrl || '').trim();
+        if (!raw) {
             return 'de';
+        }
+        try {
+            const utils = AISummarizer.sourceRegistryUtils();
+            const host = new URL(raw).hostname;
+            if (utils && typeof utils.getSourceLanguageByHostname === 'function') {
+                const lang = String(utils.getSourceLanguageByHostname(host) || '')
+                    .trim()
+                    .toLowerCase();
+                if (lang) {
+                    return lang;
+                }
+            }
+            if (utils && typeof utils.getSourceIdByHostname === 'function') {
+                const id = String(utils.getSourceIdByHostname(host) || '').trim();
+                if (id) {
+                    const lang = AISummarizer.getSourceLanguage(id);
+                    if (lang) {
+                        return lang;
+                    }
+                }
+            }
+        } catch (_) {
+            /* ignore */
         }
         return 'de';
     }
@@ -1818,12 +1964,11 @@ Output rules:
             store: false
         };
         
-        /** Reasoning level for LM Studio enum: off | low | medium | high | on */
-        const reasoningLevel = this.getLmReasoningLevel();
-        
-        // Only include reasoning field if it's not 'off' (disabled)
-        if (reasoningLevel !== 'off') {
-            baseBody.reasoning = reasoningLevel;
+        const reasoningConfig = this.getLmReasoningConfig();
+
+        // If explicitly enabled, always send the selected enum, including `off`.
+        if (reasoningConfig.enabled) {
+            baseBody.reasoning = reasoningConfig.level;
         }
 
         try {
@@ -2096,12 +2241,11 @@ Output rules:
             store: false
         };
         
-        /** Reasoning level for LM Studio enum: off | low | medium | high | on */
-        const reasoningLevel = this.getLmReasoningLevel();
-        
-        // Only include reasoning field if it's not 'off' (disabled)
-        if (reasoningLevel !== 'off') {
-            baseBody.reasoning = reasoningLevel;
+        const reasoningConfig = this.getLmReasoningConfig();
+
+        // If explicitly enabled, always send the selected enum, including `off`.
+        if (reasoningConfig.enabled) {
+            baseBody.reasoning = reasoningConfig.level;
         }
 
         try {

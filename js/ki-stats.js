@@ -14,6 +14,152 @@ const KI_STATS_MAX_ENTRIES = 500;
 
 class KiStats {
     /**
+     * @param {unknown} raw
+     * @returns {number|null}
+     */
+    static _coercePositiveInt(raw) {
+        if (raw === null || raw === undefined || raw === '') {
+            return null;
+        }
+        const n = typeof raw === 'number' ? raw : Number(raw);
+        if (!Number.isFinite(n) || n < 0) {
+            return null;
+        }
+        return Math.round(n);
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {number|null}
+     */
+    static _coerceTimestampMs(raw) {
+        if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+            return Math.round(raw);
+        }
+        if (typeof raw === 'string' && raw.trim()) {
+            const trimmed = raw.trim();
+            const direct = Number(trimmed);
+            if (Number.isFinite(direct) && direct > 0) {
+                return Math.round(direct);
+            }
+            const parsed = Date.parse(trimmed);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                return Math.round(parsed);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {KiStatsEntry|null}
+     */
+    static _normalizeStoredEntry(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const row = /** @type {Record<string, unknown>} */ (raw);
+        const usage =
+            row.usage && typeof row.usage === 'object'
+                ? /** @type {Record<string, unknown>} */ (row.usage)
+                : null;
+        const t =
+            KiStats._coerceTimestampMs(
+                row.t ??
+                    row.ts ??
+                    row.time ??
+                    row.timestamp ??
+                    row.createdAt ??
+                    row.created_at ??
+                    row.date
+            ) ?? null;
+        if (!(t && t > 0)) {
+            return null;
+        }
+        const durationMs =
+            KiStats._coercePositiveInt(
+                row.durationMs ??
+                    row.duration_ms ??
+                    row.duration ??
+                    row.elapsedMs ??
+                    row.elapsed_ms
+            ) ?? 0;
+        const totalTokens =
+            KiStats._coercePositiveInt(
+                row.totalTokens ??
+                    row.total_tokens ??
+                    row.tokens ??
+                    (usage
+                        ? usage.totalTokens ??
+                          usage.total_tokens ??
+                          usage.total ??
+                          usage.tokens
+                        : null)
+            );
+        const promptTokens =
+            KiStats._coercePositiveInt(
+                row.promptTokens ??
+                    row.prompt_tokens ??
+                    row.inputTokens ??
+                    row.input_tokens ??
+                    (usage
+                        ? usage.promptTokens ??
+                          usage.prompt_tokens ??
+                          usage.inputTokens ??
+                          usage.input_tokens
+                        : null)
+            );
+        const completionTokens =
+            KiStats._coercePositiveInt(
+                row.completionTokens ??
+                    row.completion_tokens ??
+                    row.outputTokens ??
+                    row.output_tokens ??
+                    (usage
+                        ? usage.completionTokens ??
+                          usage.completion_tokens ??
+                          usage.outputTokens ??
+                          usage.output_tokens
+                        : null)
+            );
+
+        /** @type {KiStatsEntry} */
+        const out = {
+            t,
+            durationMs,
+            totalTokens: totalTokens != null ? totalTokens : null
+        };
+        if (promptTokens != null) {
+            out.promptTokens = promptTokens;
+        }
+        if (completionTokens != null) {
+            out.completionTokens = completionTokens;
+        }
+        return out;
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {KiStatsEntry[]}
+     */
+    static _normalizeStoredEntries(raw) {
+        let rows = [];
+        if (Array.isArray(raw)) {
+            rows = raw;
+        } else if (raw && typeof raw === 'object') {
+            const obj = /** @type {Record<string, unknown>} */ (raw);
+            if (Array.isArray(obj.entries)) {
+                rows = obj.entries;
+            } else {
+                rows = [obj];
+            }
+        }
+        return rows
+            .map((row) => KiStats._normalizeStoredEntry(row))
+            .filter((row) => !!row);
+    }
+
+    /**
      * OpenAI-style `usage` on chat completions.
      * @param {unknown} data
      * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
@@ -121,17 +267,7 @@ class KiStats {
 
         // Robust localStorage handling with fallback strategy
         try {
-            const raw = localStorage.getItem(KI_STATS_STORAGE_KEY);
-            let list = [];
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    list = parsed;
-                } else {
-                    console.warn('KiStats: Invalid stored format, starting fresh');
-                    list = [];
-                }
-            }
+            let list = KiStats.loadEntries();
             list.push(entry);
             
             // Safety limit to prevent localStorage overflow
@@ -192,9 +328,17 @@ class KiStats {
                 return [];
             }
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-                return /** @type {KiStatsEntry[]} */ (parsed);
-            } else {
+            const normalized = KiStats._normalizeStoredEntries(parsed);
+            if (normalized.length > 0) {
+                return normalized;
+            }
+            if (Array.isArray(parsed) && parsed.length === 0) {
+                return [];
+            }
+            if (parsed && typeof parsed === 'object' && Array.isArray(parsed.entries) && parsed.entries.length === 0) {
+                return [];
+            }
+            {
                 console.warn('KiStats: Invalid stored format');
                 // Fall back to memory cache
                 if (KiStats._memoryFallback && Array.isArray(KiStats._memoryFallback)) {
