@@ -338,6 +338,8 @@ class NewsStorage {
         const defaults = {
             updateInterval: 60,
             customInterval: 60,
+            disabledCategoriesBySource: {},
+            favoriteNewsSources: [],
             selectedCategories: [
                 'it',
                 'security',
@@ -365,8 +367,10 @@ class NewsStorage {
             themeCustomColors: { light: {}, dark: {} },
             /** Optional overrides for --header-surface, --header-text, --header-border per mode */
             themeCustomHeaderColors: { light: {}, dark: {} },
-            /** Surface brightness 70–130 (100 = default); applied to bg/secondary/card/border per mode */
-            themeSurfaceBrightness: { light: 100, dark: 100 },
+            /** Surface brightness 0–100 (50 = default); applied to bg/secondary/card/border per mode */
+            themeSurfaceBrightness: { light: 50, dark: 50, version: 2 },
+            /** Header transparency 0–100 (0 = opaque, 100 = fully transparent) per mode */
+            themeHeaderTransparency: { light: 0, dark: 0, version: 1 },
             /** Accent palette: heise | ocean | forest | violet | amber | rose | slate | midnight */
             colorTheme: 'slate',
             /** OpenAI-compatible API base including /v1, e.g. http://127.0.0.1:1234/v1 */

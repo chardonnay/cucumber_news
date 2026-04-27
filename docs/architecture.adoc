@@ -9,16 +9,16 @@ The app is a *single-page* HTML application: `index.html` loads vanilla ES modul
 |File |Role
 
 |`js/app.js`
-|Application shell: routing of user actions, news list rendering, filters, sort, KI batch jobs, settings UI, i18n application.
+|Application shell: header/source navigation, favorites, news list rendering, dynamic category filters, sort, KI batch jobs, selected-source generation modal, settings UI, and i18n application.
 
 |`js/news-scraper.js`
-|Fetches and parses Atom/RSS per selected source; optional `dev_server` proxy paths; deduplication; category inference; HTTP cache (Cache API) where configured.
+|Fetches and parses Atom/RSS per selected source; supports dedicated feed routes and registry-backed `/api/source-feed` proxies; handles deduplication, dynamic category inference, advertorial filtering, and thumbnail extraction / normalization.
 
 |`js/storage.js`
-|IndexedDB (`NewsStorage`): settings mirror, articles, summary cache, schema helpers.
+|IndexedDB (`NewsStorage`): settings mirror, enabled sources, favorite sources, per-source disabled categories, articles, summary cache, and schema helpers.
 
 |`js/ai-summarizer.js`
-|Builds prompts, calls LM Studio REST v1 or OpenAI-compatible chat completions, reads/writes summary cache, fetches *alternative links* via Bing News RSS through the dev server, validates URLs via `/api/check-url`.
+|Builds prompts, calls LM Studio REST v1 or OpenAI-compatible chat completions, normalizes the LM Studio model list (including reasoning capability metadata when available), reads/writes summary cache, fetches *alternative links* via Bing News RSS through the dev server, validates URLs via `/api/check-url`.
 
 |`js/heise-comments.js`
 |Loads comment statistics for supported sites via dev-server JSON endpoints.
@@ -30,24 +30,25 @@ The app is a *single-page* HTML application: `index.html` loads vanilla ES modul
 |Lightweight stats/helpers for KI usage (if present in your tree).
 
 |`js/news-sources-registry.js`
-|Canonical ordered list of source ids and site URLs exposed as `window.NEWS_SOURCE_IDS`.
+|Canonical source registry exposed as `window.NEWS_SOURCE_IDS` / `window.NEWS_SOURCES_REGISTRY`, including labels, host aliases, feed strategy metadata, and search-site hints for `/api/source-feed`.
 |===
 
 === Server-side companion (`scripts/dev_server.py`)
 
 When you open the dashboard from this server (e.g. `http://127.0.0.1:8080/index.html`), the browser and the API share the *same origin*. That avoids CORS preflight issues when proxying:
 
-* LM Studio `POST /api/v1/chat` and `GET /v1/models`
-* Feed proxies (`/api/golem-feed`, `/api/t3n-feed`, …)
-* `GET /api/heise-comments`, `GET /api/golem-comments`, stubs for other comment routes
+* LM Studio `POST /api/v1/chat`, native `GET /api/v1/models`, and OpenAI-style `GET /v1/models` as fallback
+* Feed proxies (`/api/heise-feed`, `/api/bild-feed`, `/api/golem-feed`, `/api/t3n-feed`, `/api/verge-feed`, `/api/source-feed`, …)
+* `GET /api/heise-comments`, `GET /api/golem-comments`, and lightweight metadata / stub routes for several other comment integrations
 * `GET /api/search-news` (Bing News RSS → article URLs for “alternative sources”)
 * `GET /api/check-url` (HTTP probe for link validation)
 * `GET /api/reddit-search` (used from the app for related discussion threads)
+* `GET /api/article-image` (same-origin image proxy for remote thumbnails)
 
 The app can auto-detect this setup via `GET /.well-known/lmstudio-dev-server`.
 
 === Data stores (browser)
 
 * *IndexedDB* — primary persistence for news items, summaries, and many settings.
-* *localStorage* — small mirrors for quick reads (e.g. selected source, theme).
+* *localStorage* — small mirrors for quick reads (e.g. selected source, enabled sources, theme).
 * *Cache API* — optional feed response caching keyed by feed URL.

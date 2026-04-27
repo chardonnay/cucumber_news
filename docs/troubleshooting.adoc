@@ -4,7 +4,14 @@
 
 * Open the browser developer console and check for network errors.
 * *Heise* and some other feeds require correct URLs; many non-Heise RSS feeds need `scripts/dev_server.py` because publishers do not send `Access-Control-Allow-Origin` for RSS.
-* Confirm you opened the app from the dev server origin when using `/api/*-feed` proxies.
+* Many registry-backed international sources depend on `GET /api/source-feed`; if you open the app without `dev_server`, or if the underlying source proxy/search returns no usable items, the UI can fall back to the offline demo entry for that source.
+* Confirm you opened the app from the dev server origin when using `/api/*-feed` or `/api/source-feed` proxies.
+
+=== Categories missing or unexpectedly disabled
+
+* Category chips are built from the articles currently loaded for the active source. If the source fetch fails or returns no items, no category chips are shown.
+* New sources and new categories start enabled by default. Only explicit user deactivations are persisted, per source.
+* If the visible chips do not match the latest code after an update, hard reload the page so the current `index.html` script versions are used.
 
 === AI: “Failed to fetch” or LM Studio logs `OPTIONS /api/v1/chat`
 
@@ -19,6 +26,13 @@
 === OpenAI-compatible mode: `'messages' field is required`
 
 * Base URL must be `http://host:port/v1` — not `…/v1/chat/completions` (the client appends the path).
+
+=== Reasoning options do not match the selected LM Studio model
+
+* The model-aware reasoning UI depends on native `GET /api/v1/models`. If the app can only reach the older OpenAI-style `GET /v1/models`, capability metadata is missing and the UI falls back conservatively to `Off` only.
+* Use *LM Studio REST v1* mode for model-aware reasoning controls. In *OpenAI-compatible* mode the reasoning block is intentionally hidden.
+* Reload the model list in the KI settings dialog after changing the LM Studio server, model, or same-origin setting.
+* If the browser still shows stale options after a code update, hard reload the page so the current script versions are used.
 
 === Summary cache
 

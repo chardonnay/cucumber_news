@@ -10,10 +10,24 @@ image::docs/images/diagram-ki-integration.png[AI integration data flow,width=800
 * *OpenAI-compatible* — `POST /v1/chat/completions` with a chat-style payload. Base URL must end with `/v1` (the client appends `/chat/completions`).
 
 Enable *REST via same page origin* in settings when using `scripts/dev_server.py` so the browser does not call LM Studio cross-origin (avoids `OPTIONS` preflight failures on many LM Studio builds).
+The *Reasoning* controls are only shown in *LM Studio REST v1* mode. In *OpenAI-compatible* mode that settings block is hidden because this app does not send the LM Studio-specific `reasoning` field there.
 
 === Model selection (settings)
 
-When a valid server URL is configured, the app loads the model list via `GET /v1/models` (same-origin proxy with `dev_server`, or direct to LM Studio). You can pick a specific model or choose *No specific choice — server decides* (empty `model` setting): the client then resolves the first suitable LLM from the list (cached per tab in `sessionStorage`). Hover a list entry to see metadata returned by LM Studio (publisher, architecture, max context, format, loaded instance). Models currently loaded in LM Studio are marked with a bullet prefix in the dropdown label.
+When a valid server URL is configured, the app loads the model list via native `GET /api/v1/models` first (same-origin proxy with `dev_server`, or direct to LM Studio). Only if that returns `404` does the client retry the older OpenAI-style `GET /v1/models`. You can pick a specific model or choose *No specific choice — server decides* (empty `model` setting): the client then resolves the first suitable LLM from the list (cached per tab in `sessionStorage`). Hover a list entry to see metadata returned by LM Studio (publisher, architecture, max context, format, loaded instance). Models currently loaded in LM Studio are marked with a bullet prefix in the dropdown label.
+
+=== Reasoning settings (LM Studio)
+
+When the native LM Studio model list includes `capabilities.reasoning.allowed_options`, the app filters the *Reasoning level* dropdown to exactly those supported enum values for the currently selected model.
+
+Examples:
+
+* a model that reports `["off","on"]` only shows `Off` and `On`
+* a model without `capabilities.reasoning` support keeps only `Off` visible and disables the reasoning toggle
+
+The selected reasoning level and the enabled/disabled state are persisted and restored when the settings dialog is reopened.
+
+If the app has to fall back to OpenAI-style `GET /v1/models`, capability metadata is usually not available. In that case the UI falls back conservatively to `Off` only instead of guessing unsupported reasoning levels.
 
 === Summary language
 

@@ -5,5 +5,9 @@ All notable documentation and packaging changes for this repository may be recor
 === Unreleased
 
 * Documentation migrated to AsciiDoc; added MIT `LICENSE`, architecture and KI integration guides, diagrams, and dev-server API reference.
+* Documentation refreshed for the current source catalog, alphabetical header source selector, source favorites, dynamic per-source categories, selected-source generation, and the shared `/api/source-feed` dev-server route.
+* KI documentation updated for model-aware reasoning controls: native `/api/v1/models` capability metadata, conservative fallback on `/v1/models`, OpenAI-mode hiding, and persisted reasoning settings.
+* Theme brightness sliders are now perceptually balanced: the surface mix is moderated and eased so cards stay distinguishable at the slider extremes, borders keep their contrast, and `--text-primary` / `--text-secondary` follow the slider so text remains readable in both light and dark mode.
+* Brightness slider hint is now localized (de/en) and explains whether the slider currently darkens, lightens, or is at neutral.
 
 _(Maintain release sections below as you tag versions.)_

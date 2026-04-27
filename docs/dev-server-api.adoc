@@ -14,6 +14,10 @@ Unless noted, routes are intended for *local development* on the same origin as 
 |GET
 |Heise article + forum comment stats (`url` query).
 
+|`/api/article-image`
+|GET
+|Same-origin proxy for remote article images / thumbnails (`url` query).
+
 |`/api/heise-feed`
 |GET
 |Proxy for `https://www.heise.de/…/*.xml` feeds (`url` query; allowlisted paths).
@@ -21,6 +25,10 @@ Unless noted, routes are intended for *local development* on the same origin as 
 |`/api/telepolis-feed`
 |GET
 |Telepolis Atom proxy.
+
+|`/api/bild-feed`
+|GET
+|BILD RSS proxy.
 
 |`/api/golem-feed`
 |GET
@@ -46,6 +54,10 @@ Unless noted, routes are intended for *local development* on the same origin as 
 |GET
 |Stub / metadata for ComputerBase articles.
 
+|`/api/bild-comments`
+|GET
+|Stub / metadata for BILD articles.
+
 |`/api/t3n-comments`
 |GET
 |Stub for t3n.
@@ -53,6 +65,10 @@ Unless noted, routes are intended for *local development* on the same origin as 
 |`/api/verge-comments`
 |GET
 |Stub / `#comments` link for Verge.
+
+|`/api/source-feed`
+|GET
+|Registry-backed source feed proxy. Returns RSS built from Bing News search results or proxied official RSS, depending on `engine`. Main query params: `engine`, `label`, `site_url`, `lang`, `limit`; optional `site`, `feed_url`, `rev`, `mkt`.
 
 |`/api/check-url`
 |GET
@@ -76,7 +92,11 @@ Unless noted, routes are intended for *local development* on the same origin as 
 
 |`/v1/models`
 |GET
-|Forwarded model list (OpenAI-style discovery).
+|Forwarded model list (OpenAI-style discovery fallback; usually only model ids, no native reasoning capability metadata).
+
+|`/api/v1/models`
+|GET
+|Native LM Studio model list proxy with `/api` prefix; includes loaded-state metadata and, when provided by LM Studio, capability fields such as `capabilities.reasoning.allowed_options`.
 |===
 
 Also serves static files from the project root (e.g. `index.html`, `js/`, `locales/`).

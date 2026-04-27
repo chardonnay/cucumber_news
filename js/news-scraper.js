@@ -215,7 +215,8 @@ class NewsScraper {
             heise_make: 'Make',
             heise_autos: 'heise autos',
             bild: 'BILD',
-            telepolis: 'Telepolis'
+            telepolis: 'Telepolis',
+            general: 'General'
         };
 
         if (
@@ -1053,7 +1054,634 @@ class NewsScraper {
      * @returns {string}
      */
     getCategoryDisplayName(category) {
-        return this.categoryMap[category] || NewsScraper.getSourceDisplayName(category) || category;
+        const key = String(category || '').trim();
+        if (!key) {
+            return '';
+        }
+        if (this.categoryMap[key]) {
+            return this.categoryMap[key];
+        }
+        const sourceLabel = NewsScraper.getSourceDisplayName(key);
+        if (sourceLabel) {
+            return sourceLabel;
+        }
+        return this.humanizeDynamicCategoryLabel(key);
+    }
+
+    /**
+     * @param {string} raw
+     * @returns {string}
+     */
+    normalizeDynamicCategoryLabel(raw) {
+        return this.stripHtml(String(raw || ''))
+            .replace(/\s+/g, ' ')
+            .replace(/\u00a0/g, ' ')
+            .trim();
+    }
+
+    /**
+     * @param {string} raw
+     * @returns {string}
+     */
+    normalizeComparisonText(raw) {
+        return this.normalizeDynamicCategoryLabel(raw)
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * @param {string} raw
+     * @returns {string}
+     */
+    normalizeDynamicCategoryKey(raw) {
+        const label = this.normalizeDynamicCategoryLabel(raw);
+        if (!label) {
+            return '';
+        }
+        const ascii = label
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/&/g, ' and ')
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+        if (ascii) {
+            return ascii;
+        }
+        let hash = 2166136261 >>> 0;
+        for (let i = 0; i < label.length; i++) {
+            hash ^= label.charCodeAt(i);
+            hash = Math.imul(hash, 16777619) >>> 0;
+        }
+        return `cat_${hash.toString(16)}`;
+    }
+
+    /**
+     * @param {string} raw
+     * @returns {string}
+     */
+    humanizeDynamicCategoryLabel(raw) {
+        const text = String(raw || '')
+            .trim()
+            .replace(/^cat_[a-f0-9]+$/i, 'General')
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ');
+        if (!text) {
+            return '';
+        }
+        const acronyms = new Set(['ai', 'ap', 'bbc', 'cnn', 'dw', 'eu', 'ft', 'ki', 'it', 'tv', 'uk', 'us', 'wsj']);
+        return text
+            .split(' ')
+            .filter(Boolean)
+            .map((word) => {
+                const lower = word.toLowerCase();
+                if (acronyms.has(lower)) {
+                    return lower.toUpperCase();
+                }
+                return lower.charAt(0).toUpperCase() + lower.slice(1);
+            })
+            .join(' ');
+    }
+
+    /**
+     * @param {Element} node
+     * @returns {string[]}
+     */
+    extractFeedCategoryLabels(node) {
+        if (!node || typeof node.getElementsByTagName !== 'function') {
+            return [];
+        }
+        const out = [];
+        const seen = new Set();
+        const cats = node.getElementsByTagName('category');
+        for (let i = 0; i < cats.length; i++) {
+            const el = cats[i];
+            const raw = this.normalizeDynamicCategoryLabel(el.getAttribute('term') || el.textContent || '');
+            if (!raw || seen.has(raw)) {
+                continue;
+            }
+            seen.add(raw);
+            out.push(raw);
+        }
+        return out;
+    }
+
+    /**
+     * @param {string} label
+     * @returns {boolean}
+     */
+    isMeaningfulDynamicCategoryLabel(label) {
+        const text = this.normalizeDynamicCategoryLabel(label);
+        if (!text || text.length < 2 || text.length > 48) {
+            return false;
+        }
+        if (/^[a-z0-9]+$/i.test(text) && /[a-z]/i.test(text) && /\d/.test(text) && text.length >= 8) {
+            return false;
+        }
+        if (/https?:\/\//i.test(text) || /@/.test(text)) {
+            return false;
+        }
+        if ((text.match(/\s+/g) || []).length >= 5) {
+            return false;
+        }
+        const normalized = this.normalizeComparisonText(text);
+        const genericNoise = new Set([
+            'all',
+            'article',
+            'articles',
+            'breaking news',
+            'english',
+            'feed',
+            'headline',
+            'headlines',
+            'home',
+            'homepage',
+            'latest',
+            'latest headlines',
+            'latest news',
+            'news',
+            'story',
+            'stories',
+            'top news',
+            'top stories',
+        ]);
+        if (normalized && genericNoise.has(normalized)) {
+            return false;
+        }
+        const sourceLike = new Set([
+            this.normalizeComparisonText(this.source),
+            this.normalizeComparisonText(this.sourceDisplayName),
+            ...this.allowedHosts.map((host) => this.normalizeComparisonText(host))
+        ]);
+        if (normalized && sourceLike.has(normalized)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @param {string} label
+     * @returns {{ category: string, categoryName: string }|null}
+     */
+    buildDynamicCategoryInfo(label) {
+        const categoryName = this.normalizeDynamicCategoryLabel(label);
+        if (!this.isMeaningfulDynamicCategoryLabel(categoryName)) {
+            return null;
+        }
+        const category = this.normalizeDynamicCategoryKey(categoryName);
+        if (!category) {
+            return null;
+        }
+        return { category, categoryName };
+    }
+
+    /**
+     * @param {string} link
+     * @returns {string}
+     */
+    extractCategoryLabelFromUrl(link) {
+        const raw = String(link || '').trim();
+        if (!raw) {
+            return '';
+        }
+        let url;
+        try {
+            url = new URL(raw);
+        } catch (_) {
+            return '';
+        }
+        const skipExact = new Set([
+            'amp',
+            'article',
+            'articles',
+            'audio',
+            'latest',
+            'news',
+            'photos',
+            'podcast',
+            'story',
+            'stories',
+            'video',
+            'videos'
+        ]);
+        const segments = String(url.pathname || '')
+            .split('/')
+            .map((segment) => {
+                try {
+                    return decodeURIComponent(segment);
+                } catch (_) {
+                    return segment;
+                }
+            })
+            .map((segment) => segment.replace(/\.[a-z0-9]{1,6}$/i, '').trim())
+            .filter(Boolean);
+
+        for (const segment of segments) {
+            const lower = segment.toLowerCase();
+            if (/^\d{4}$/.test(lower) || /^\d{1,2}$/.test(lower) || /^\d{6,}$/.test(lower)) {
+                continue;
+            }
+            const withoutTrailingId = lower.replace(/-\d{5,}$/g, '');
+            if (/^[a-z0-9]+$/i.test(withoutTrailingId) && /[a-z]/i.test(withoutTrailingId) && /\d/.test(withoutTrailingId) && withoutTrailingId.length >= 8) {
+                continue;
+            }
+            if (skipExact.has(withoutTrailingId)) {
+                continue;
+            }
+            if (
+                withoutTrailingId === 'news' ||
+                withoutTrailingId === 'article' ||
+                withoutTrailingId === 'articles' ||
+                withoutTrailingId === 'story' ||
+                withoutTrailingId === 'stories'
+            ) {
+                continue;
+            }
+            const label = this.humanizeDynamicCategoryLabel(withoutTrailingId);
+            if (!this.isMeaningfulDynamicCategoryLabel(label)) {
+                continue;
+            }
+            return label;
+        }
+        return '';
+    }
+
+    /**
+     * @param {string} title
+     * @returns {string}
+     */
+    extractCategoryLabelFromTitle(title) {
+        const text = this.normalizeDynamicCategoryLabel(title);
+        if (!text) {
+            return '';
+        }
+        const pairs = [
+            [/^(analysis|analyse)\s*:/i, 'Analysis'],
+            [/^(comment|commentary)\s*:/i, 'Commentary'],
+            [/^(editorial|opinion|op-ed)\s*:/i, 'Opinion'],
+            [/^(explainer)\s*:/i, 'Explainer'],
+            [/^(interview)\s*:/i, 'Interview'],
+            [/^(live)\s*:/i, 'Live']
+        ];
+        for (const [pattern, label] of pairs) {
+            if (pattern.test(text)) {
+                return label;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param {Element} node
+     * @param {string} title
+     * @param {string} link
+     * @param {{ fallbackCategory?: string, fallbackLabel?: string }} [options]
+     * @returns {{ category: string, categoryName: string }}
+     */
+    inferDynamicCategoryInfo(node, title, link, options = {}) {
+        if (this.source === 'politico') {
+            return this.inferCategoryPolitico(title, link);
+        }
+        if (this.source === 'global_news_ca') {
+            return this.inferCategoryGlobalNewsCa(title, link);
+        }
+        const labels = [
+            this.extractCategoryLabelFromUrl(link),
+            ...this.extractFeedCategoryLabels(node),
+            this.extractCategoryLabelFromTitle(title)
+        ].filter(Boolean);
+        for (const label of labels) {
+            const info = this.buildDynamicCategoryInfo(label);
+            if (info) {
+                return info;
+            }
+        }
+        const fallbackCategory = String(options.fallbackCategory || 'general').trim() || 'general';
+        const fallbackLabel = String(options.fallbackLabel || this.getCategoryDisplayName(fallbackCategory)).trim()
+            || this.getCategoryDisplayName(fallbackCategory)
+            || 'General';
+        return { category: fallbackCategory, categoryName: fallbackLabel };
+    }
+
+    /**
+     * Politico's Bing-backed feed exposes only article URLs like
+     * `/news/.../senate-midterm-chances-republican-fears-00879916`, which would otherwise
+     * become noisy pseudo-categories. Use broad editorial buckets instead.
+     * @param {string} title
+     * @param {string} link
+     * @returns {{ category: string, categoryName: string }}
+     */
+    inferCategoryPolitico(title, link) {
+        const path = String(link || '').toLowerCase();
+        const normalizedText = `${String(title || '').toLowerCase()} ${path}`
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const haystack = ` ${normalizedText} `;
+        const has = (patterns) => patterns.some((pattern) => haystack.includes(` ${pattern} `));
+
+        if (path.includes('/news/magazine/')) {
+            return { category: 'magazine', categoryName: 'Magazine' };
+        }
+        if (
+            has([
+                'election',
+                'elections',
+                'midterm',
+                'battleground',
+                'campaign',
+                'campaigns',
+                'ballot',
+                'voting',
+                'voter',
+                'voters',
+                'republican',
+                'democrats',
+                'democrat',
+                'senate race',
+                'house race'
+            ])
+        ) {
+            return { category: 'elections', categoryName: 'Elections' };
+        }
+        if (
+            has([
+                'senate',
+                'house',
+                'congress',
+                'lawmaker',
+                'lawmakers',
+                'capitol hill'
+            ])
+        ) {
+            return { category: 'congress', categoryName: 'Congress' };
+        }
+        if (
+            has([
+                'immigration',
+                'migrant',
+                'migrants',
+                'asylum',
+                'border',
+                'deport',
+                'deportation',
+                'ice',
+                'dhs'
+            ])
+        ) {
+            return { category: 'immigration', categoryName: 'Immigration' };
+        }
+        if (
+            has([
+                'labor',
+                'labour',
+                'union',
+                'unions',
+                'worker',
+                'workers',
+                'wage',
+                'department of labor',
+                'labor department'
+            ])
+        ) {
+            return { category: 'labor', categoryName: 'Labor' };
+        }
+        if (
+            has([
+                'energy',
+                'fuel',
+                'gasoline',
+                'oil',
+                'gas',
+                'lng',
+                'climate',
+                'epa',
+                'emissions'
+            ])
+        ) {
+            return { category: 'energy', categoryName: 'Energy' };
+        }
+        if (
+            has([
+                'iran',
+                'ukraine',
+                'russia',
+                'china',
+                'korea',
+                'israel',
+                'gaza',
+                'uae',
+                'europe',
+                'european',
+                'nato',
+                'ceasefire',
+                'missile',
+                'missiles'
+            ])
+        ) {
+            return { category: 'world', categoryName: 'World' };
+        }
+        if (
+            has([
+                'doj',
+                'investigation',
+                'court',
+                'courts',
+                'judge',
+                'judges',
+                'shooting',
+                'police',
+                'violence',
+                'violent',
+                'security',
+                'law enforcement'
+            ])
+        ) {
+            return { category: 'justice_security', categoryName: 'Justice & Security' };
+        }
+        if (
+            path.includes('/business/') ||
+            path.includes('/economy/') ||
+            has([
+                'companies',
+                'company',
+                'business',
+                'market',
+                'markets',
+                'prices',
+                'jobs',
+                'economy',
+                'economic'
+            ])
+        ) {
+            return { category: 'business', categoryName: 'Business' };
+        }
+        return { category: 'politics', categoryName: 'Politics' };
+    }
+
+    /**
+     * Global News (CA) Bing-backed feeds expose only `/news/<id>/<slug>/` URLs, so the generic
+     * dynamic-category extractor would turn article slugs into bogus pseudo-categories.
+     * Use broad editorial buckets from title/slug keywords instead.
+     * @param {string} title
+     * @param {string} link
+     * @returns {{ category: string, categoryName: string }}
+     */
+    inferCategoryGlobalNewsCa(title, link) {
+        const normalizedText = `${String(title || '').toLowerCase()} ${String(link || '').toLowerCase()}`
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const haystack = ` ${normalizedText} `;
+        const has = (patterns) => patterns.some((pattern) => haystack.includes(` ${pattern} `));
+
+        if (
+            has([
+                'nhl',
+                'nfl',
+                'nba',
+                'mlb',
+                'cfl',
+                'draft',
+                'playoff',
+                'playoffs',
+                'series lead',
+                'canadiens',
+                'raptors',
+                'cavaliers',
+                'chargers',
+                'sports',
+                'goal',
+                'wins',
+                'win against'
+            ])
+        ) {
+            return { category: 'sports', categoryName: 'Sports' };
+        }
+        if (
+            has([
+                'parliament',
+                'premier',
+                'prime minister',
+                'governor general',
+                'government',
+                'minister',
+                'election',
+                'campaign',
+                'treaty',
+                'washington',
+                'foreign mission',
+                'policy',
+                'legislation'
+            ])
+        ) {
+            return { category: 'politics', categoryName: 'Politics' };
+        }
+        if (
+            has([
+                'shooting',
+                'police',
+                'suspects',
+                'murder',
+                'homicide',
+                'crime',
+                'crash',
+                'memorial',
+                'mass shooting',
+                'hit and run',
+                'dead after'
+            ])
+        ) {
+            return { category: 'crime_public_safety', categoryName: 'Crime & Public Safety' };
+        }
+        if (
+            has([
+                'hiv',
+                'cancer',
+                'health',
+                'hospital',
+                'doctor',
+                'medical',
+                'treatment',
+                'remission',
+                'vaccine'
+            ])
+        ) {
+            return { category: 'health', categoryName: 'Health' };
+        }
+        if (
+            has([
+                'ai',
+                'internet',
+                'technology',
+                'tech',
+                'cyber',
+                'app',
+                'apps',
+                'software',
+                'digital'
+            ])
+        ) {
+            return { category: 'technology', categoryName: 'Technology' };
+        }
+        if (
+            has([
+                'economy',
+                'economic',
+                'market',
+                'markets',
+                'business',
+                'prices',
+                'jobs',
+                'industry',
+                'housing',
+                'inflation'
+            ])
+        ) {
+            return { category: 'business', categoryName: 'Business' };
+        }
+        if (
+            has([
+                'storm',
+                'blizzard',
+                'wildfire',
+                'weather',
+                'forecast',
+                'flood',
+                'snowfall',
+                'heat wave'
+            ])
+        ) {
+            return { category: 'weather', categoryName: 'Weather' };
+        }
+        if (
+            has([
+                'first nations',
+                'metis',
+                'indigenous',
+                'inuit',
+                'treaty nation'
+            ])
+        ) {
+            return { category: 'indigenous', categoryName: 'Indigenous Affairs' };
+        }
+        if (
+            has([
+                'airport',
+                'air canada',
+                'highway',
+                'traffic',
+                'transit',
+                'road',
+                'drivers stranded'
+            ])
+        ) {
+            return { category: 'transportation', categoryName: 'Transportation' };
+        }
+        return { category: 'general', categoryName: 'General' };
     }
 
     /**
@@ -1123,16 +1751,27 @@ class NewsScraper {
             const pubRaw = pubDateEl ? pubDateEl.textContent.trim() : '';
             const publishedMs = pubRaw ? Date.parse(pubRaw) : Date.now();
 
-            const category = this.usesRegistryFeedStrategy()
-                ? this.source
+            const categoryInfo = this.usesRegistryFeedStrategy()
+                ? this.inferDynamicCategoryInfo(entry, title, href)
                 : this.source === 'bild'
                   ? this.inferCategoryBild(entry, title, href)
                   : this.source === 't3n'
-                    ? this.inferCategoryT3n(title, href)
+                    ? {
+                        category: this.inferCategoryT3n(title, href),
+                        categoryName: ''
+                    }
                     : this.source === 'it_administrator'
-                      ? this.inferCategoryItAdministrator(entry, title, href)
-                      : this.inferCategoryGolem(title, href);
-            const categoryName = this.getCategoryDisplayName(category);
+                      ? {
+                          category: this.inferCategoryItAdministrator(entry, title, href),
+                          categoryName: ''
+                      }
+                      : {
+                          category: this.inferCategoryGolem(title, href),
+                          categoryName: ''
+                      };
+            const category = String(categoryInfo && categoryInfo.category || '').trim() || 'general';
+            const categoryName = String(categoryInfo && categoryInfo.categoryName || '').trim()
+                || this.getCategoryDisplayName(category);
 
             articles.push({
                 id: this.generateId(cleanUrl),
@@ -1235,21 +1874,23 @@ class NewsScraper {
             const iso = publishedEl ? publishedEl.textContent.trim() : '';
             const publishedMs = iso ? Date.parse(iso) : Date.now();
 
-            let category;
+            let categoryInfo;
             if (forcedCategory) {
-                category = forcedCategory;
+                categoryInfo = { category: forcedCategory, categoryName: '' };
             } else if (this.usesRegistryFeedStrategy()) {
-                category = this.source;
+                categoryInfo = this.inferDynamicCategoryInfo(entry, title, href);
             } else if (this.source === 'computerbase') {
-                category = this.inferCategoryComputerbase(title, href);
+                categoryInfo = { category: this.inferCategoryComputerbase(title, href), categoryName: '' };
             } else if (this.source === 'verge') {
-                category = this.inferCategoryVerge(entry, title, href);
+                categoryInfo = { category: this.inferCategoryVerge(entry, title, href), categoryName: '' };
             } else if (this.source === 'telepolis') {
-                category = this.inferCategoryTelepolis(title, href);
+                categoryInfo = { category: this.inferCategoryTelepolis(title, href), categoryName: '' };
             } else {
-                category = this.inferCategory(title, href);
+                categoryInfo = { category: this.inferCategory(title, href), categoryName: '' };
             }
-            const categoryName = this.getCategoryDisplayName(category);
+            const category = String(categoryInfo && categoryInfo.category || '').trim() || 'general';
+            const categoryName = String(categoryInfo && categoryInfo.categoryName || '').trim()
+                || this.getCategoryDisplayName(category);
 
             articles.push({
                 id: this.generateId(cleanUrl),
@@ -1381,21 +2022,79 @@ class NewsScraper {
         if (p.includes('/wissen/') || p.includes('/energie-klima/') || p.includes('/natur-und-wissenschaft/')) {
             return 'wissenschaft';
         }
+        if (
+            t.includes('trump') ||
+            t.includes('putin') ||
+            t.includes('nato') ||
+            t.includes('demokratie') ||
+            t.includes('autoritarismus') ||
+            t.includes('imperium') ||
+            t.includes('imperialismus') ||
+            t.includes('krieg') ||
+            t.includes('gaza') ||
+            t.includes('russland') ||
+            t.includes('ukraine') ||
+            t.includes('china') ||
+            t.includes('marine') ||
+            t.includes('washington') ||
+            t.includes('medien') ||
+            t.includes('politik')
+        ) {
+            return 'netzpolitik';
+        }
+        if (
+            t.includes('ameise') ||
+            t.includes('allergie') ||
+            t.includes('satellit') ||
+            t.includes('satelliten') ||
+            t.includes('natur') ||
+            t.includes('geschichte') ||
+            t.includes('säugetier') ||
+            t.includes('saugetier') ||
+            t.includes('schädel') ||
+            t.includes('schadel') ||
+            t.includes('forschung') ||
+            t.includes('wissenschaft') ||
+            t.includes('gesundheit') ||
+            t.includes('klima') ||
+            t.includes('energie')
+        ) {
+            return 'wissenschaft';
+        }
+        if (
+            t.includes('depot') ||
+            t.includes('altersvorsorge') ||
+            t.includes('förderung') ||
+            t.includes('forderung') ||
+            t.includes('gebühren') ||
+            t.includes('gebuhren') ||
+            t.includes('wirtschaft') ||
+            t.includes('lkw') ||
+            t.includes('verkehr')
+        ) {
+            return 'wirtschaft';
+        }
         if (p.includes('/politik/')) {
             return 'netzpolitik';
         }
         if (p.includes('/feuilleton/') || p.includes('/kultur/')) {
             return 'entertainment';
         }
-        return 'telepolis';
+        return 'it';
     }
 
     /**
-     * BILD is integrated as a single source category rather than mapped onto the tech-specific rubric set.
-     * @returns {string}
+     * Derive BILD categories from feed metadata or section slugs instead of collapsing the whole source into one bucket.
+     * @param {Element} item
+     * @param {string} title
+     * @param {string} link
+     * @returns {{ category: string, categoryName: string }}
      */
-    inferCategoryBild() {
-        return 'bild';
+    inferCategoryBild(item, title, link) {
+        return this.inferDynamicCategoryInfo(item, title, link, {
+            fallbackCategory: 'general',
+            fallbackLabel: 'General'
+        });
     }
 
     inferCategoryComputerbase(title, link) {

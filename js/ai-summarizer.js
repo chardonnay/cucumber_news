@@ -202,16 +202,48 @@ class AISummarizer {
      * @returns {'off'|'low'|'medium'|'high'|'on'}
      */
     static normalizeLmReasoningParam(raw) {
+        const normalized = AISummarizer.normalizeLmReasoningOption(raw);
+        return /** @type {'off'|'low'|'medium'|'high'|'on'} */ (normalized || 'off');
+    }
+
+    /**
+     * Normalizes a single LM Studio reasoning enum value.
+     * Returns empty string for unsupported values instead of falling back.
+     * @param {unknown} raw
+     * @returns {''|'off'|'low'|'medium'|'high'|'on'}
+     */
+    static normalizeLmReasoningOption(raw) {
         const s = String(raw ?? '')
             .trim()
             .toLowerCase();
         if (s === 'none') {
-            return 'off';
+            return /** @type {'off'} */ ('off');
         }
         const allowed = ['off', 'low', 'medium', 'high', 'on'];
-        return /** @type {'off'|'low'|'medium'|'high'|'on'} */ (
-            allowed.includes(s) ? s : 'off'
+        return /** @type {''|'off'|'low'|'medium'|'high'|'on'} */ (
+            allowed.includes(s) ? s : ''
         );
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {Array<'off'|'low'|'medium'|'high'|'on'>}
+     */
+    static normalizeLmReasoningOptions(raw) {
+        if (!Array.isArray(raw)) {
+            return [];
+        }
+        const out = [];
+        const seen = new Set();
+        for (const entry of raw) {
+            const normalized = AISummarizer.normalizeLmReasoningOption(entry);
+            if (!normalized || seen.has(normalized)) {
+                continue;
+            }
+            seen.add(normalized);
+            out.push(normalized);
+        }
+        return out;
     }
 
     /**
@@ -973,7 +1005,7 @@ class AISummarizer {
 
     /**
      * @param {object} raw LM Studio native, OpenAI-style `data[]`, or hybrid.
-     * @returns {{ id: string, raw: object, displayName: string, type: string, loaded: boolean, paramsString: string, quantLabel: string, architecture: string, maxContextLength: number, publisher: string } | null}
+     * @returns {{ id: string, raw: object, displayName: string, type: string, loaded: boolean, paramsString: string, quantLabel: string, architecture: string, maxContextLength: number, publisher: string, reasoningAllowedOptions: Array<'off'|'low'|'medium'|'high'|'on'>, reasoningDefault: ''|'off'|'low'|'medium'|'high'|'on', aliases: string[] } | null}
      */
     static normalizeModelListEntry(raw) {
         if (!raw || typeof raw !== 'object') {
@@ -1001,6 +1033,49 @@ class AISummarizer {
                 ? raw.max_context_length
                 : 0;
         const publisher = raw.publisher != null ? String(raw.publisher).trim() : '';
+        const reasoningAllowedOptions = AISummarizer.normalizeLmReasoningOptions(
+            raw.capabilities &&
+                typeof raw.capabilities === 'object' &&
+                raw.capabilities.reasoning &&
+                typeof raw.capabilities.reasoning === 'object'
+                ? raw.capabilities.reasoning.allowed_options
+                : []
+        );
+        let reasoningDefault = AISummarizer.normalizeLmReasoningOption(
+            raw.capabilities &&
+                typeof raw.capabilities === 'object' &&
+                raw.capabilities.reasoning &&
+                typeof raw.capabilities.reasoning === 'object'
+                ? raw.capabilities.reasoning.default
+                : ''
+        );
+        if (reasoningDefault && !reasoningAllowedOptions.includes(reasoningDefault)) {
+            reasoningDefault = '';
+        }
+        const aliases = [];
+        const pushAlias = (value) => {
+            const normalized = String(value ?? '').trim();
+            if (!normalized || aliases.includes(normalized)) {
+                return;
+            }
+            aliases.push(normalized);
+        };
+        pushAlias(raw.id);
+        pushAlias(raw.model);
+        pushAlias(raw.key);
+        pushAlias(raw.selected_variant);
+        if (Array.isArray(raw.variants)) {
+            for (const variant of raw.variants) {
+                pushAlias(variant);
+            }
+        }
+        if (Array.isArray(raw.loaded_instances)) {
+            for (const instance of raw.loaded_instances) {
+                if (instance && typeof instance === 'object') {
+                    pushAlias(instance.id);
+                }
+            }
+        }
         return {
             id,
             raw,
@@ -1011,7 +1086,10 @@ class AISummarizer {
             quantLabel,
             architecture,
             maxContextLength,
-            publisher
+            publisher,
+            reasoningAllowedOptions,
+            reasoningDefault,
+            aliases
         };
     }
 
@@ -1862,6 +1940,22 @@ Output rules:
     }
 
     /**
+     * @param {unknown} data
+     * @param {string} [fallbackModel]
+     * @returns {string}
+     */
+    static extractModelNameFromChatResponse(data, fallbackModel = '') {
+        if (data && typeof data === 'object') {
+            const row = /** @type {Record<string, unknown>} */ (data);
+            const model = String(row.model ?? row.model_name ?? '').trim();
+            if (model) {
+                return model;
+            }
+        }
+        return String(fallbackModel || '').trim();
+    }
+
+    /**
      * If the model still embeds chain-of-thought inside `message`, try to keep only the final German summary block.
      */
     static sanitizePublicSummary(text) {
@@ -2009,12 +2103,13 @@ Output rules:
         };
 
         const t0 = performance.now();
-        const recordArticleStats = (dataPayload) => {
+        const recordArticleStats = (dataPayload, fallbackModelName = '') => {
             try {
                 if (typeof KiStats !== 'undefined' && KiStats.recordArticleSummary) {
                     KiStats.recordArticleSummary({
                         durationMs: Math.round(performance.now() - t0),
-                        usage: AISummarizer.extractUsageFromChatResponse(dataPayload)
+                        usage: AISummarizer.extractUsageFromChatResponse(dataPayload),
+                        model: AISummarizer.extractModelNameFromChatResponse(dataPayload, fallbackModelName)
                     });
                 }
             } catch (_) {
@@ -2052,7 +2147,7 @@ Output rules:
 
             let rawText = extractRaw(data);
             if (rawText) {
-                recordArticleStats(data);
+                recordArticleStats(data, modelName);
                 return this._packageSummaryResult(rawText);
             }
 
@@ -2066,7 +2161,7 @@ Output rules:
                 }
                 rawText = extractRaw(data);
                 if (rawText) {
-                    recordArticleStats(data);
+                    recordArticleStats(data, modelName);
                     return this._packageSummaryResult(rawText);
                 }
                 if (AISummarizer.lmRestHasOnlyReasoningOutput(data)) {
@@ -2181,7 +2276,8 @@ Output rules:
                     if (typeof KiStats !== 'undefined' && KiStats.recordArticleSummary) {
                         KiStats.recordArticleSummary({
                             durationMs: Math.round(performance.now() - t0OpenAi),
-                            usage: AISummarizer.extractUsageFromChatResponse(data)
+                            usage: AISummarizer.extractUsageFromChatResponse(data),
+                            model: AISummarizer.extractModelNameFromChatResponse(data, requestBody.model)
                         });
                     }
                 } catch (_) {

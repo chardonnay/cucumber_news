@@ -4,24 +4,26 @@ Cucumber NewsScraper is a responsive, client-side news dashboard that aggregates
 
 === Supported news sources
 
-Sources are defined in `js/news-sources-registry.js` and loaded by `js/news-scraper.js` (switch in the header):
+Sources are defined in `js/news-sources-registry.js` and loaded by `js/news-scraper.js` (switch in the header).
+The current catalog combines a small set of dedicated feed integrations with a much broader registry-backed publisher list:
 
-* *heise.de* — Atom + rubric/magazine feeds (CORS-friendly Atom URLs; optional `dev_server` proxy for some URLs)
-* *Telepolis* — Atom via `GET /api/telepolis-feed` when using `scripts/dev_server.py`
-* *golem.de* — RSS via `GET /api/golem-feed`
-* *ComputerBase* — Atom (`/rss/news.xml`), often direct fetch (permissive CORS)
-* *t3n* — RSS via `GET /api/t3n-feed`
-* *IT-Administrator* — RSS via `GET /api/it-administrator-feed`
-* *The Verge* — Atom via `GET /api/verge-feed` (optional `?url=` for section feeds)
+* Dedicated feed integrations: *heise.de*, *BILD*, *Telepolis*, *golem.de*, *ComputerBase*, *t3n*, *IT-Administrator*, and *The Verge*.
+* Registry-backed international publishers: for example *Reuters*, *Associated Press*, *BBC News*, *CNN*, *The New York Times*, *The Guardian*, *Bloomberg*, *Financial Times*, *Fox News*, *Politico*, *Der Spiegel*, *WELT*, *Le Monde*, *CBC News*, *Nikkei*, *Al Jazeera*, *Haaretz*, *Arab News*, *ESPN*, *TechCrunch*, *WIRED*, *CNBC*, *Vogue*, *Allrecipes*, *The Atlantic*, *Slate*, and many more.
+* Many of those international sources are served through the shared `GET /api/source-feed` proxy using registry metadata such as `feedStrategy`, `hosts`, and `searchSites`.
 
 === Highlights
 
 * Automatic feed refresh on a configurable interval (minutes)
-* Category filters (IT & Tech, Security, AI, Science, Mobiles, Entertainment, Economy, Net politics, Journal, plus Heise-specific magazine keys)
+* Header source selector sorted alphabetically by visible label, with previous/next buttons and favorite-source navigation
+* Dynamic category filters per source; all currently visible categories are enabled by default until the user disables them for that source
+* Settings-driven source enablement for the header dropdown, plus separately persisted source favorites
+* Optional background refresh for all enabled sources, including AI summaries, alternative links, and Reddit prewarming
+* Manual *selected sources generation* run with its own status modal, cancel path, remaining-source count, current source label, progress, and ETA
+* Model-aware LM Studio reasoning controls: only supported levels are shown for the selected model, unsupported models fall back conservatively
 * Dark/light appearance and multiple accent color themes
 * IndexedDB persistence for articles and AI summaries (configurable TTL)
-* Comment counts / forum links where APIs exist (Heise, Golem); stubs for other sources
+* Comment counts / forum links where APIs exist (Heise, Golem); lightweight metadata / stub routes for several other sources
 * Sorting by recency, date range, comment counts, or ratings (where data is available)
 * “New article” badges and optional auto-summary for new items matching the current filter
-* Batch actions: summarize all filtered articles (with concurrency limits)
+* Batch actions: summarize all filtered articles (with concurrency limits), or fully prewarm all enabled sources
 * Internationalized UI strings (`locales/de.json`, `locales/en.json`)

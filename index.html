@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="de" data-color-theme="slate">
+<html lang="de" data-color-theme="heise">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* https://www.heise.de https://rss.heise.de https://www.bild.de https://www.telepolis.de https://www.computerbase.de https://www.it-administrator.de https://cdn.jsdelivr.net https://api.mymemory.translated.net wss://*; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; form-action 'self'">
-    <title>Heise News Dashboard</title>
+    <title>Cucumber NewsScraper</title>
     <!-- Fonts: Google Fonts via CSP-erlaubte URL -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,45 +12,97 @@
     <style>
         /* CSS Variables — CRM-style light/dark + accent themes (data-color-theme on <html>) */
         :root {
-            --primary-color: #ff6b00;
-            --primary-hover: #ff8533;
+            --primary-color: #ff6b1a;
+            --primary-hover: #ff8746;
             --header-surface: #ffffff;
-            --header-text: #1a1a1a;
-            --header-border: #e5e5e5;
-            --text-primary: #1a1a1a;
-            --text-secondary: #4b5563;
-            --bg-primary: #e8eaed;
-            --bg-secondary: #dee1e6;
+            --header-text: #171411;
+            --header-border: #eadfd3;
+            --text-primary: #171411;
+            --text-secondary: #6f655c;
+            --bg-primary: #f7f1ea;
+            --bg-secondary: #f1e8de;
             --bg-card: #ffffff;
-            --border-color: #c0c0c0;
-            --shadow: 0 4px 24px rgba(26, 26, 26, 0.06);
-            --shadow-card-hover: 0 12px 40px rgba(26, 26, 26, 0.1);
-            --radius-sm: 10px;
-            --radius-md: 14px;
-            --radius-lg: 16px;
-            --transition-speed: 0.3s;
+            --border-color: #eadfd3;
+            --favorite-gold: #f5b301;
+            --favorite-gold-strong: #d97706;
+            --shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+            --shadow-card-hover: 0 28px 72px rgba(15, 23, 42, 0.1);
+            --radius-sm: 14px;
+            --radius-md: 20px;
+            --radius-lg: 28px;
+            --transition-speed: 0.25s;
+            --header-art-opacity: 0.52;
+            --header-art-brightness: 1.42;
+            --header-art-saturate: 1.12;
+            --header-art-contrast: 0.96;
+            --header-overlay-spot-1: 0.18;
+            --header-overlay-spot-2: 0.09;
+            --header-overlay-spot-3: 0.03;
+            --header-overlay-linear-1: 42%;
+            --header-overlay-linear-2: 18%;
+            --header-overlay-linear-3: 10%;
+            --header-overlay-linear-4: 44%;
+            --header-overlay-linear-5: 68%;
+            --header-shell-border-mix: 78%;
+            --header-overlay-opacity: 1;
+            --header-panel-fill: 88%;
+            --header-panel-border-fill: 77%;
+            --header-control-fill: 100%;
+            --header-control-border-fill: 100%;
+            --header-select-panel-bg: #2f5a4a;
+            --header-select-panel-border: #41705e;
+            --header-select-control-bg: #24473a;
+            --header-select-control-border: #4d7d69;
+            --header-select-text: #f5fbf7;
+            --header-select-muted: #d9ebdf;
         }
 
         [data-theme="dark"] {
-            --primary-color: #ff8c38;
-            --primary-hover: #ffa64d;
-            --header-surface: #252525;
-            --header-text: #f5f5f5;
-            --header-border: #404040;
-            --text-primary: #f5f5f5;
-            --text-secondary: #a8a8a8;
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #242424;
-            --bg-card: #2d2d2d;
-            --border-color: #404040;
-            --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-            --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.45);
+            --primary-color: #ff9458;
+            --primary-hover: #ffab78;
+            --header-surface: #1f1a16;
+            --header-text: #fcfaf8;
+            --header-border: #3b342e;
+            --text-primary: #fcfaf8;
+            --text-secondary: #b9aea3;
+            --bg-primary: #151210;
+            --bg-secondary: #1d1916;
+            --bg-card: #221d1a;
+            --border-color: #3b342e;
+            --favorite-gold: #fbbf24;
+            --favorite-gold-strong: #f59e0b;
+            --shadow: 0 18px 52px rgba(0, 0, 0, 0.34);
+            --shadow-card-hover: 0 28px 76px rgba(0, 0, 0, 0.44);
+            --header-art-opacity: 0.56;
+            --header-art-brightness: 1.28;
+            --header-art-saturate: 1.10;
+            --header-art-contrast: 0.98;
+            --header-overlay-spot-1: 0;
+            --header-overlay-spot-2: 0;
+            --header-overlay-spot-3: 0;
+            --header-overlay-linear-1: 2%;
+            --header-overlay-linear-2: 3%;
+            --header-overlay-linear-3: 8%;
+            --header-overlay-linear-4: 12%;
+            --header-overlay-linear-5: 18%;
+            --header-shell-border-mix: 78%;
+            --header-overlay-opacity: 1;
+            --header-panel-fill: 88%;
+            --header-panel-border-fill: 77%;
+            --header-control-fill: 100%;
+            --header-control-border-fill: 100%;
+            --header-select-panel-bg: #26483a;
+            --header-select-panel-border: #3b6958;
+            --header-select-control-bg: #1c362c;
+            --header-select-control-border: #4b7867;
+            --header-select-text: #f1faf4;
+            --header-select-muted: #cfe4d8;
         }
 
         /* Accent presets (--primary-color); header stays neutral CRM bar */
         html[data-color-theme="heise"] {
-            --primary-color: #ff6b00;
-            --primary-hover: #ff8533;
+            --primary-color: #ff6b1a;
+            --primary-hover: #ff8746;
         }
         html[data-color-theme="ocean"] {
             --primary-color: #0284c7;
@@ -82,8 +134,8 @@
         }
 
         [data-theme="dark"][data-color-theme="heise"] {
-            --primary-color: #ff8c38;
-            --primary-hover: #ffa64d;
+            --primary-color: #ff9458;
+            --primary-hover: #ffab78;
         }
         [data-theme="dark"][data-color-theme="ocean"] {
             --primary-color: #38bdf8;
@@ -122,13 +174,19 @@
 
         body {
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background-color: var(--bg-primary);
+            background:
+                linear-gradient(
+                    180deg,
+                    color-mix(in srgb, var(--bg-primary) 72%, var(--bg-card)) 0%,
+                    var(--bg-primary) 28%,
+                    var(--bg-primary) 100%
+                );
             color: var(--text-primary);
             line-height: 1.6;
             transition: background-color var(--transition-speed), color var(--transition-speed);
             position: relative;
             min-height: 100vh;
-            padding-bottom: 3.25rem;
+            padding-bottom: 6rem;
         }
 
         /* Fallback: wenn Google Fonts blockiert wird, nutzt der Browser den system font stack */
@@ -140,9 +198,9 @@
             pointer-events: none;
             z-index: 0;
             background:
-                radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--primary-color) 18%, transparent) 0%, transparent 55%),
-                radial-gradient(ellipse 60% 40% at 100% 30%, color-mix(in srgb, var(--primary-color) 8%, transparent) 0%, transparent 50%),
-                radial-gradient(ellipse 50% 35% at 0% 70%, color-mix(in srgb, var(--primary-color) 6%, transparent) 0%, transparent 45%);
+                radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--primary-color) 16%, transparent) 0%, transparent 55%),
+                radial-gradient(ellipse 60% 40% at 100% 18%, color-mix(in srgb, var(--primary-color) 9%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse 45% 28% at 0% 72%, color-mix(in srgb, var(--primary-color) 5%, transparent) 0%, transparent 45%);
         }
 
         [data-theme="dark"] body::before {
@@ -159,42 +217,96 @@
 
         /* Header — light CRM nav bar */
         .header {
-            background: var(--header-surface);
+            width: min(1280px, calc(100% - 2rem));
+            margin: 1rem auto 0;
+            background: transparent;
             color: var(--header-text);
-            padding: 1.25rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
+            padding: 1.1rem 1.25rem;
+            display: grid;
+            grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+            align-items: start;
+            gap: 1rem 1.5rem;
             position: sticky;
-            top: 0;
+            top: 1rem;
             z-index: 40;
-            border-bottom: 1px solid var(--header-border);
+            border: 1px solid color-mix(in srgb, var(--header-border) var(--header-shell-border-mix), transparent);
+            border-radius: 30px;
             box-shadow:
-                0 1px 0 rgba(26, 26, 26, 0.04),
-                0 10px 28px rgba(26, 26, 26, 0.08);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+                0 18px 48px rgba(15, 23, 42, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.72);
+            overflow: hidden;
+            isolation: isolate;
+        }
+
+        .header::before,
+        .header::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .header::before {
+            background: url('images/cucumber-news-banner-v2.png') center center / cover no-repeat;
+            opacity: var(--header-art-opacity);
+            filter:
+                brightness(var(--header-art-brightness))
+                saturate(var(--header-art-saturate))
+                contrast(var(--header-art-contrast));
+            transform: scale(1.02);
+            transform-origin: center;
+            z-index: 0;
+        }
+
+        .header::after {
+            background:
+                linear-gradient(
+                    90deg,
+                    transparent 0%,
+                    transparent 44%,
+                    color-mix(in srgb, var(--header-surface) 34%, transparent) 58%,
+                    color-mix(in srgb, var(--header-surface) 72%, transparent) 80%,
+                    color-mix(in srgb, var(--header-surface) 96%, transparent) 100%
+                );
+            opacity: var(--header-overlay-opacity);
+            z-index: 0;
+        }
+
+        .header > * {
+            position: relative;
+            z-index: 1;
         }
 
         [data-theme="dark"] .header {
             box-shadow:
-                0 1px 0 rgba(0, 0, 0, 0.2),
-                0 12px 32px rgba(0, 0, 0, 0.38);
+                0 1px 0 rgba(0, 0, 0, 0.34),
+                0 18px 48px rgba(0, 0, 0, 0.52);
+        }
+
+        [data-theme="dark"] .header-source-stack,
+        [data-theme="dark"] .header-color-theme {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .header-title {
-            flex: 1;
             min-width: 0;
             display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 0.35rem 0.75rem;
-            font-size: 1.8rem;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.42rem;
+            font-size: 1rem;
             font-weight: 700;
             line-height: 1.2;
             margin: 0;
             color: var(--header-text);
+        }
+
+        .header-brand-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            min-width: 0;
+            width: 100%;
         }
 
         .header-brand-toggle {
@@ -209,15 +321,15 @@
             border: none;
             color: inherit;
             cursor: pointer;
-            padding: 0.35rem 0.55rem;
-            margin: -0.35rem -0.55rem;
-            border-radius: 8px;
+            padding: 0;
+            margin: 0;
+            border-radius: 14px;
             font: inherit;
             text-align: left;
         }
 
         .header-brand-toggle:hover {
-            background: color-mix(in srgb, var(--primary-color) 8%, var(--header-surface));
+            background: transparent;
         }
 
         .header-brand-toggle:focus-visible {
@@ -227,14 +339,16 @@
 
         .header-brand-text {
             display: inline-block;
+            font-size: clamp(1.45rem, 2vw, 2rem);
             font-weight: 700;
+            letter-spacing: -0.05em;
             white-space: nowrap;
             line-height: 1.1;
             overflow: hidden;
         }
 
         .header-brand-logo-img {
-            height: 2.35rem;
+            height: 2.65rem;
             width: auto;
             max-width: min(100%, 12rem);
             display: block;
@@ -243,17 +357,31 @@
         }
 
         .header-subtitle {
-            font-size: clamp(0.95rem, 2vw, 1.35rem);
-            font-weight: 600;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
             color: var(--text-secondary);
-            white-space: nowrap;
+            white-space: normal;
             flex-shrink: 0;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         /* Header Controls */
         .header-controls {
             display: flex;
-            gap: 1rem;
+            gap: 0.75rem;
             align-items: center;
             flex-wrap: wrap;
             justify-content: flex-end;
@@ -264,54 +392,162 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            gap: 0.45rem;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            padding: 0.5rem 0.65rem;
-            border-radius: var(--radius-sm);
+            gap: 0.5rem;
+            background: color-mix(in srgb, var(--header-select-panel-bg) var(--header-panel-fill), transparent);
+            border: 1px solid color-mix(in srgb, var(--header-select-panel-border) var(--header-panel-border-fill), transparent);
+            padding: 0.72rem 0.82rem;
+            border-radius: 22px;
             font-size: 0.85rem;
             min-width: 0;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
         }
 
         .header-source-stack .header-news-source,
         .header-source-stack .header-interval {
             display: flex;
             align-items: center;
-            gap: 0.35rem;
+            gap: 0.4rem;
             flex-wrap: wrap;
             background: transparent;
             padding: 0;
             border-radius: 0;
         }
 
+        .header-news-source-control {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+        }
+
+        .header-source-nav {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex: 0 0 auto;
+        }
+
         .header-news-source label,
         .header-interval label {
             flex: 0 0 auto;
-            min-width: 6.5rem;
+            min-width: 5.25rem;
             white-space: nowrap;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--header-select-muted);
         }
 
         .header-news-source select {
             flex: 1 1 auto;
             min-width: 9rem;
             max-width: 16rem;
-            background: var(--header-surface);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 0.35rem 0.5rem;
+            min-height: 2.7rem;
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+            color: var(--header-select-text);
+            border: 1px solid color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            border-radius: 16px;
+            padding: 0.35rem 0.75rem;
             font-size: 0.85rem;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        .header-source-nav-btn,
+        .header-source-favorite-toggle {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.7rem;
+            height: 2.7rem;
+            border-radius: 16px;
+            border: 1px solid color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+            color: var(--header-select-muted);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+            cursor: pointer;
+            transition:
+                transform 0.2s ease,
+                box-shadow 0.2s ease,
+                border-color 0.2s ease,
+                color 0.2s ease,
+                background-color 0.2s ease;
+        }
+
+        .header-source-nav-btn svg,
+        .header-source-favorite-toggle svg {
+            width: 1.1rem;
+            height: 1.1rem;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .header-source-favorite-toggle svg {
+            fill: currentColor;
+        }
+
+        .header-source-nav-btn:hover,
+        .header-source-favorite-toggle:hover {
+            color: var(--primary-color);
+            border-color: color-mix(in srgb, #ffffff 22%, var(--header-select-control-border));
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .header-source-nav-btn:focus-visible,
+        .header-source-favorite-toggle:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .header-source-nav-btn:disabled,
+        .header-source-favorite-toggle:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+        }
+
+        .header-source-nav-btn:disabled:hover,
+        .header-source-favorite-toggle:disabled:hover {
+            color: var(--header-select-muted);
+            border-color: color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+        }
+
+        .header-source-nav-btn--favorites {
+            color: color-mix(in srgb, var(--favorite-gold) 72%, var(--header-select-text));
+        }
+
+        .header-source-favorite-toggle[aria-pressed="true"] {
+            background: color-mix(
+                in srgb,
+                color-mix(in srgb, var(--favorite-gold) 18%, var(--header-select-control-bg)) var(--header-control-fill),
+                transparent
+            );
+            color: var(--favorite-gold-strong);
+            border-color: color-mix(in srgb, var(--favorite-gold) 56%, var(--header-select-control-border));
+            box-shadow:
+                0 10px 26px color-mix(in srgb, var(--favorite-gold) 24%, transparent),
+                0 0 0 1px color-mix(in srgb, var(--favorite-gold) 20%, transparent) inset;
         }
 
         .header-interval select,
         .header-interval input[type="number"] {
-            background: var(--header-surface);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 0.35rem 0.5rem;
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+            color: var(--header-select-text);
+            border: 1px solid color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            border-radius: 16px;
+            padding: 0.35rem 0.7rem;
             font-size: 0.85rem;
+            min-height: 2.7rem;
             max-width: 5rem;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
         }
 
         .header-interval select {
@@ -323,66 +559,74 @@
         .header-color-theme {
             display: flex;
             align-items: center;
-            gap: 0.35rem;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            padding: 0.4rem 0.6rem;
-            border-radius: var(--radius-sm);
+            gap: 0.45rem;
+            background: color-mix(in srgb, var(--header-select-panel-bg) var(--header-panel-fill), transparent);
+            border: 1px solid color-mix(in srgb, var(--header-select-panel-border) var(--header-panel-border-fill), transparent);
+            padding: 0.72rem 0.82rem;
+            border-radius: 22px;
             font-size: 0.85rem;
             min-width: 0;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
         }
 
         .header-color-theme label {
             flex: 0 0 auto;
             white-space: nowrap;
-            font-weight: 500;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--header-select-muted);
         }
 
         .header-color-theme select {
             flex: 1 1 auto;
             min-width: 9rem;
             max-width: 14rem;
-            background: var(--header-surface);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 0.35rem 0.5rem;
+            min-height: 2.7rem;
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+            color: var(--header-select-text);
+            border: 1px solid color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            border-radius: 16px;
+            padding: 0.35rem 0.75rem;
             font-size: 0.85rem;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
         }
 
         .theme-toggle,
-        .summarize-all-btn,
         .summarize-refresh-btn,
         .settings-btn {
-            background: var(--header-surface);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 0.5rem 1rem;
-            border-radius: var(--radius-sm);
+            background: color-mix(in srgb, var(--header-select-control-bg) var(--header-control-fill), transparent);
+            border: 1px solid color-mix(in srgb, var(--header-select-control-border) var(--header-control-border-fill), transparent);
+            color: var(--header-select-text);
+            min-height: 2.875rem;
+            padding: 0.65rem 1rem;
+            border-radius: 999px;
             cursor: pointer;
-            font-size: 0.95rem;
+            font-size: 0.88rem;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            transition: border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
-            box-shadow: 0 1px 2px rgba(26, 26, 26, 0.04);
+            transition: border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
         }
 
         .refresh-btn {
             background: var(--primary-color);
             border: 1px solid transparent;
             color: #ffffff;
-            padding: 0.5rem 1.15rem;
-            border-radius: var(--radius-sm);
+            min-height: 2.875rem;
+            padding: 0.65rem 1.15rem;
+            border-radius: 999px;
             cursor: pointer;
-            font-size: 0.95rem;
+            font-size: 0.88rem;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.5rem;
             transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
-            box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-color) 35%, transparent);
+            box-shadow: 0 18px 36px color-mix(in srgb, var(--primary-color) 28%, transparent);
         }
 
         .refresh-btn:hover {
@@ -396,11 +640,12 @@
         }
 
         .theme-toggle:hover,
-        .summarize-all-btn:hover:not(:disabled),
         .summarize-refresh-btn:hover:not(:disabled),
         .settings-btn:hover {
-            border-color: color-mix(in srgb, var(--primary-color) 45%, var(--border-color));
-            background: color-mix(in srgb, var(--primary-color) 6%, var(--header-surface));
+            color: #ffffff;
+            border-color: color-mix(in srgb, #ffffff 22%, var(--header-select-control-border));
+            background: color-mix(in srgb, var(--header-select-control-bg) 84%, #ffffff);
+            transform: translateY(-1px);
         }
 
         .theme-toggle:focus-visible,
@@ -441,13 +686,36 @@
             align-items: center;
         }
 
+        #generateSelectedSourcesBtn {
+            background: #15100d;
+            border-color: #15100d;
+            color: #ffffff;
+            box-shadow: 0 16px 34px rgba(21, 16, 13, 0.14);
+        }
+
+        #generateSelectedSourcesBtn:hover:not(:disabled) {
+            background: #231a15;
+            border-color: #231a15;
+        }
+
+        #summarizeAllBtn {
+            background: var(--primary-color);
+            border-color: transparent;
+            color: #ffffff;
+            box-shadow: 0 18px 36px color-mix(in srgb, var(--primary-color) 28%, transparent);
+        }
+
+        #summarizeAllBtn:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+
         /* Main Container — wide enough so the news grid can grow to 5+ columns when space allows */
         .container {
             max-width: min(100%, 120rem);
             margin: 0 auto;
-            padding: clamp(1.5rem, 4vw, 5rem) 2rem;
+            padding: 1.35rem clamp(1rem, 2vw, 1.5rem) 6rem;
             display: grid;
-            gap: 1.75rem;
+            gap: 1.35rem;
         }
 
         @media (max-width: 768px) {
@@ -456,20 +724,52 @@
             }
         }
 
+        .app-ui-chrome {
+            display: grid;
+            gap: 1rem;
+        }
+
+        @media (min-width: 1100px) {
+            .app-ui-chrome {
+                grid-template-columns: minmax(0, 1.25fr) minmax(21rem, 0.75fr);
+                align-items: start;
+            }
+
+            .sort-section {
+                margin-top: 0;
+            }
+        }
+
+        @media (max-width: 1100px) {
+            .header {
+                grid-template-columns: 1fr;
+            }
+
+            .header-controls {
+                justify-content: flex-start;
+            }
+        }
+
         /* Filter Section */
         .filter-section {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 1.5rem;
+            padding: 1.45rem 1.5rem;
             box-shadow: var(--shadow);
-            transition: box-shadow 0.25s ease, transform 0.25s ease;
+            transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+            overflow: hidden;
+        }
+
+        .filter-section:hover {
+            border-color: color-mix(in srgb, var(--primary-color) 18%, var(--border-color));
         }
 
         .filter-section h2 {
-            font-size: 1.2rem;
+            font-size: 1.05rem;
             margin-bottom: 1rem;
-            color: var(--primary-color);
+            color: var(--text-primary);
+            letter-spacing: -0.03em;
         }
 
         .filter-section__heading-row {
@@ -492,20 +792,21 @@
         }
 
         .category-bulk-btn {
-            padding: 0.4rem 0.9rem;
-            font-size: 0.85rem;
-            border-radius: var(--radius-sm);
-            border: 2px solid var(--border-color);
-            background: var(--bg-secondary);
+            padding: 0.58rem 0.95rem;
+            font-size: 0.82rem;
+            border-radius: 999px;
+            border: 1px solid var(--border-color);
+            background: color-mix(in srgb, var(--bg-secondary) 82%, var(--bg-card));
             color: var(--text-primary);
             cursor: pointer;
             font-weight: 600;
-            transition: border-color 0.2s, background 0.2s;
+            transition: border-color 0.2s, background 0.2s, transform 0.15s;
         }
 
         .category-bulk-btn:hover {
             border-color: var(--primary-color);
-            background: var(--bg-primary);
+            background: color-mix(in srgb, var(--bg-card) 92%, var(--bg-primary));
+            transform: translateY(-1px);
         }
 
         .category-bulk-btn:focus-visible {
@@ -541,13 +842,19 @@
         }
 
         .category-label {
-            padding: 0.5rem 1rem;
-            background: var(--bg-secondary);
+            padding: 0.6rem 1rem;
+            background: color-mix(in srgb, var(--bg-secondary) 76%, var(--bg-card));
             border-radius: 999px;
             cursor: pointer;
-            font-size: 0.9rem;
-            transition: border-color 0.2s, background 0.2s, transform 0.15s;
-            border: 2px solid transparent;
+            font-size: 0.88rem;
+            font-weight: 600;
+            transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.2s;
+            border: 1px solid transparent;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        }
+
+        [data-theme="dark"] .category-label {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .category-label:hover {
@@ -558,6 +865,7 @@
             background: var(--primary-color);
             color: white;
             border-color: var(--primary-color);
+            box-shadow: 0 14px 28px color-mix(in srgb, var(--primary-color) 24%, transparent);
         }
 
         .sort-section {
@@ -610,9 +918,11 @@
         }
 
         .sort-section__title {
-            font-size: 1.2rem;
+            font-size: 1.05rem;
             font-weight: 700;
             margin: 0;
+            letter-spacing: -0.03em;
+            color: var(--text-primary);
         }
 
         .sort-panel {
@@ -640,10 +950,11 @@
 
         .sort-select {
             min-width: min(100%, 22rem);
-            padding: 0.45rem 0.6rem;
-            border-radius: var(--radius-sm);
+            min-height: 2.9rem;
+            padding: 0.55rem 0.8rem;
+            border-radius: 16px;
             border: 1px solid var(--border-color);
-            background: var(--bg-primary);
+            background: var(--bg-card);
             color: var(--text-primary);
             font-size: 0.9rem;
         }
@@ -666,10 +977,11 @@
         }
 
         .sort-date-input {
-            padding: 0.4rem 0.5rem;
-            border-radius: var(--radius-sm);
+            min-height: 2.75rem;
+            padding: 0.5rem 0.7rem;
+            border-radius: 16px;
             border: 1px solid var(--border-color);
-            background: var(--bg-primary);
+            background: var(--bg-card);
             color: var(--text-primary);
             font-size: 0.9rem;
         }
@@ -726,12 +1038,13 @@
         }
 
         .sort-apply-btn {
-            padding: 0.45rem 1.1rem;
-            border-radius: 8px;
-            border: 2px solid var(--border-color);
-            background: var(--bg-secondary);
+            padding: 0.6rem 1.15rem;
+            border-radius: 999px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
             color: var(--text-primary);
-            font-size: 0.9rem;
+            font-size: 0.88rem;
+            font-weight: 600;
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s;
         }
@@ -757,7 +1070,7 @@
             align-items: center;
             gap: 0.75rem 1rem;
             margin-bottom: 1rem;
-            padding: 0.65rem 1rem;
+            padding: 0.95rem 1.15rem;
             border-radius: var(--radius-lg);
             border: 1px solid var(--border-color);
             background: var(--bg-card);
@@ -775,13 +1088,13 @@
         /* News Grid — column count follows container width (auto-fill + min track width) */
         .news-grid {
             display: grid;
-            gap: 1.5rem;
+            gap: 1.35rem;
             grid-template-columns: 1fr;
         }
 
         @media (min-width: 26rem) {
             .news-grid {
-                grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
             }
         }
 
@@ -790,14 +1103,16 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 1.5rem;
+            padding: 1.2rem 1.2rem 1.3rem;
             box-shadow: var(--shadow);
             transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s;
             position: relative;
+            overflow: hidden;
+            cursor: grab;
         }
 
         .news-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-6px);
             box-shadow: var(--shadow-card-hover);
             border-color: color-mix(in srgb, var(--primary-color) 18%, var(--border-color));
         }
@@ -807,6 +1122,7 @@
             opacity: 0.58;
             transform: scale(0.985);
             box-shadow: var(--shadow);
+            cursor: grabbing;
         }
 
         .news-card--drop-before {
@@ -827,8 +1143,8 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 0.75rem;
-            gap: 0.5rem;
+            margin-bottom: 0.85rem;
+            gap: 0.75rem;
         }
 
         .news-header-main {
@@ -837,36 +1153,6 @@
             align-items: center;
             gap: 0.45rem;
             min-width: 0;
-        }
-
-        .news-card-drag-handle {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 1.9rem;
-            height: 1.9rem;
-            border-radius: 999px;
-            border: 1px dashed color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
-            background: color-mix(in srgb, var(--bg-secondary) 84%, var(--primary-color) 16%);
-            color: var(--text-secondary);
-            cursor: grab;
-            user-select: none;
-            flex-shrink: 0;
-            line-height: 1;
-            font-size: 0.95rem;
-            letter-spacing: -0.1em;
-            transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
-        }
-
-        .news-card-drag-handle:hover {
-            color: var(--primary-color);
-            border-color: color-mix(in srgb, var(--primary-color) 42%, var(--border-color));
-            background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-secondary));
-            transform: translateY(-1px);
-        }
-
-        .news-card-drag-handle:active {
-            cursor: grabbing;
         }
 
         .news-card-new-badge {
@@ -905,12 +1191,14 @@
         }
 
         .category-badge {
-            padding: 0.25rem 0.75rem;
-            background: var(--primary-color);
-            color: white;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
+            padding: 0.28rem 0.78rem;
+            background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-card));
+            color: var(--primary-color);
+            border: 1px solid color-mix(in srgb, var(--primary-color) 22%, transparent);
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
         }
 
@@ -939,7 +1227,9 @@
 
         .news-time {
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
         }
 
         .news-card-thumbnail-wrap {
@@ -951,12 +1241,16 @@
             position: relative;
             display: block;
             overflow: hidden;
-            border-radius: calc(var(--radius-lg) - 4px);
+            border-radius: 24px;
             aspect-ratio: 16 / 9;
             border: 1px solid color-mix(in srgb, var(--primary-color) 14%, var(--border-color));
             background:
                 linear-gradient(145deg, color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary)) 0%, var(--bg-secondary) 100%);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        }
+
+        [data-theme="dark"] .news-card-thumbnail {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .news-card-thumbnail::after {
@@ -1241,10 +1535,11 @@
         }
 
         .news-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 0.75rem;
-            line-height: 1.4;
+            font-size: 1.12rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+            line-height: 1.42;
+            letter-spacing: -0.03em;
             /* Always reserve two lines so cards align; longer titles may grow beyond */
             min-height: calc(2 * 1.4 * 1em);
             min-height: 2lh;
@@ -1464,20 +1759,21 @@
 
         /* Summary Toggle Button */
         .summary-toggle {
-            background: none;
-            border: 2px solid var(--border-color);
-            padding: 0.5rem 1rem;
-            border-radius: var(--radius-sm);
+            background: var(--primary-color);
+            border: 1px solid transparent;
+            padding: 0.62rem 1rem;
+            border-radius: 999px;
             cursor: pointer;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #ffffff;
             transition: all 0.2s;
+            box-shadow: 0 14px 28px color-mix(in srgb, var(--primary-color) 22%, transparent);
         }
 
         .summary-toggle:hover {
-            background: var(--bg-secondary);
-            border-color: var(--primary-color);
-            color: var(--primary-color);
+            background: var(--primary-hover);
+            color: #ffffff;
         }
 
         .summary-actions {
@@ -1486,6 +1782,7 @@
             align-items: center;
             gap: 0.5rem;
             margin-top: 0.35rem;
+            cursor: default;
         }
 
         .summary-toggle,
@@ -1512,10 +1809,10 @@
         }
 
         .article-flag-btn {
-            background: transparent;
-            border: 2px solid var(--border-color);
-            padding: 0.38rem 0.62rem;
-            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 0.52rem 0.72rem;
+            border-radius: 999px;
             cursor: pointer;
             font-size: 1rem;
             line-height: 1;
@@ -1533,10 +1830,10 @@
         .article-web-search-btn,
         .article-reddit-search-btn,
         .article-share-btn {
-            background: transparent;
-            border: 2px dashed var(--border-color);
-            padding: 0.45rem 0.85rem;
-            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 0.55rem 0.82rem;
+            border-radius: 999px;
             cursor: pointer;
             font-size: 0.8rem;
             color: var(--text-secondary);
@@ -1560,10 +1857,10 @@
         }
 
         .summary-refresh-btn {
-            background: transparent;
-            border: 2px dashed var(--border-color);
-            padding: 0.45rem 0.85rem;
-            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 0.55rem 0.82rem;
+            border-radius: 999px;
             cursor: pointer;
             font-size: 0.8rem;
             color: var(--text-secondary);
@@ -1594,8 +1891,8 @@
             background: var(--primary-color);
             color: #ffffff;
             border: 1px solid transparent;
-            padding: 1rem 3rem;
-            border-radius: var(--radius-md);
+            padding: 0.95rem 2.3rem;
+            border-radius: 999px;
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
@@ -1634,9 +1931,9 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(26, 26, 26, 0.45);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            background: rgba(23, 20, 17, 0.38);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -1650,7 +1947,7 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 2rem;
+            padding: 1.75rem;
             max-width: 500px;
             width: 90%;
             max-height: 80vh;
@@ -1659,8 +1956,9 @@
         }
 
         .modal h2 {
-            margin-bottom: 1.5rem;
-            color: var(--primary-color);
+            margin-bottom: 1.2rem;
+            color: var(--text-primary);
+            letter-spacing: -0.03em;
         }
 
         .setting-group {
@@ -1699,7 +1997,7 @@
             width: 20px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--bg-card);
             transition: .3s;
             border-radius: 50%;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -1787,11 +2085,11 @@
         .setting-select,
         .setting-input {
             width: 100%;
-            padding: 0.75rem;
+            padding: 0.82rem 0.9rem;
             border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
+            border-radius: 16px;
             font-size: 1rem;
-            background: var(--bg-secondary);
+            background: color-mix(in srgb, var(--bg-secondary) 70%, var(--bg-card));
             color: var(--text-primary);
         }
 
@@ -1941,6 +2239,7 @@
             align-items: stretch;
             gap: 0.35rem;
             min-height: 220px;
+            position: relative;
         }
 
         .ki-stats-chart-inner--full {
@@ -1953,11 +2252,34 @@
             display: block;
         }
 
+        .ki-stats-chart-tooltip {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translate(-50%, calc(-100% - 10px));
+            pointer-events: none;
+            z-index: 2;
+            max-width: min(16rem, calc(100% - 1rem));
+            padding: 0.5rem 0.7rem;
+            border-radius: 12px;
+            border: 1px solid color-mix(in srgb, var(--primary-color) 18%, var(--border-color));
+            background: color-mix(in srgb, var(--header-surface) 96%, transparent);
+            color: var(--text-primary);
+            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            font-size: 0.85rem;
+            font-weight: 600;
+            line-height: 1.35;
+            text-align: center;
+            white-space: normal;
+        }
+
         .btn-primary,
         .btn-secondary {
-            padding: 0.75rem 2rem;
-            border-radius: var(--radius-sm);
-            font-size: 1rem;
+            padding: 0.82rem 1.4rem;
+            border-radius: 999px;
+            font-size: 0.95rem;
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
         }
@@ -1982,7 +2304,7 @@
         .btn-secondary {
             background: var(--header-surface);
             color: var(--text-primary);
-            border: 2px solid var(--border-color);
+            border: 1px solid var(--border-color);
             font-weight: 600;
         }
 
@@ -2013,15 +2335,19 @@
         /* Status Bar */
         .status-bar {
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--header-surface);
-            padding: 0.65rem 2rem;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(calc(100% - 2rem), 1280px);
+            background: color-mix(in srgb, var(--header-surface) 88%, transparent);
+            padding: 0.8rem 1.2rem;
             font-size: 0.85rem;
             color: var(--text-secondary);
-            border-top: 1px solid var(--border-color);
-            box-shadow: 0 -4px 24px rgba(26, 26, 26, 0.06);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             display: flex;
             flex-wrap: wrap;
             align-items: center;
@@ -2067,9 +2393,21 @@
         /* Responsive adjustments */
         @media (max-width: 480px) {
             .header {
-                flex-direction: column;
+                width: calc(100% - 1rem);
+                margin-top: 0.5rem;
+                padding: 1rem;
+                grid-template-columns: 1fr;
                 gap: 1rem;
                 text-align: center;
+                top: 0.5rem;
+            }
+
+            .header-title {
+                align-items: center;
+            }
+
+            .header-brand-row {
+                justify-content: center;
             }
 
             .header-controls {
@@ -2089,6 +2427,12 @@
 
             .category-bulk-actions {
                 justify-content: center;
+            }
+
+            .status-bar {
+                width: calc(100% - 1rem);
+                bottom: 0.5rem;
+                padding: 0.75rem 0.9rem;
             }
         }
 
@@ -2239,95 +2583,47 @@
             min-width: 0.5rem;
         }
 
-        /* Top banner — Cucumber NewsScraper (panoramic artwork) */
-        .cucumber-brand-banner {
-            position: relative;
-            width: 100%;
-            overflow: hidden;
-            border-bottom: 2px solid #1b5e20;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        }
-
-        .cucumber-brand-banner__img {
-            display: block;
-            width: 100%;
-            height: clamp(100px, 20vw, 320px);
-            object-fit: cover;
-            object-position: center 35%;
-        }
-
-        .cucumber-brand-banner__overlay {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            padding: 0 clamp(1rem, 4vw, 2.5rem);
-            background: linear-gradient(
-                90deg,
-                transparent 0%,
-                rgba(0, 0, 0, 0.15) 40%,
-                rgba(0, 0, 0, 0.55) 100%
-            );
-            pointer-events: none;
-        }
-
-        .cucumber-brand-banner__title {
-            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-            font-weight: 700;
-            font-size: clamp(1.05rem, 3.2vw, 1.85rem);
-            letter-spacing: 0.06em;
-            color: #f1f8e9;
-            text-shadow:
-                0 0 20px rgba(0, 0, 0, 0.9),
-                0 2px 8px rgba(0, 0, 0, 0.85);
-            white-space: nowrap;
-        }
-
-        [data-theme="dark"] .cucumber-brand-banner {
-            border-bottom-color: #0d1f0c;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-        }
     </style>
 </head>
 <body>
-    <div class="cucumber-brand-banner" role="banner" aria-label="Cucumber NewsScraper">
-        <img
-            class="cucumber-brand-banner__img"
-            src="images/cucumber-news-banner-v2.png"
-            width="1920"
-            height="640"
-            alt=""
-            decoding="async"
-            fetchpriority="high"
-        />
-        <div class="cucumber-brand-banner__overlay" aria-hidden="true">
-            <span class="cucumber-brand-banner__title">Cucumber NewsScraper</span>
-        </div>
-    </div>
     <header class="header notranslate">
         <h1 class="header-title">
-            <button
-                type="button"
-                class="header-brand-toggle"
-                id="headerBrandToggle"
-                title=""
-                aria-label=""
-                aria-pressed="true"
-            >
-                <img
-                    id="heiseBrandLogo"
-                    class="header-brand-logo-img"
-                    src=""
-                    alt=""
-                    width="48"
-                    height="48"
-                    decoding="async"
-                    hidden
-                />
-                <span id="headerBrandText" class="header-brand-text">heise online</span>
-            </button>
-            <span class="header-subtitle" id="headerSubtitle">News Dashboard</span>
+            <div class="header-brand-row">
+                <button
+                    type="button"
+                    class="header-brand-toggle"
+                    id="headerBrandToggle"
+                    title=""
+                    aria-label=""
+                    aria-pressed="true"
+                >
+                    <img
+                        id="heiseBrandLogo"
+                        class="header-brand-logo-img"
+                        src=""
+                        alt=""
+                        width="48"
+                        height="48"
+                        decoding="async"
+                        hidden
+                    />
+                    <span id="headerBrandText" class="header-brand-text">heise online</span>
+                </button>
+                <button
+                    type="button"
+                    class="header-source-favorite-toggle"
+                    id="headerSourceFavoriteToggleBtn"
+                    title="Aktuelle Quelle als Favorit markieren"
+                    aria-label="Aktuelle Quelle als Favorit markieren"
+                    aria-pressed="false"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 3.75l2.55 5.16 5.7.83-4.12 4.01.97 5.66L12 16.73 6.9 19.41l.97-5.66-4.12-4.01 5.7-.83L12 3.75z"></path>
+                    </svg>
+                    <span class="sr-only">Quelle als Favorit markieren</span>
+                </button>
+            </div>
+            <span class="header-subtitle" id="headerSubtitle">Cucumber NewsScraper</span>
         </h1>
         <div class="header-controls">
             <div
@@ -2336,7 +2632,49 @@
             >
                 <div class="header-news-source">
                     <label for="newsSourceSelect">Quelle</label>
-                    <select id="newsSourceSelect" aria-label="Nachrichtenquelle"></select>
+                    <div class="header-news-source-control">
+                        <div class="header-source-nav">
+                            <button
+                                type="button"
+                                class="header-source-nav-btn"
+                                id="headerSourcePrevBtn"
+                                title="Vorherige Quelle"
+                                aria-label="Vorherige Quelle"
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 6l-6 6"></path>
+                                    <path d="M12 6l6 6"></path>
+                                </svg>
+                                <span class="sr-only">Vorherige Quelle</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="header-source-nav-btn header-source-nav-btn--favorites"
+                                id="headerSourceFavoritesBtn"
+                                title="Zwischen favorisierten Quellen wechseln"
+                                aria-label="Zwischen favorisierten Quellen wechseln"
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 4.5l2.2 4.45 4.91.71-3.55 3.46.84 4.88L12 15.71 7.6 18l.84-4.88-3.55-3.46 4.91-.71L12 4.5z"></path>
+                                </svg>
+                                <span class="sr-only">Zwischen favorisierten Quellen wechseln</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="header-source-nav-btn"
+                                id="headerSourceNextBtn"
+                                title="Nächste Quelle"
+                                aria-label="Nächste Quelle"
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M12 18l-6-6"></path>
+                                    <path d="M12 18l6-6"></path>
+                                </svg>
+                                <span class="sr-only">Nächste Quelle</span>
+                            </button>
+                        </div>
+                        <select id="newsSourceSelect" aria-label="Nachrichtenquelle"></select>
+                    </div>
                 </div>
                 <div class="header-interval">
                     <label for="refreshIntervalSelect">Aktualisierung</label>
@@ -2370,7 +2708,7 @@
                 🌙 / ☀️
             </button>
             <button type="button" class="refresh-btn" id="refreshBtn" aria-label="Nachrichten aktualisieren">
-                ↻ Aktualisieren
+                Aktualisieren
             </button>
             <button
                 type="button"
@@ -2379,28 +2717,28 @@
                 title="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
                 aria-label="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
             >
-                ⚡ Quellen erzeugen
+                Quellen erzeugen
             </button>
             <button type="button" class="summarize-all-btn" id="summarizeAllBtn"
                 title="Erzeugt KI-Zusammenfassungen für alle aktuell gefilterten Nachrichten (nutzt Cache, sofern gültig)"
                 aria-label="Alle KI-Zusammenfassungen für die aktuellen Filter erzeugen">
-                🤖 Alle Zusammenfassungen
+                Alle Zusammenfassungen
             </button>
             <button type="button" class="summarize-refresh-btn" id="summarizeAllRefreshBtn"
                 title="Alle Zusammenfassungen für die aktuellen Filter neu von der KI erzeugen (Cache wird überschrieben — Bestätigung)"
                 aria-label="Alle Zusammenfassungen neu erzeugen (mit Bestätigung)">
-                🔄 Alle neu erzeugen
+                Alle neu erzeugen
             </button>
             <button type="button" class="settings-btn settings-btn--gear" id="exportBtn" title="Artikel exportieren" aria-label="Artikel exportieren">
-                ⤓ Export
+                Export
             </button>
             <button type="button" class="settings-btn settings-btn--gear" id="dashboardSettingsBtn" title="Einstellungen" aria-label="Einstellungen">
-                ⚙️ Einstellungen
+                Einstellungen
             </button>
             <span class="settings-btn-wrap" title="KI-Verbindungsstatus (grün = letzte Anfrage ok)">
                 <span class="ki-status-dot" id="kiStatusDot" aria-hidden="true"></span>
                 <button type="button" class="settings-btn" id="settingsBtn" aria-label="KI-Server (LM Studio) einstellen">
-                    🤖 KI-Server
+                    KI-Server
                 </button>
             </span>
         </div>
@@ -2411,7 +2749,7 @@
         <!-- Filter Section -->
         <section class="filter-section" aria-labelledby="filter-heading">
             <div class="filter-section__heading-row">
-                <h2 id="filter-heading">📁 Kategorien</h2>
+                <h2 id="filter-heading">Kategorien</h2>
                 <div class="category-bulk-actions">
                     <button
                         type="button"
@@ -2433,95 +2771,7 @@
                     </button>
                 </div>
             </div>
-            <div class="category-filters" id="categoryFilters">
-                <div class="category-filters__group" id="categoryFiltersHeise" data-news-source-scope="heise">
-                <input type="checkbox" id="cat-it" class="category-checkbox" value="it" checked>
-                <label for="cat-it" class="category-label">IT & Tech</label>
-
-                <input type="checkbox" id="cat-security" class="category-checkbox" value="security" checked>
-                <label for="cat-security" class="category-label">Security</label>
-
-                <input type="checkbox" id="cat-ki" class="category-checkbox" value="ki" checked>
-                <label for="cat-ki" class="category-label">KI</label>
-
-                <input type="checkbox" id="cat-wissenschaft" class="category-checkbox" value="wissenschaft" checked>
-                <label for="cat-wissenschaft" class="category-label">Wissenschaft</label>
-
-                <input type="checkbox" id="cat-mobiles" class="category-checkbox" value="mobiles" checked>
-                <label for="cat-mobiles" class="category-label">Mobiles</label>
-
-                <input type="checkbox" id="cat-entertainment" class="category-checkbox" value="entertainment" checked>
-                <label for="cat-entertainment" class="category-label">Entertainment</label>
-
-                <input type="checkbox" id="cat-wirtschaft" class="category-checkbox" value="wirtschaft" checked>
-                <label for="cat-wirtschaft" class="category-label">Wirtschaft</label>
-
-                <input type="checkbox" id="cat-netzpolitik" class="category-checkbox" value="netzpolitik" checked>
-                <label for="cat-netzpolitik" class="category-label">Netzpolitik</label>
-
-                <input type="checkbox" id="cat-journal" class="category-checkbox" value="journal" checked>
-                <label for="cat-journal" class="category-label">Journal</label>
-
-                <p class="category-filters__subheading" id="categoryFiltersMagazineHeading" role="presentation"></p>
-
-                <input type="checkbox" id="cat-heise_ix" class="category-checkbox" value="heise_ix" checked>
-                <label for="cat-heise_ix" class="category-label">iX</label>
-
-                <input type="checkbox" id="cat-heise_ct" class="category-checkbox" value="heise_ct" checked>
-                <label for="cat-heise_ct" class="category-label">c't</label>
-
-                <input type="checkbox" id="cat-heise_foto" class="category-checkbox" value="heise_foto" checked>
-                <label for="cat-heise_foto" class="category-label">c't Fotografie</label>
-
-                <input type="checkbox" id="cat-heise_mac" class="category-checkbox" value="heise_mac" checked>
-                <label for="cat-heise_mac" class="category-label">Mac &amp; i</label>
-
-                <input type="checkbox" id="cat-heise_make" class="category-checkbox" value="heise_make" checked>
-                <label for="cat-heise_make" class="category-label">Make</label>
-
-                <input type="checkbox" id="cat-heise_autos" class="category-checkbox" value="heise_autos" checked>
-                <label for="cat-heise_autos" class="category-label">heise autos</label>
-                </div>
-
-                <div class="category-filters__group" id="categoryFiltersTelepolis" data-news-source-scope="telepolis" hidden>
-                <input type="checkbox" id="cat-telepolis" class="category-checkbox" value="telepolis" checked>
-                <label for="cat-telepolis" class="category-label">Telepolis</label>
-                </div>
-
-                <div class="category-filters__group" id="categoryFiltersBild" data-news-source-scope="bild" hidden>
-                <input type="checkbox" id="cat-bild" class="category-checkbox" value="bild" checked>
-                <label for="cat-bild" class="category-label">BILD</label>
-                </div>
-
-                <div class="category-filters__group" id="categoryFiltersGenericSources" data-news-source-scope="generic" hidden>
-                <input type="checkbox" id="cat-src-it" class="category-checkbox" value="it" checked>
-                <label for="cat-src-it" class="category-label">IT & Tech</label>
-
-                <input type="checkbox" id="cat-src-security" class="category-checkbox" value="security" checked>
-                <label for="cat-src-security" class="category-label">Security</label>
-
-                <input type="checkbox" id="cat-src-ki" class="category-checkbox" value="ki" checked>
-                <label for="cat-src-ki" class="category-label">KI</label>
-
-                <input type="checkbox" id="cat-src-wissenschaft" class="category-checkbox" value="wissenschaft" checked>
-                <label for="cat-src-wissenschaft" class="category-label">Wissenschaft</label>
-
-                <input type="checkbox" id="cat-src-mobiles" class="category-checkbox" value="mobiles" checked>
-                <label for="cat-src-mobiles" class="category-label">Mobiles</label>
-
-                <input type="checkbox" id="cat-src-entertainment" class="category-checkbox" value="entertainment" checked>
-                <label for="cat-src-entertainment" class="category-label">Entertainment</label>
-
-                <input type="checkbox" id="cat-src-wirtschaft" class="category-checkbox" value="wirtschaft" checked>
-                <label for="cat-src-wirtschaft" class="category-label">Wirtschaft</label>
-
-                <input type="checkbox" id="cat-src-netzpolitik" class="category-checkbox" value="netzpolitik" checked>
-                <label for="cat-src-netzpolitik" class="category-label">Netzpolitik</label>
-
-                <input type="checkbox" id="cat-src-journal" class="category-checkbox" value="journal" checked>
-                <label for="cat-src-journal" class="category-label">Journal</label>
-                </div>
-            </div>
+            <div class="category-filters" id="categoryFilters" aria-live="polite"></div>
         </section>
 
         <section class="filter-section sort-section" aria-labelledby="sort-heading">
@@ -2536,7 +2786,7 @@
                     aria-label="Sortierung ein- oder ausklappen"
                 >
                     <span class="sort-section__chevron" aria-hidden="true">▶</span>
-                    <span id="sort-heading" class="sort-section__title" role="heading" aria-level="2">↕ Sortierung</span>
+                    <span id="sort-heading" class="sort-section__title" role="heading" aria-level="2">Sortierung</span>
                 </button>
             </div>
             <div id="sortPanelBody" class="sort-panel" hidden>
@@ -2585,10 +2835,6 @@
         </section>
         </div>
 
-        <div class="article-translation-toolbar" id="articleTranslationToolbar" hidden>
-            <p class="article-translation-toolbar__hint notranslate" id="articleTranslationToolbarHint"></p>
-        </div>
-
         <!-- News Grid -->
         <section class="news-grid" id="newsGrid" aria-live="polite">
             <!-- Nachrichten werden hier dynamisch eingefügt -->
@@ -2633,16 +2879,16 @@
                 <fieldset class="theme-settings-fieldset">
                     <legend id="themeFieldsetLightLegend">Hellmodus — Oberfläche</legend>
                     <label for="themeBrightnessLight" id="themeBrightnessLightLabel" class="setting-label">Helligkeit der Flächen</label>
-                    <input type="range" id="themeBrightnessLight" class="setting-input theme-brightness-range" min="70" max="130" value="100" step="1" aria-describedby="themeBrightnessLightHint">
+                    <input type="range" id="themeBrightnessLight" class="setting-input theme-brightness-range" min="0" max="100" value="50" step="1" aria-describedby="themeBrightnessLightHint">
                     <p id="themeBrightnessLightHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
                     <div class="theme-color-grid">
                         <div class="theme-color-row">
                             <label for="themeLightBgPrimary" id="themeLightBgPrimaryLabel" class="theme-color-label">Hintergrund</label>
-                            <input type="color" id="themeLightBgPrimary" class="theme-color-input" value="#e8eaed" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeLightBgPrimary" class="theme-color-input" value="#fffaf5" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeLightBgSecondary" id="themeLightBgSecondaryLabel" class="theme-color-label">Sekundär</label>
-                            <input type="color" id="themeLightBgSecondary" class="theme-color-input" value="#dee1e6" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeLightBgSecondary" class="theme-color-input" value="#fff4ea" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeLightBgCard" id="themeLightBgCardLabel" class="theme-color-label">Karten</label>
@@ -2650,7 +2896,7 @@
                         </div>
                         <div class="theme-color-row">
                             <label for="themeLightBorder" id="themeLightBorderLabel" class="theme-color-label">Rahmen</label>
-                            <input type="color" id="themeLightBorder" class="theme-color-input" value="#c0c0c0" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeLightBorder" class="theme-color-input" value="#eadfd3" aria-describedby="themeSettingsHint">
                         </div>
                     </div>
                 </fieldset>
@@ -2658,24 +2904,24 @@
                 <fieldset class="theme-settings-fieldset">
                     <legend id="themeFieldsetDarkLegend">Dunkelmodus — Oberfläche</legend>
                     <label for="themeBrightnessDark" id="themeBrightnessDarkLabel" class="setting-label">Helligkeit der Flächen</label>
-                    <input type="range" id="themeBrightnessDark" class="setting-input theme-brightness-range" min="70" max="130" value="100" step="1" aria-describedby="themeBrightnessDarkHint">
+                    <input type="range" id="themeBrightnessDark" class="setting-input theme-brightness-range" min="0" max="100" value="50" step="1" aria-describedby="themeBrightnessDarkHint">
                     <p id="themeBrightnessDarkHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
                     <div class="theme-color-grid">
                         <div class="theme-color-row">
                             <label for="themeDarkBgPrimary" id="themeDarkBgPrimaryLabel" class="theme-color-label">Hintergrund</label>
-                            <input type="color" id="themeDarkBgPrimary" class="theme-color-input" value="#1a1a1a" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkBgPrimary" class="theme-color-input" value="#151210" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeDarkBgSecondary" id="themeDarkBgSecondaryLabel" class="theme-color-label">Sekundär</label>
-                            <input type="color" id="themeDarkBgSecondary" class="theme-color-input" value="#242424" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkBgSecondary" class="theme-color-input" value="#1d1916" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeDarkBgCard" id="themeDarkBgCardLabel" class="theme-color-label">Karten</label>
-                            <input type="color" id="themeDarkBgCard" class="theme-color-input" value="#2d2d2d" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkBgCard" class="theme-color-input" value="#221d1a" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeDarkBorder" id="themeDarkBorderLabel" class="theme-color-label">Rahmen</label>
-                            <input type="color" id="themeDarkBorder" class="theme-color-input" value="#404040" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkBorder" class="theme-color-input" value="#3b342e" aria-describedby="themeSettingsHint">
                         </div>
                     </div>
                 </fieldset>
@@ -2683,6 +2929,9 @@
                 <fieldset class="theme-settings-fieldset">
                     <legend id="themeFieldsetHeaderLightLegend">Hellmodus — Kopfzeile</legend>
                     <p id="themeHeaderLightHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.5rem;"></p>
+                    <label for="themeLightHeaderTransparency" id="themeHeaderTransparencyLightLabel" class="setting-label">Transparenz der Kopfzeile</label>
+                    <input type="range" id="themeLightHeaderTransparency" class="setting-input theme-brightness-range" min="0" max="100" value="0" step="1" aria-describedby="themeHeaderTransparencyLightHint">
+                    <p id="themeHeaderTransparencyLightHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
                     <div class="theme-color-grid">
                         <div class="theme-color-row">
                             <label for="themeLightHeaderSurface" id="themeLightHeaderSurfaceLabel" class="theme-color-label">Hintergrund</label>
@@ -2690,11 +2939,11 @@
                         </div>
                         <div class="theme-color-row">
                             <label for="themeLightHeaderText" id="themeLightHeaderTextLabel" class="theme-color-label">Text</label>
-                            <input type="color" id="themeLightHeaderText" class="theme-color-input" value="#1a1a1a" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeLightHeaderText" class="theme-color-input" value="#171411" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeLightHeaderBorder" id="themeLightHeaderBorderLabel" class="theme-color-label">Rahmen</label>
-                            <input type="color" id="themeLightHeaderBorder" class="theme-color-input" value="#e5e5e5" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeLightHeaderBorder" class="theme-color-input" value="#eadfd3" aria-describedby="themeSettingsHint">
                         </div>
                     </div>
                 </fieldset>
@@ -2702,18 +2951,21 @@
                 <fieldset class="theme-settings-fieldset">
                     <legend id="themeFieldsetHeaderDarkLegend">Dunkelmodus — Kopfzeile</legend>
                     <p id="themeHeaderDarkHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.5rem;"></p>
+                    <label for="themeDarkHeaderTransparency" id="themeHeaderTransparencyDarkLabel" class="setting-label">Transparenz der Kopfzeile</label>
+                    <input type="range" id="themeDarkHeaderTransparency" class="setting-input theme-brightness-range" min="0" max="100" value="0" step="1" aria-describedby="themeHeaderTransparencyDarkHint">
+                    <p id="themeHeaderTransparencyDarkHint" class="modal-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0.25rem 0 0.5rem;"></p>
                     <div class="theme-color-grid">
                         <div class="theme-color-row">
                             <label for="themeDarkHeaderSurface" id="themeDarkHeaderSurfaceLabel" class="theme-color-label">Hintergrund</label>
-                            <input type="color" id="themeDarkHeaderSurface" class="theme-color-input" value="#252525" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkHeaderSurface" class="theme-color-input" value="#1f1a16" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeDarkHeaderText" id="themeDarkHeaderTextLabel" class="theme-color-label">Text</label>
-                            <input type="color" id="themeDarkHeaderText" class="theme-color-input" value="#f5f5f5" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkHeaderText" class="theme-color-input" value="#fcfaf8" aria-describedby="themeSettingsHint">
                         </div>
                         <div class="theme-color-row">
                             <label for="themeDarkHeaderBorder" id="themeDarkHeaderBorderLabel" class="theme-color-label">Rahmen</label>
-                            <input type="color" id="themeDarkHeaderBorder" class="theme-color-input" value="#404040" aria-describedby="themeSettingsHint">
+                            <input type="color" id="themeDarkHeaderBorder" class="theme-color-input" value="#3b342e" aria-describedby="themeSettingsHint">
                         </div>
                     </div>
                 </fieldset>
@@ -2869,7 +3121,7 @@
     <!-- KI / LM Studio Modal -->
     <div class="modal-overlay notranslate" id="settingsModal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
         <div class="modal">
-            <h2 id="modal-title">🤖 KI-Zusammenfassung (LM Studio)</h2>
+            <h2 id="modal-title">KI-Zusammenfassung (LM Studio)</h2>
             <p class="modal-hint" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
                 <strong>Empfohlen:</strong> <code>python3 scripts/dev_server.py</code>, Seite neu laden — die App erkennt den Server und aktiviert <strong>REST über dieselbe Origin</strong> automatisch (Well-known-URL). Kein CORS-<code>OPTIONS</code> an LM Studio.
                 Alternativ: <code>scripts/lm_studio_cors_proxy.py</code> (siehe README). OpenAI-Modus bleibt wählbar. <strong>HTTPS</strong>-Seite → API ebenfalls HTTPS („Mixed Content“).
@@ -3127,14 +3379,15 @@
                 <p id="kiStatsTokenHint" class="modal-hint ki-stats-token-hint" hidden></p>
                 <!-- Time range selector buttons -->
                 <div class="ki-stats-period-controls" style="display: flex; justify-content: center; gap: 8px; margin-bottom: 12px;">
-                    <button type="button" class="btn-secondary btn-period" data-period="day">Woche</button>
-                    <button type="button" class="btn-secondary btn-period btn-period-active" data-period="month">Monat</button>
+                    <button type="button" class="btn-secondary btn-period btn-period-active" data-period="week">Woche</button>
+                    <button type="button" class="btn-secondary btn-period" data-period="month">Monat</button>
                     <button type="button" class="btn-secondary btn-period" data-period="year">Jahr</button>
                 </div>
                 <figure class="ki-stats-chart-wrap">
                     <figcaption id="kiStatsChartCaption" class="ki-stats-chart-caption"></figcaption>
                     <div class="ki-stats-chart-inner ki-stats-chart-inner--full">
                         <svg id="kiStatsChartSvg" xmlns="http://www.w3.org/2000/svg" width="100%" height="360" aria-hidden="true"></svg>
+                        <div id="kiStatsChartTooltip" class="ki-stats-chart-tooltip" hidden></div>
                     </div>
                 </figure>
             </div>
@@ -3349,16 +3602,16 @@
         } catch (e) { /* ignore */ }
     </script>
     <!-- Application Scripts -->
-    <script src="js/storage.js?v=magmirror3"></script>
-    <script src="js/news-sources-registry.js?v=sourcecatalog20260417e"></script>
-    <script src="js/news-scraper.js?v=thumbfeeds20260417e"></script>
-    <script src="js/ki-stats.js?v=tokchart20260417b"></script>
-    <script src="js/ai-summarizer.js?v=altblk20260417c"></script>
+    <script src="js/storage.js?v=headertrans20260427a"></script>
+    <script src="js/news-sources-registry.js?v=sourcecatalog20260419c"></script>
+    <script src="js/news-scraper.js?v=globalnewscat20260427a"></script>
+    <script src="js/ki-stats.js?v=kimodelhover20260426a"></script>
+    <script src="js/ai-summarizer.js?v=kimodelhover20260426a"></script>
     <script src="js/heise-comments.js?v=telepolis-comments20260417a"></script>
     <script src="js/youtube-related.js"></script>
     <script src="js/article-translation.js?v=titletranslate20260417b"></script>
     <script src="js/article-exporter.js?v=thumbpdf20260415c"></script>
-    <script src="js/app.js?v=cardicons20260417i"></script>
+    <script src="js/app.js?v=headertrans20260427a"></script>
     
 </body>
 </html>

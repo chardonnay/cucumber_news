@@ -47,16 +47,16 @@ const COLOR_THEME_IDS = ['heise', 'ocean', 'forest', 'violet', 'amber', 'rose', 
 /** Default surface colors (must match `:root` / `[data-theme="dark"]` in index.html). */
 const THEME_DEFAULT_SURFACE = {
     light: {
-        bgPrimary: '#e8eaed',
-        bgSecondary: '#dee1e6',
+        bgPrimary: '#f7f1ea',
+        bgSecondary: '#f1e8de',
         bgCard: '#ffffff',
-        borderColor: '#c0c0c0'
+        borderColor: '#eadfd3'
     },
     dark: {
-        bgPrimary: '#1a1a1a',
-        bgSecondary: '#242424',
-        bgCard: '#2d2d2d',
-        borderColor: '#404040'
+        bgPrimary: '#151210',
+        bgSecondary: '#1d1916',
+        bgCard: '#221d1a',
+        borderColor: '#3b342e'
     }
 };
 
@@ -64,18 +64,171 @@ const THEME_DEFAULT_SURFACE = {
 const THEME_DEFAULT_HEADER = {
     light: {
         headerSurface: '#ffffff',
-        headerText: '#1a1a1a',
-        headerBorder: '#e5e5e5'
+        headerText: '#171411',
+        headerBorder: '#eadfd3'
     },
     dark: {
-        headerSurface: '#252525',
-        headerText: '#f5f5f5',
-        headerBorder: '#404040'
+        headerSurface: '#1f1a16',
+        headerText: '#fcfaf8',
+        headerBorder: '#3b342e'
     }
 };
 
+/** Default text colors (must match `:root` / `[data-theme="dark"]` --text-* in index.html). */
+const THEME_DEFAULT_TEXT = {
+    light: {
+        textPrimary: '#171411',
+        textSecondary: '#6f655c'
+    },
+    dark: {
+        textPrimary: '#fcfaf8',
+        textSecondary: '#b9aea3'
+    }
+};
+
+/** Header transparency 0–100 (0 = opaque, 100 = fully transparent) per mode. */
+const THEME_DEFAULT_HEADER_TRANSPARENCY = {
+    light: 0,
+    dark: 0
+};
+
+/**
+ * Maximum surface mix amount for the brightness slider.
+ * 50 is neutral (no change); 0 / 100 mix the surface up to this fraction with black / white.
+ * Kept moderate so card vs. background separation never collapses and text stays readable.
+ * Chosen so the slider extremes still hit roughly WCAG AA against the auto-adjusted text.
+ */
+const THEME_SURFACE_BRIGHTNESS_MAX = 0.28;
+/** Borders mix slightly less, so they keep contrast against the adjusted surface. */
+const THEME_BORDER_BRIGHTNESS_MAX = 0.20;
+/**
+ * Maximum text mix amount in the *opposite* direction of the surface shift,
+ * to maintain readable contrast at the slider extremes. 50 is neutral.
+ * The cap is small on purpose — strong text bleaching looks washed out, and tests
+ * (see CHANGELOG) show ~4.4:1 contrast at the extremes with this value.
+ */
+const THEME_TEXT_CONTRAST_MAX = 0.22;
+
+/** Per-accent surface defaults so the page background changes with the selected color theme. */
+const COLOR_THEME_SURFACE_DEFAULTS = {
+    heise: {
+        light: {
+            bgPrimary: '#fffaf5',
+            bgSecondary: '#fff4ea',
+            borderColor: '#eadfd3'
+        },
+        dark: {}
+    },
+    ocean: {
+        light: {
+            bgPrimary: '#fbfdff',
+            bgSecondary: '#f1f8fd',
+            borderColor: '#d6e6f2'
+        },
+        dark: {
+            bgPrimary: '#0f1722',
+            bgSecondary: '#162131',
+            bgCard: '#1b2738',
+            borderColor: '#30445d'
+        }
+    },
+    forest: {
+        light: {
+            bgPrimary: '#fbfefc',
+            bgSecondary: '#f2f8f4',
+            borderColor: '#d7e6dc'
+        },
+        dark: {
+            bgPrimary: '#101712',
+            bgSecondary: '#172119',
+            bgCard: '#1d2820',
+            borderColor: '#314237'
+        }
+    },
+    violet: {
+        light: {
+            bgPrimary: '#fcfaff',
+            bgSecondary: '#f5f0fc',
+            borderColor: '#e2d8f2'
+        },
+        dark: {
+            bgPrimary: '#171221',
+            bgSecondary: '#20192d',
+            bgCard: '#261f35',
+            borderColor: '#433661'
+        }
+    },
+    amber: {
+        light: {
+            bgPrimary: '#fffbf4',
+            bgSecondary: '#fbf3e2',
+            borderColor: '#eadcbd'
+        },
+        dark: {
+            bgPrimary: '#1c150d',
+            bgSecondary: '#261d12',
+            bgCard: '#2d2318',
+            borderColor: '#4b3927'
+        }
+    },
+    rose: {
+        light: {
+            bgPrimary: '#fff9fb',
+            bgSecondary: '#faedf2',
+            borderColor: '#edd8e1'
+        },
+        dark: {
+            bgPrimary: '#201217',
+            bgSecondary: '#2a1920',
+            bgCard: '#332028',
+            borderColor: '#5a3743'
+        }
+    },
+    slate: {
+        light: {
+            bgPrimary: '#fbfcfe',
+            bgSecondary: '#f4f7fb',
+            borderColor: '#dbe4ee'
+        },
+        dark: {
+            bgPrimary: '#12161c',
+            bgSecondary: '#19202a',
+            bgCard: '#202835',
+            borderColor: '#364354'
+        }
+    },
+    midnight: {
+        light: {
+            bgPrimary: '#fafbff',
+            bgSecondary: '#f2f5fc',
+            borderColor: '#d9e0f2'
+        },
+        dark: {
+            bgPrimary: '#101322',
+            bgSecondary: '#161b31',
+            bgCard: '#1d2340',
+            borderColor: '#333c68'
+        }
+    }
+};
+
+/**
+ * @param {string} colorTheme
+ * @param {'light'|'dark'} mode
+ * @returns {{ bgPrimary: string, bgSecondary: string, bgCard: string, borderColor: string }}
+ */
+function getThemeSurfaceDefaults(colorTheme, mode) {
+    const normalizedTheme = COLOR_THEME_IDS.includes(colorTheme) ? colorTheme : 'heise';
+    return {
+        ...THEME_DEFAULT_SURFACE[mode],
+        ...((COLOR_THEME_SURFACE_DEFAULTS[normalizedTheme] && COLOR_THEME_SURFACE_DEFAULTS[normalizedTheme][mode]) || {})
+    };
+}
+
 /** Persisted manual card order per visible main-view state (source + categories + sort + date filter). */
 const MANUAL_CARD_ORDER_STORAGE_KEY = 'heise_manual_card_order_by_view';
+/** Persisted "Neu" article URLs per source until the user acknowledges the badge. */
+const PENDING_NEW_ARTICLE_URLS_STORAGE_KEY = 'heise_pending_new_article_urls_by_source';
 
 class App {
     constructor() {
@@ -88,6 +241,8 @@ class App {
         this.newsItems = [];
         this.filteredNewsItems = [];
         this.selectedCategories = [];
+        this.disabledCategoriesBySource = {};
+        this.favoriteNewsSources = [];
         this.selectedArticleIds = new Set();
         this.currentPage = 1;
         const itemsPerPage = 15;
@@ -95,6 +250,10 @@ class App {
 
         /** Article IDs that appeared since the previous fetch (cleared after 3s hover or highlight removal). */
         this._newArticleIds = new Set();
+        /** Source id currently represented by `this.newsItems` (used for source-local "Neu" detection across reloads). */
+        this._loadedNewsSource = '';
+        /** @type {Record<string, string[]>} */
+        this._pendingNewArticleUrlsBySource = App.loadPendingNewArticleUrlState();
 
         // Performance optimization: Filter cache to avoid repeated O(n) filtering on the same dataset.
         /** @type {Map<string, object[]>} */
@@ -117,6 +276,8 @@ class App {
         this._articleInPlaceTranslationDebounce = 0;
         /** @type {Map<string, string>} */
         this._uiTranslationCache = new Map();
+        /** @type {Array<{ id: string, aliases?: string[], loaded?: boolean, reasoningAllowedOptions?: Array<'off'|'low'|'medium'|'high'|'on'>, reasoningDefault?: ''|'off'|'low'|'medium'|'high'|'on' }>} */
+        this._availableLmModels = [];
 
         // DOM Elements
         this.elements = {
@@ -200,7 +361,11 @@ class App {
             headerBrandToggle: document.getElementById('headerBrandToggle'),
             heiseBrandLogo: document.getElementById('heiseBrandLogo'),
             headerBrandText: document.getElementById('headerBrandText'),
+            headerSourceFavoriteToggleBtn: document.getElementById('headerSourceFavoriteToggleBtn'),
             headerSubtitle: document.getElementById('headerSubtitle'),
+            headerSourcePrevBtn: document.getElementById('headerSourcePrevBtn'),
+            headerSourceFavoritesBtn: document.getElementById('headerSourceFavoritesBtn'),
+            headerSourceNextBtn: document.getElementById('headerSourceNextBtn'),
             newsSourceSelect: document.getElementById('newsSourceSelect'),
             colorThemeSelect: document.getElementById('colorThemeSelect'),
             headerColorThemeWrap: document.getElementById('headerColorThemeWrap'),
@@ -222,9 +387,11 @@ class App {
             themeLightHeaderSurface: document.getElementById('themeLightHeaderSurface'),
             themeLightHeaderText: document.getElementById('themeLightHeaderText'),
             themeLightHeaderBorder: document.getElementById('themeLightHeaderBorder'),
+            themeLightHeaderTransparency: document.getElementById('themeLightHeaderTransparency'),
             themeDarkHeaderSurface: document.getElementById('themeDarkHeaderSurface'),
             themeDarkHeaderText: document.getElementById('themeDarkHeaderText'),
             themeDarkHeaderBorder: document.getElementById('themeDarkHeaderBorder'),
+            themeDarkHeaderTransparency: document.getElementById('themeDarkHeaderTransparency'),
             selectedSourcesGenerationModal: document.getElementById(
                 'selectedSourcesGenerationModal'
             ),
@@ -283,10 +450,18 @@ class App {
 
         /** @type {Record<string, string>} Localized short names for source ids (header `news_source_*`). */
         this._i18nNewsSourceLabels = {};
+        this._i18nHeaderSourcePrevTitle = 'Vorherige Quelle';
+        this._i18nHeaderSourceNextTitle = 'Nächste Quelle';
+        this._i18nHeaderSourceFavoritesTitle = 'Zwischen favorisierten Quellen wechseln';
+        this._i18nHeaderSourceFavoritesEmptyTitle = 'Keine favorisierten Quellen aktiv';
+        this._i18nHeaderSourceFavoriteAddTitle = 'Aktuelle Quelle als Favorit markieren';
+        this._i18nHeaderSourceFavoriteRemoveTitle = 'Aktuelle Quelle aus Favoriten entfernen';
         this._i18nDashboardSaved = '';
         this._i18nDashboardNeedOne = '';
         this._i18nToggleVisibleEnable = '';
         this._i18nToggleVisibleDisable = '';
+        /** @type {Record<string, string>} */
+        this._i18nFilterLabels = {};
         this._i18nHeiseMagazineHeading = '';
         /** @type {Record<string, string>} */
         this._i18nHeiseMagazineById = {};
@@ -324,6 +499,7 @@ class App {
         this._i18nKiStatsChartAvgTokens = '';
         this._i18nKiStatsChartAvgDuration = '';
         this._i18nKiStatsChartNewTpl = '';
+        this._i18nKiStatsTopModel = 'Model';
         this._i18nLmModelHintDefault = '';
         this._i18nLmModelAutomatic = 'No specific choice — server decides';
         this._i18nLmModelLoading = 'Loading model list…';
@@ -335,6 +511,15 @@ class App {
         this._i18nLmModelActiveSuffix = ' — currently in use';
         this._i18nLmModelFileError =
             '“REST via same page origin” does not work with file://. Use http(s) or disable the option.';
+        this._i18nReasoningLevelHint =
+            'Choose the reasoning level for LM Studio models (when supported). Values match the LM Studio API.';
+        this._i18nReasoningEnabledHint =
+            'Enable reasoning feature (for LLMs that support this feature).';
+        this._i18nReasoningLevelOff = 'Off';
+        this._i18nReasoningLevelLow = 'Low';
+        this._i18nReasoningLevelMedium = 'Medium';
+        this._i18nReasoningLevelHigh = 'High';
+        this._i18nReasoningLevelOn = 'On';
         this._i18nArticleTranslationToolbarHint = '';
         this._i18nArticleTranslationReloadStatus = '';
         this._i18nArticleTranslationQuota = '';
@@ -370,6 +555,9 @@ class App {
         this._i18nExportSelectionInfo = 'Ausgewählt: {selected}, sichtbar: {visible}';
         this._i18nExportDone = 'Export erstellt: {count} Artikel ({format}).';
         this._i18nExportNoItems = 'Keine Artikel für den Export gefunden.';
+        this._i18nThemeBrightnessHintNeutral = '{value} % — neutral (Standardfarben)';
+        this._i18nThemeBrightnessHintLighter = '{value} % — Flächen heller, Text bleibt gut lesbar';
+        this._i18nThemeBrightnessHintDarker = '{value} % — Flächen dunkler, Text bleibt gut lesbar';
 
         // Initialize
         this.init();
@@ -545,6 +733,45 @@ class App {
     }
 
     /**
+     * @param {unknown} raw
+     * @returns {string[]}
+     */
+    static normalizeFavoriteNewsSourcesArray(raw) {
+        const order = App.newsCatalogIds();
+        const known = new Set(order);
+        if (!Array.isArray(raw) || raw.length === 0) {
+            return [];
+        }
+        const picked = new Set(
+            raw.map((x) => String(x).trim()).filter((id) => known.has(id))
+        );
+        if (picked.size === 0) {
+            return [];
+        }
+        return order.filter((id) => picked.has(id));
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {Record<string, string[]>}
+     */
+    static normalizeDisabledCategoriesBySource(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            return {};
+        }
+        const knownSources = new Set(App.newsCatalogIds());
+        const out = {};
+        Object.entries(raw).forEach(([sourceId, value]) => {
+            const source = String(sourceId || '').trim();
+            if (!source || !knownSources.has(source) || !Array.isArray(value)) {
+                return;
+            }
+            out[source] = [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
+        });
+        return out;
+    }
+
+    /**
      * @param {string} raw
      * @param {string[]} enabledOrderedIds
      * @returns {string}
@@ -693,11 +920,15 @@ class App {
     }
 
     setupEventListeners() {
-        // Category filters
-        const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
-        categoryCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', () => this.handleCategoryChange());
-        });
+        if (this.elements.categoryFilters) {
+            this.elements.categoryFilters.addEventListener('change', (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement) || !target.classList.contains('category-checkbox')) {
+                    return;
+                }
+                this.handleCategoryChange();
+            });
+        }
 
         if (this.elements.sortSelect) {
             this.elements.sortSelect.addEventListener('change', () => this.syncSortDateVisibility());
@@ -821,6 +1052,11 @@ class App {
         if (this.elements.clearKiStatsBtn) {
             this.elements.clearKiStatsBtn.addEventListener('click', () => this.confirmClearKiStats());
         }
+        document.addEventListener('ki-stats-updated', () => {
+            if (this.elements.kiStatsModal && this.elements.kiStatsModal.classList.contains('active')) {
+                this.refreshKiStatsPanel();
+            }
+        });
 
         // Add event listeners for period selector buttons
         const periodBtns = document.querySelectorAll('.btn-period');
@@ -892,6 +1128,9 @@ class App {
         if (this.elements.lmModelRefreshBtn) {
             this.elements.lmModelRefreshBtn.addEventListener('click', () => void this.populateModelDropdown());
         }
+        if (this.elements.lmModel) {
+            this.elements.lmModel.addEventListener('change', () => this.syncReasoningControlsForCurrentModel());
+        }
 
         if (this.elements.articleTranslationEnabled) {
             this.elements.articleTranslationEnabled.addEventListener('change', () => this.syncArticleTranslationFormDisabled());
@@ -906,6 +1145,26 @@ class App {
 
         if (this.elements.newsSourceSelect) {
             this.elements.newsSourceSelect.addEventListener('change', () => void this.onNewsSourceChange());
+        }
+        if (this.elements.headerSourcePrevBtn) {
+            this.elements.headerSourcePrevBtn.addEventListener('click', () =>
+                void this.moveHeaderNewsSource(-1)
+            );
+        }
+        if (this.elements.headerSourceFavoritesBtn) {
+            this.elements.headerSourceFavoritesBtn.addEventListener('click', () =>
+                void this.moveHeaderToNextFavoriteNewsSource()
+            );
+        }
+        if (this.elements.headerSourceNextBtn) {
+            this.elements.headerSourceNextBtn.addEventListener('click', () =>
+                void this.moveHeaderNewsSource(1)
+            );
+        }
+        if (this.elements.headerSourceFavoriteToggleBtn) {
+            this.elements.headerSourceFavoriteToggleBtn.addEventListener('click', () =>
+                void this.toggleCurrentNewsSourceFavorite()
+            );
         }
 
         // Event delegation on newsGrid for all card buttons (replaces multiple document listeners)
@@ -1381,6 +1640,201 @@ class App {
             return App.newsCatalogIds();
         }
         return App.normalizeEnabledNewsSourcesArray(this.settings.enabledNewsSources);
+    }
+
+    /** @returns {string[]} Favorite source ids in catalog order. */
+    getFavoriteNewsSourceIds() {
+        if (Array.isArray(this.favoriteNewsSources)) {
+            return App.normalizeFavoriteNewsSourcesArray(this.favoriteNewsSources);
+        }
+        return App.normalizeFavoriteNewsSourcesArray(this.settings?.favoriteNewsSources);
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {boolean}
+     */
+    isFavoriteNewsSource(sourceId) {
+        const normalized = App.normalizeStoredNewsSourceId(sourceId);
+        if (!normalized) {
+            return false;
+        }
+        return this.getFavoriteNewsSourceIds().includes(normalized);
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {string}
+     */
+    getNewsSourceSortLabel(sourceId) {
+        const id = App.normalizeStoredNewsSourceId(sourceId) || String(sourceId || '').trim();
+        return (
+            (this._i18nNewsSourceLabels && this._i18nNewsSourceLabels[id]) ||
+            App.getSourceDisplayName(id) ||
+            id
+        );
+    }
+
+    /** @returns {string[]} Enabled source ids sorted alphabetically by the visible label. */
+    getSortedEnabledNewsSourceIds() {
+        const enabled = this.getEnabledNewsSourceIds();
+        const orderIndex = new Map(enabled.map((id, index) => [id, index]));
+        const lang =
+            typeof document !== 'undefined' && document.documentElement
+                ? document.documentElement.lang || undefined
+                : undefined;
+        const collator = new Intl.Collator(lang, {
+            usage: 'sort',
+            sensitivity: 'base',
+            numeric: true
+        });
+        return [...enabled].sort((a, b) => {
+            const cmp = collator.compare(this.getNewsSourceSortLabel(a), this.getNewsSourceSortLabel(b));
+            if (cmp !== 0) {
+                return cmp;
+            }
+            return (orderIndex.get(a) || 0) - (orderIndex.get(b) || 0);
+        });
+    }
+
+    /** @returns {string[]} Enabled favorite source ids in the same order as the header dropdown. */
+    getEnabledFavoriteNewsSourceIdsSorted() {
+        const favoriteSet = new Set(this.getFavoriteNewsSourceIds());
+        return this.getSortedEnabledNewsSourceIds().filter((id) => favoriteSet.has(id));
+    }
+
+    /** @returns {string} */
+    getCurrentHeaderNewsSourceId() {
+        const sorted = this.getSortedEnabledNewsSourceIds();
+        const raw =
+            (this.elements.newsSourceSelect && this.elements.newsSourceSelect.value) ||
+            (this.settings && this.settings.newsSource) ||
+            '';
+        return App.normalizeNewsSourceWithEnabled(raw, sorted);
+    }
+
+    refreshHeaderSourceControls() {
+        const currentSource = this.getCurrentHeaderNewsSourceId();
+        const sortedSources = this.getSortedEnabledNewsSourceIds();
+        const currentIndex = sortedSources.indexOf(currentSource);
+        const favoriteToggleBtn = this.elements.headerSourceFavoriteToggleBtn;
+        const prevBtn = this.elements.headerSourcePrevBtn;
+        const favoritesBtn = this.elements.headerSourceFavoritesBtn;
+        const nextBtn = this.elements.headerSourceNextBtn;
+        const enabledFavorites = this.getEnabledFavoriteNewsSourceIdsSorted();
+        const currentIsFavorite = this.isFavoriteNewsSource(currentSource);
+
+        if (favoriteToggleBtn) {
+            const label = currentIsFavorite
+                ? this._i18nHeaderSourceFavoriteRemoveTitle
+                : this._i18nHeaderSourceFavoriteAddTitle;
+            favoriteToggleBtn.disabled = !currentSource;
+            favoriteToggleBtn.setAttribute('aria-pressed', currentIsFavorite ? 'true' : 'false');
+            favoriteToggleBtn.setAttribute('title', label);
+            favoriteToggleBtn.setAttribute('aria-label', label);
+        }
+
+        if (prevBtn) {
+            const disabled = currentIndex <= 0;
+            prevBtn.disabled = disabled;
+            prevBtn.setAttribute('title', this._i18nHeaderSourcePrevTitle);
+            prevBtn.setAttribute('aria-label', this._i18nHeaderSourcePrevTitle);
+        }
+
+        if (nextBtn) {
+            const disabled = currentIndex < 0 || currentIndex >= sortedSources.length - 1;
+            nextBtn.disabled = disabled;
+            nextBtn.setAttribute('title', this._i18nHeaderSourceNextTitle);
+            nextBtn.setAttribute('aria-label', this._i18nHeaderSourceNextTitle);
+        }
+
+        if (favoritesBtn) {
+            const disabled =
+                enabledFavorites.length === 0 ||
+                (enabledFavorites.length === 1 && enabledFavorites[0] === currentSource);
+            const label =
+                enabledFavorites.length > 0
+                    ? this._i18nHeaderSourceFavoritesTitle
+                    : this._i18nHeaderSourceFavoritesEmptyTitle;
+            favoritesBtn.disabled = disabled;
+            favoritesBtn.setAttribute('title', label);
+            favoritesBtn.setAttribute('aria-label', label);
+        }
+    }
+
+    async selectHeaderNewsSource(sourceId) {
+        const sel = this.elements.newsSourceSelect;
+        if (!sel) {
+            return;
+        }
+        const sortedSources = this.getSortedEnabledNewsSourceIds();
+        const next = App.normalizeNewsSourceWithEnabled(sourceId, sortedSources);
+        const current = this.getCurrentHeaderNewsSourceId();
+        sel.value = next;
+        if (next === current) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
+        await this.onNewsSourceChange();
+    }
+
+    async moveHeaderNewsSource(step) {
+        const sortedSources = this.getSortedEnabledNewsSourceIds();
+        const current = this.getCurrentHeaderNewsSourceId();
+        const currentIndex = sortedSources.indexOf(current);
+        const nextIndex = currentIndex + step;
+        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sortedSources.length) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
+        await this.selectHeaderNewsSource(sortedSources[nextIndex]);
+    }
+
+    async moveHeaderToNextFavoriteNewsSource() {
+        const favorites = this.getEnabledFavoriteNewsSourceIdsSorted();
+        if (favorites.length === 0) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
+        const current = this.getCurrentHeaderNewsSourceId();
+        const currentIndex = favorites.indexOf(current);
+        const next = currentIndex >= 0 ? favorites[(currentIndex + 1) % favorites.length] : favorites[0];
+        if (!next || next === current) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
+        await this.selectHeaderNewsSource(next);
+    }
+
+    async toggleCurrentNewsSourceFavorite() {
+        const current = this.getCurrentHeaderNewsSourceId();
+        if (!current) {
+            return;
+        }
+        const prevFavorites = [...this.getFavoriteNewsSourceIds()];
+        const nextSet = new Set(this.getFavoriteNewsSourceIds());
+        if (nextSet.has(current)) {
+            nextSet.delete(current);
+        } else {
+            nextSet.add(current);
+        }
+        const nextFavorites = App.normalizeFavoriteNewsSourcesArray([...nextSet]);
+        this.favoriteNewsSources = nextFavorites;
+        if (this.settings) {
+            this.settings.favoriteNewsSources = nextFavorites;
+        }
+        this.refreshHeaderSourceControls();
+        try {
+            await this.storage.saveSettings({ favoriteNewsSources: nextFavorites });
+        } catch (e) {
+            const restoredFavorites = App.normalizeFavoriteNewsSourcesArray(prevFavorites);
+            this.favoriteNewsSources = restoredFavorites;
+            if (this.settings) {
+                this.settings.favoriteNewsSources = restoredFavorites;
+            }
+            this.refreshHeaderSourceControls();
+            console.error('toggleCurrentNewsSourceFavorite: failed to persist favoriteNewsSources', e);
+        }
     }
 
     /** @returns {boolean} */
@@ -1928,6 +2382,12 @@ class App {
                 }
             }
             const newsSource = App.normalizeNewsSourceWithEnabled(settings.newsSource, enabledOrdered);
+            const disabledCategoriesBySource = App.normalizeDisabledCategoriesBySource(
+                settings.disabledCategoriesBySource
+            );
+            const favoriteNewsSources = App.normalizeFavoriteNewsSourcesArray(
+                settings.favoriteNewsSources
+            );
             const summaryLangMode = settings.summaryLangMode === 'browser' ? 'browser' : 'site';
 
             const reasoningStored = AISummarizer.normalizeLmReasoningParam(settings.reasoning);
@@ -2020,7 +2480,9 @@ class App {
                 summaryConcurrency,
                 summaryRequestTimeoutSeconds,
                 categoryFilterSchemaVersion: categorySchemaVer,
-                newsSourcesCatalogMigrationVersion: newsSrcCatalogVer
+                newsSourcesCatalogMigrationVersion: newsSrcCatalogVer,
+                disabledCategoriesBySource,
+                favoriteNewsSources
             };
 
             try {
@@ -2073,6 +2535,9 @@ class App {
             this.settings.themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(
                 this.settings.themeSurfaceBrightness
             );
+            this.settings.themeHeaderTransparency = App.normalizeThemeHeaderTransparency(
+                this.settings.themeHeaderTransparency
+            );
             try {
                 const tj = localStorage.getItem('heise_theme_custom_colors');
                 if (tj) {
@@ -2103,6 +2568,14 @@ class App {
                 const bj = localStorage.getItem('heise_theme_surface_brightness');
                 if (bj) {
                     this.settings.themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(JSON.parse(bj));
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                const htj = localStorage.getItem('heise_theme_header_transparency');
+                if (htj) {
+                    this.settings.themeHeaderTransparency = App.normalizeThemeHeaderTransparency(JSON.parse(htj));
                 }
             } catch (_) {
                 /* ignore */
@@ -2174,15 +2647,18 @@ class App {
                 this.elements.summaryLangMode.value = summaryLangMode;
             }
 
-            this.selectedCategories = Array.isArray(this.settings.selectedCategories)
-                ? [...this.settings.selectedCategories]
-                : [];
-            document.querySelectorAll('.category-checkbox').forEach((checkbox) => {
-                checkbox.checked = this.selectedCategories.includes(checkbox.value);
-            });
+            this.disabledCategoriesBySource = { ...disabledCategoriesBySource };
+            this.favoriteNewsSources = [...favoriteNewsSources];
+            this.selectedCategories = [];
             this.syncCategoryFiltersVisibility();
             this.ensureDefaultCategorySelectionForSource();
-            this.settings.selectedCategories = this.selectedCategories;
+            this.settings = {
+                ...this.settings,
+                disabledCategoriesBySource: this.disabledCategoriesBySource,
+                favoriteNewsSources: this.favoriteNewsSources,
+                selectedCategories: this.selectedCategories
+            };
+            this.refreshHeaderSourceControls();
         } catch (error) {
             console.error('Error loading settings:', error);
         }
@@ -2259,28 +2735,87 @@ class App {
 
     /**
      * @param {unknown} raw
-     * @returns {{ light: number, dark: number }}
+     * @returns {number}
+     */
+    static normalizeThemeSurfaceBrightnessValue(raw) {
+        const clamp = (n) => Math.min(100, Math.max(0, n));
+        const d = 50;
+        if (raw == null || raw === '') {
+            return d;
+        }
+        const n = parseInt(String(raw), 10);
+        if (!Number.isFinite(n)) {
+            return d;
+        }
+        return clamp(n);
+    }
+
+    /**
+     * Legacy migration: old sliders used 100 as neutral with a narrower/wider custom range.
+     * @param {unknown} raw
+     * @returns {number}
+     */
+    static normalizeLegacyThemeSurfaceBrightnessValue(raw) {
+        const d = 50;
+        if (raw == null || raw === '') {
+            return d;
+        }
+        const n = parseInt(String(raw), 10);
+        if (!Number.isFinite(n)) {
+            return d;
+        }
+        return App.normalizeThemeSurfaceBrightnessValue(
+            Math.round(50 + ((n - 100) * 50) / 30)
+        );
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ light: number, dark: number, version: 2 }}
      */
     static normalizeThemeSurfaceBrightness(raw) {
-        const clamp = (n) => Math.min(130, Math.max(70, n));
-        const d = 100;
+        const d = 50;
         let light = d;
         let dark = d;
         if (raw && typeof raw === 'object') {
-            if (raw.light != null && raw.light !== '') {
-                const n = parseInt(String(raw.light), 10);
-                if (Number.isFinite(n)) {
-                    light = clamp(n);
-                }
-            }
-            if (raw.dark != null && raw.dark !== '') {
-                const n = parseInt(String(raw.dark), 10);
-                if (Number.isFinite(n)) {
-                    dark = clamp(n);
-                }
-            }
+            const isV2 = Number(raw.version) === 2;
+            const normalizeSingle = isV2
+                ? App.normalizeThemeSurfaceBrightnessValue
+                : App.normalizeLegacyThemeSurfaceBrightnessValue;
+            light = normalizeSingle(raw.light);
+            dark = normalizeSingle(raw.dark);
         }
-        return { light, dark };
+        return { light, dark, version: 2 };
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {number}
+     */
+    static normalizeThemeHeaderTransparencyValue(raw) {
+        const d = 0;
+        if (raw == null || raw === '') {
+            return d;
+        }
+        const n = parseInt(String(raw), 10);
+        if (!Number.isFinite(n)) {
+            return d;
+        }
+        return Math.min(100, Math.max(0, n));
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ light: number, dark: number, version: 1 }}
+     */
+    static normalizeThemeHeaderTransparency(raw) {
+        let light = THEME_DEFAULT_HEADER_TRANSPARENCY.light;
+        let dark = THEME_DEFAULT_HEADER_TRANSPARENCY.dark;
+        if (raw && typeof raw === 'object') {
+            light = App.normalizeThemeHeaderTransparencyValue(raw.light);
+            dark = App.normalizeThemeHeaderTransparencyValue(raw.dark);
+        }
+        return { light, dark, version: 1 };
     }
 
     /**
@@ -2344,6 +2879,51 @@ class App {
         }
     }
 
+    /**
+     * @param {unknown} raw
+     * @returns {Record<string, string[]>}
+     */
+    static normalizePendingNewArticleUrlState(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return {};
+        }
+        /** @type {Record<string, string[]>} */
+        const out = {};
+        Object.entries(raw).forEach(([sourceId, urls]) => {
+            const normalizedSource = App.normalizeStoredNewsSourceId(sourceId);
+            if (!normalizedSource || !Array.isArray(urls)) {
+                return;
+            }
+            const normalizedUrls = [...new Set(
+                urls
+                    .map((url) => App.canonicalArticleUrl(url))
+                    .filter(Boolean)
+            )];
+            if (normalizedUrls.length > 0) {
+                out[normalizedSource] = normalizedUrls;
+            }
+        });
+        return out;
+    }
+
+    /**
+     * @returns {Record<string, string[]>}
+     */
+    static loadPendingNewArticleUrlState() {
+        if (typeof localStorage === 'undefined') {
+            return {};
+        }
+        try {
+            const raw = localStorage.getItem(PENDING_NEW_ARTICLE_URLS_STORAGE_KEY);
+            if (!raw) {
+                return {};
+            }
+            return App.normalizePendingNewArticleUrlState(JSON.parse(raw));
+        } catch (_) {
+            return {};
+        }
+    }
+
     /** @param {unknown} raw @returns {string | null} */
     static normalizeHexColor(raw) {
         const s = String(raw || '').trim();
@@ -2386,21 +2966,72 @@ class App {
     }
 
     /**
-     * @param {string} hex
-     * @param {number} percent 70–130 (100 = unchanged)
+     * Maps 0..100 (50 = neutral) into a signed [-1..+1] curve with a small dead zone
+     * around 50 so casual slider movements feel stable, then eases towards the extremes.
+     * @param {number} percent 0–100
+     * @returns {number} signed factor, -1..+1
      */
-    static adjustSurfaceBrightness(hex, percent) {
+    static themeBrightnessCurve(percent) {
+        const p = App.normalizeThemeSurfaceBrightnessValue(percent);
+        const t = (p - 50) / 50;
+        if (Math.abs(t) < 0.04) {
+            return 0;
+        }
+        const sign = t < 0 ? -1 : 1;
+        const eased = Math.pow(Math.abs(t), 1.15);
+        return sign * Math.min(1, eased);
+    }
+
+    /**
+     * Mix `hex` toward white/black based on the brightness slider.
+     * The cap (`maxMix`) keeps the change moderate so surfaces stay distinguishable.
+     * @param {string} hex
+     * @param {number} percent 0–100 (50 = unchanged)
+     * @param {number} [maxMix=THEME_SURFACE_BRIGHTNESS_MAX] upper bound of the mix amount
+     */
+    static adjustSurfaceBrightness(hex, percent, maxMix) {
         const h = App.normalizeHexColor(hex);
         if (!h) {
             return hex;
         }
-        const p = Math.min(130, Math.max(70, percent));
-        const t = (p - 100) / 100;
-        if (Math.abs(t) < 0.001) {
+        const t = App.themeBrightnessCurve(percent);
+        if (t === 0) {
             return h;
         }
+        const cap = typeof maxMix === 'number' ? maxMix : THEME_SURFACE_BRIGHTNESS_MAX;
         const toward = t > 0 ? '#ffffff' : '#000000';
-        const amt = Math.min(1, Math.abs(t) * 1.85);
+        const amt = Math.min(1, Math.abs(t) * cap);
+        return App.mixHex(h, toward, amt);
+    }
+
+    /**
+     * Adjust text colors against a surface that was shifted by the brightness slider.
+     * The text moves in the *opposite* direction of the surface so contrast is preserved
+     * at slider extremes. `mode` clamps the direction so light-mode text never turns
+     * brighter than its base when the surface goes lighter (and vice versa for dark mode).
+     * @param {string} hex original text color
+     * @param {number} percent 0–100 (50 = unchanged)
+     * @param {'light'|'dark'} mode
+     */
+    static adjustTextBrightness(hex, percent, mode) {
+        const h = App.normalizeHexColor(hex);
+        if (!h) {
+            return hex;
+        }
+        const t = App.themeBrightnessCurve(percent);
+        if (t === 0) {
+            return h;
+        }
+        // light mode: only react when surface gets darker (t < 0) → push text lighter.
+        // dark  mode: only react when surface gets lighter (t > 0) → push text darker.
+        if (mode === 'light' && t > 0) {
+            return h;
+        }
+        if (mode === 'dark' && t < 0) {
+            return h;
+        }
+        const toward = mode === 'light' ? '#ffffff' : '#000000';
+        const amt = Math.min(1, Math.abs(t) * THEME_TEXT_CONTRAST_MAX);
         return App.mixHex(h, toward, amt);
     }
 
@@ -2409,7 +3040,8 @@ class App {
      * @param {'light' | 'dark'} mode
      */
     static resolveThemeSurfaceForMode(palette, mode) {
-        const defs = THEME_DEFAULT_SURFACE[mode];
+        const colorTheme = App.normalizeColorTheme(palette && palette.colorTheme);
+        const defs = getThemeSurfaceDefaults(colorTheme, mode);
         const cust = palette.themeCustomColors[mode] || {};
         const merged = {
             bgPrimary: cust.bgPrimary || defs.bgPrimary,
@@ -2422,21 +3054,63 @@ class App {
             bgPrimary: App.adjustSurfaceBrightness(merged.bgPrimary, br),
             bgSecondary: App.adjustSurfaceBrightness(merged.bgSecondary, br),
             bgCard: App.adjustSurfaceBrightness(merged.bgCard, br),
-            borderColor: App.adjustSurfaceBrightness(merged.borderColor, br)
+            borderColor: App.adjustSurfaceBrightness(merged.borderColor, br, THEME_BORDER_BRIGHTNESS_MAX)
         };
     }
 
     /**
-     * @param {{ themeCustomHeaderColors: { light: Record<string, string>, dark: Record<string, string> } }} palette
+     * @param {{ themeCustomHeaderColors: { light: Record<string, string>, dark: Record<string, string> }, themeSurfaceBrightness?: { light: number, dark: number } }} palette
      * @param {'light' | 'dark'} mode
      */
     static resolveThemeHeaderForMode(palette, mode) {
         const defs = THEME_DEFAULT_HEADER[mode];
         const cust = (palette.themeCustomHeaderColors && palette.themeCustomHeaderColors[mode]) || {};
+        const br = palette && palette.themeSurfaceBrightness ? palette.themeSurfaceBrightness[mode] : 50;
         return {
-            headerSurface: cust.headerSurface || defs.headerSurface,
-            headerText: cust.headerText || defs.headerText,
-            headerBorder: cust.headerBorder || defs.headerBorder
+            headerSurface: App.adjustSurfaceBrightness(cust.headerSurface || defs.headerSurface, br),
+            headerText: App.adjustTextBrightness(cust.headerText || defs.headerText, br, mode),
+            headerBorder: App.adjustSurfaceBrightness(
+                cust.headerBorder || defs.headerBorder,
+                br,
+                THEME_BORDER_BRIGHTNESS_MAX
+            )
+        };
+    }
+
+    /**
+     * Resolve text colors for the active mode, taking the brightness slider into account
+     * so text contrast scales with the surface adjustment.
+     * @param {{ themeSurfaceBrightness?: { light: number, dark: number } }} palette
+     * @param {'light' | 'dark'} mode
+     * @returns {{ textPrimary: string, textSecondary: string }}
+     */
+    static resolveThemeTextForMode(palette, mode) {
+        const defs = THEME_DEFAULT_TEXT[mode];
+        const br = palette && palette.themeSurfaceBrightness ? palette.themeSurfaceBrightness[mode] : 50;
+        return {
+            textPrimary: App.adjustTextBrightness(defs.textPrimary, br, mode),
+            textSecondary: App.adjustTextBrightness(defs.textSecondary, br, mode)
+        };
+    }
+
+    /**
+     * @param {{ themeHeaderTransparency?: { light: number, dark: number } }} palette
+     * @param {'light' | 'dark'} mode
+     */
+    static resolveThemeHeaderTransparencyForMode(palette, mode) {
+        const raw =
+            palette && palette.themeHeaderTransparency
+                ? palette.themeHeaderTransparency[mode]
+                : THEME_DEFAULT_HEADER_TRANSPARENCY[mode];
+        const transparency = App.normalizeThemeHeaderTransparencyValue(raw);
+        const opaque = Math.max(0, 100 - transparency);
+        return {
+            shellBorderMix: `${Math.round(opaque * 0.78)}%`,
+            overlayOpacity: String(opaque / 100),
+            panelFill: `${opaque}%`,
+            panelBorderFill: `${Math.round(opaque * 0.88)}%`,
+            controlFill: `${opaque}%`,
+            controlBorderFill: `${Math.round(opaque)}%`
         };
     }
 
@@ -2761,24 +3435,28 @@ class App {
             return;
         }
         const id = App.normalizeColorTheme(sel.value);
+        const themeCustomColors = App.normalizeThemeCustomColors({ light: {}, dark: {} });
         sel.value = id;
         document.documentElement.setAttribute('data-color-theme', id);
         if (this.settings) {
             this.settings.colorTheme = id;
+            this.settings.themeCustomColors = themeCustomColors;
         }
         try {
             localStorage.setItem('heise_color_theme', id);
+            localStorage.setItem('heise_theme_custom_colors', JSON.stringify(themeCustomColors));
         } catch (e) {
             console.warn('localStorage:', e);
         }
         try {
-            await this.storage.saveSettings({ colorTheme: id });
+            await this.storage.saveSettings({ colorTheme: id, themeCustomColors });
         } catch (e) {
             console.warn('persistColorTheme:', e);
         }
         if (this.elements.settingsColorThemeSelect) {
             this.elements.settingsColorThemeSelect.value = id;
         }
+        this.applyThemeSurfaceDefaultsToModal(id);
         this.applyThemeSurfaceVariables();
     }
 
@@ -2903,23 +3581,20 @@ class App {
                     noneBtn.setAttribute('title', filtersLoc.select_none_title);
                     noneBtn.setAttribute('aria-label', filtersLoc.select_none_title);
                 }
-                document.querySelectorAll('.category-checkbox').forEach((cb) => {
-                    const val = String(cb.value || '').trim();
-                    if (!val) {
+                const out = {};
+                Object.keys(filtersLoc).forEach((key) => {
+                    if (!key.startsWith('cat_')) {
                         return;
                     }
-                    const k = `cat_${val.replace(/[^a-z0-9_]/gi, '_')}`;
-                    const text = filtersLoc[k];
-                    if (text && cb.id) {
-                        const lab = document.querySelector(`label[for="${cb.id}"]`);
-                        if (lab) {
-                            lab.textContent = text;
-                        }
+                    const value = key.slice(4);
+                    if (!value) {
+                        return;
                     }
+                    out[value] = String(filtersLoc[key] || '').trim();
                 });
-                const magH = document.getElementById('categoryFiltersMagazineHeading');
-                if (magH && filtersLoc.magazines_row_label) {
-                    magH.textContent = filtersLoc.magazines_row_label;
+                this._i18nFilterLabels = out;
+                if (this.elements.categoryFilters) {
+                    this.renderCategoryFilters();
                 }
             }
 
@@ -3190,6 +3865,31 @@ class App {
                         this._i18nNewsSourceLabels[id] = nextLabel;
                     });
                 }
+                if (headerLoc.source_prev_title) {
+                    this._i18nHeaderSourcePrevTitle = headerLoc.source_prev_title;
+                }
+                if (headerLoc.source_next_title) {
+                    this._i18nHeaderSourceNextTitle = headerLoc.source_next_title;
+                }
+                if (headerLoc.source_favorites_nav_title) {
+                    this._i18nHeaderSourceFavoritesTitle = headerLoc.source_favorites_nav_title;
+                }
+                if (headerLoc.source_favorites_nav_empty_title) {
+                    this._i18nHeaderSourceFavoritesEmptyTitle =
+                        headerLoc.source_favorites_nav_empty_title;
+                }
+                if (headerLoc.source_favorite_add_title) {
+                    this._i18nHeaderSourceFavoriteAddTitle = headerLoc.source_favorite_add_title;
+                }
+                if (headerLoc.source_favorite_remove_title) {
+                    this._i18nHeaderSourceFavoriteRemoveTitle =
+                        headerLoc.source_favorite_remove_title;
+                }
+                this.rebuildNewsSourceSelect();
+                if (this.elements.newsSourceSelect) {
+                    this.elements.newsSourceSelect.value = ns;
+                }
+                this.refreshHeaderSourceControls();
                 if (headerLoc.settings_dashboard_btn && this.elements.dashboardSettingsBtn) {
                     this.elements.dashboardSettingsBtn.textContent = headerLoc.settings_dashboard_btn;
                     this.elements.dashboardSettingsBtn.setAttribute(
@@ -3678,7 +4378,25 @@ class App {
                 if (rh && ki.reasoning_level_hint) {
                     rh.textContent = ki.reasoning_level_hint;
                 }
+                if (ki.reasoning_level_hint) {
+                    this._i18nReasoningLevelHint = ki.reasoning_level_hint;
+                }
                 const rs = document.getElementById('reasoningSelect');
+                if (ki.reasoning_level_off) {
+                    this._i18nReasoningLevelOff = ki.reasoning_level_off;
+                }
+                if (ki.reasoning_level_low) {
+                    this._i18nReasoningLevelLow = ki.reasoning_level_low;
+                }
+                if (ki.reasoning_level_medium) {
+                    this._i18nReasoningLevelMedium = ki.reasoning_level_medium;
+                }
+                if (ki.reasoning_level_high) {
+                    this._i18nReasoningLevelHigh = ki.reasoning_level_high;
+                }
+                if (ki.reasoning_level_on) {
+                    this._i18nReasoningLevelOn = ki.reasoning_level_on;
+                }
                 if (rs) {
                     const reasoningOpts = [
                         ['off', ki.reasoning_level_off],
@@ -3707,6 +4425,10 @@ class App {
                 if (reHint && ki.reasoning_enabled_hint) {
                     reHint.textContent = ki.reasoning_enabled_hint;
                 }
+                if (ki.reasoning_enabled_hint) {
+                    this._i18nReasoningEnabledHint = ki.reasoning_enabled_hint;
+                }
+                this.syncReasoningControlsForCurrentModel();
                 
                 const okb = document.getElementById('openKiStatsBtn');
                 if (okb && ki.open_stats_btn) {
@@ -3792,6 +4514,14 @@ class App {
                 if (tbd && ki.theme_brightness_label_dark) {
                     tbd.textContent = ki.theme_brightness_label_dark;
                 }
+                const thtl = document.getElementById('themeHeaderTransparencyLightLabel');
+                if (thtl && ki.theme_header_transparency_label) {
+                    thtl.textContent = ki.theme_header_transparency_label;
+                }
+                const thtd = document.getElementById('themeHeaderTransparencyDarkLabel');
+                if (thtd && ki.theme_header_transparency_label_dark) {
+                    thtd.textContent = ki.theme_header_transparency_label_dark;
+                }
                 const themeColorLabelPairs = [
                     ['themeLightBgPrimaryLabel', 'theme_light_bg_primary'],
                     ['themeLightBgSecondaryLabel', 'theme_light_bg_secondary'],
@@ -3818,6 +4548,16 @@ class App {
                 if (trb && ki.theme_reset_defaults) {
                     trb.textContent = ki.theme_reset_defaults;
                 }
+                if (ki.theme_brightness_hint_neutral) {
+                    this._i18nThemeBrightnessHintNeutral = ki.theme_brightness_hint_neutral;
+                }
+                if (ki.theme_brightness_hint_lighter) {
+                    this._i18nThemeBrightnessHintLighter = ki.theme_brightness_hint_lighter;
+                }
+                if (ki.theme_brightness_hint_darker) {
+                    this._i18nThemeBrightnessHintDarker = ki.theme_brightness_hint_darker;
+                }
+                this.syncThemeModalBrightnessHints();
             }
 
             const ks = data.ki_stats;
@@ -3893,6 +4633,9 @@ class App {
                 }
                 if (ks.chart_avg_duration) {
                     this._i18nKiStatsChartAvgDuration = ks.chart_avg_duration;
+                }
+                if (ks.top_model) {
+                    this._i18nKiStatsTopModel = ks.top_model;
                 }
             }
 
@@ -4179,15 +4922,9 @@ class App {
         if (!tb) {
             return;
         }
-        if (!this.settings || this.settings.articleTranslationEnabled !== true) {
-            tb.hidden = true;
-            return;
-        }
-        tb.hidden = false;
+        tb.hidden = true;
         if (hintEl) {
-            hintEl.textContent =
-                this._i18nArticleTranslationToolbarHint ||
-                'Machine translation is active for the article list below (Google Translate).';
+            hintEl.textContent = '';
         }
     }
 
@@ -4929,23 +5666,124 @@ class App {
     }
 
     syncCategoryFiltersVisibility() {
-        const src = this.normalizeNewsSource(this.settings?.newsSource);
-        const heiseEl = document.getElementById('categoryFiltersHeise');
-        const bildEl = document.getElementById('categoryFiltersBild');
-        const teleEl = document.getElementById('categoryFiltersTelepolis');
-        const genericEl = document.getElementById('categoryFiltersGenericSources');
-        if (heiseEl) {
-            heiseEl.hidden = src !== 'heise';
+        this.renderCategoryFilters();
+    }
+
+    /**
+     * Build visible category options from the currently loaded articles of the active source.
+     * @param {Array<Record<string, unknown>>} [items]
+     * @returns {{ value: string, label: string }[]}
+     */
+    collectCategoryOptionsForCurrentSource(items = this.newsItems) {
+        const activeSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const optionsByValue = new Map();
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const sourceId = App.normalizeStoredNewsSourceId(item && item.newsSource);
+            if (sourceId && sourceId !== activeSource) {
+                return;
+            }
+            const value = String(item && item.category || '').trim();
+            if (!value || optionsByValue.has(value)) {
+                return;
+            }
+            const fallbackLabel = String(item && item.categoryName || '').trim() || value;
+            optionsByValue.set(value, this.getVisibleCategoryLabel(value, fallbackLabel));
+        });
+        return this.sortCategoryOptions(
+            Array.from(optionsByValue.entries()).map(([value, label]) => ({ value, label }))
+        );
+    }
+
+    /**
+     * @param {string} value
+     * @param {string} fallbackLabel
+     * @returns {string}
+     */
+    getVisibleCategoryLabel(value, fallbackLabel) {
+        const key = String(value || '').trim();
+        if (!key) {
+            return String(fallbackLabel || '').trim();
         }
-        if (bildEl) {
-            bildEl.hidden = src !== 'bild';
+        const localized = this._i18nFilterLabels[key];
+        return localized || String(fallbackLabel || key).trim();
+    }
+
+    /**
+     * @param {{ value: string, label: string }[]} options
+     * @returns {{ value: string, label: string }[]}
+     */
+    sortCategoryOptions(options) {
+        const order = new Map([
+            ['it', 1],
+            ['security', 2],
+            ['ki', 3],
+            ['wissenschaft', 4],
+            ['mobiles', 5],
+            ['entertainment', 6],
+            ['wirtschaft', 7],
+            ['netzpolitik', 8],
+            ['journal', 9],
+            ['heise_ix', 10],
+            ['heise_ct', 11],
+            ['heise_foto', 12],
+            ['heise_mac', 13],
+            ['heise_make', 14],
+            ['heise_autos', 15],
+            ['telepolis', 16],
+            ['bild', 17]
+        ]);
+        return [...(Array.isArray(options) ? options : [])].sort((a, b) => {
+            const aOrder = order.has(a.value) ? order.get(a.value) : Number.MAX_SAFE_INTEGER;
+            const bOrder = order.has(b.value) ? order.get(b.value) : Number.MAX_SAFE_INTEGER;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            return String(a.label || a.value || '').localeCompare(String(b.label || b.value || ''), undefined, {
+                sensitivity: 'base'
+            });
+        });
+    }
+
+    /**
+     * Render filter chips for the active source from the currently available article categories.
+     * @param {Array<Record<string, unknown>>} [items]
+     */
+    renderCategoryFilters(items = this.newsItems) {
+        const root = this.elements.categoryFilters;
+        if (!root) {
+            return;
         }
-        if (teleEl) {
-            teleEl.hidden = src !== 'telepolis';
+        const options = this.collectCategoryOptionsForCurrentSource(items);
+        root.innerHTML = '';
+        if (options.length === 0) {
+            return;
         }
-        if (genericEl) {
-            genericEl.hidden = !App.isGenericRubricNewsSource(src);
-        }
+        const group = document.createElement('div');
+        group.className = 'category-filters__group';
+        group.dataset.newsSourceScope = 'dynamic';
+        const activeSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const disabled = new Set(this.getStoredDisabledCategoriesForSource(activeSource));
+        options.forEach((option, index) => {
+            const value = String(option.value || '').trim();
+            if (!value) {
+                return;
+            }
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = `cat-dyn-${index}-${value.replace(/[^a-z0-9_-]/gi, '_')}`;
+            input.className = 'category-checkbox';
+            input.value = value;
+            input.checked = !disabled.has(value);
+
+            const label = document.createElement('label');
+            label.htmlFor = input.id;
+            label.className = 'category-label';
+            label.textContent = String(option.label || value).trim();
+
+            group.appendChild(input);
+            group.appendChild(label);
+        });
+        root.appendChild(group);
     }
 
     /** Keep duplicate rubric checkboxes (heise vs. generic group) aligned with `selectedCategories`. */
@@ -4977,15 +5815,44 @@ class App {
     }
 
     /**
+     * Category values currently visible for the active source filter UI.
+     * @returns {Set<string>}
+     */
+    getVisibleCategoryValueSet() {
+        return new Set(this.collectCategoryOptionsForCurrentSource().map((option) => option.value));
+    }
+
+    /**
+     * @param {string} source
+     * @returns {boolean}
+     */
+    hasStoredDisabledCategoriesForSource(source) {
+        const sourceId = String(source || '').trim();
+        if (!sourceId || !this.disabledCategoriesBySource || typeof this.disabledCategoriesBySource !== 'object') {
+            return false;
+        }
+        return Object.prototype.hasOwnProperty.call(this.disabledCategoriesBySource, sourceId);
+    }
+
+    /**
+     * @param {string} source
+     * @returns {string[]}
+     */
+    getStoredDisabledCategoriesForSource(source) {
+        const sourceId = String(source || '').trim();
+        if (!this.hasStoredDisabledCategoriesForSource(sourceId)) {
+            return [];
+        }
+        const raw = this.disabledCategoriesBySource[sourceId];
+        return Array.isArray(raw) ? [...new Set(raw.map((item) => String(item || '').trim()).filter(Boolean))] : [];
+    }
+
+    /**
      * Merge visible checkbox state with stored categories from hidden groups (other sources).
      */
     mergeSelectedCategoriesFromVisibleDom() {
-        const src = this.normalizeNewsSource(this.settings?.newsSource);
-        const visibleSet = App.visibleCategoryValuesForSource(src);
         const vis = this.readSelectedCategoriesFromDom();
-        const prev = Array.isArray(this.selectedCategories) ? [...this.selectedCategories] : [];
-        const preserved = prev.filter((c) => !visibleSet.has(c));
-        this.selectedCategories = [...new Set([...preserved, ...vis])];
+        this.selectedCategories = [...new Set(vis.map((item) => String(item || '').trim()).filter(Boolean))];
         this.syncAllCategoryCheckboxesFromSelection();
     }
 
@@ -4993,38 +5860,32 @@ class App {
      * When the visible filter group has no selection, check sensible defaults (heise/generic: all; single-source groups: on).
      */
     ensureDefaultCategorySelectionForSource() {
-        this.syncCategoryFiltersVisibility();
         const src = this.normalizeNewsSource(this.settings?.newsSource);
-        const visibleSet = App.visibleCategoryValuesForSource(src);
+        const visibleSet = this.getVisibleCategoryValueSet();
+        if (visibleSet.size === 0) {
+            this.selectedCategories = [];
+            return;
+        }
         let vis = this.readSelectedCategoriesFromDom();
-        if (vis.length === 0 && visibleSet.size > 0) {
-            if (App.singleCategoryNewsSourceSet().has(src)) {
-                const cb = document.getElementById(`cat-${src}`);
-                if (cb) {
-                    cb.checked = true;
+        if (!this.hasStoredDisabledCategoriesForSource(src)) {
+            document.querySelectorAll('.category-checkbox').forEach((cb) => {
+                const g = cb.closest('[data-news-source-scope]');
+                if (g && g.hidden) {
+                    return;
                 }
-            } else if (src === 'heise' || App.isGenericRubricNewsSource(src)) {
-                document.querySelectorAll('.category-checkbox').forEach((cb) => {
-                    const g = cb.closest('[data-news-source-scope]');
-                    if (g && g.hidden) {
-                        return;
-                    }
-                    cb.checked = true;
-                });
-            }
+                cb.checked = true;
+            });
             vis = this.readSelectedCategoriesFromDom();
         }
-        const prev = Array.isArray(this.selectedCategories) ? [...this.selectedCategories] : [];
-        const preserved = prev.filter((c) => !visibleSet.has(c));
-        this.selectedCategories = [...new Set([...preserved, ...vis])];
+        this.selectedCategories = [...new Set(vis.map((item) => String(item || '').trim()).filter(Boolean))];
         this.syncAllCategoryCheckboxesFromSelection();
     }
 
     buildCategoryFiltered() {
-        const src = this.normalizeNewsSource(this.settings?.newsSource);
         const mode = this.sortMode || 'recency';
+        const visibleCategorySet = this.getVisibleCategoryValueSet();
 
-        const cacheKey = this._buildFilterCacheKey(src, mode);
+        const cacheKey = this._buildFilterCacheKey(this.normalizeNewsSource(this.settings?.newsSource), mode);
 
         const cached = this._filterCache.get(cacheKey);
         if (cached && Array.isArray(cached)) {
@@ -5044,30 +5905,19 @@ class App {
         const base = this.newsItems.filter((item) => basePass(item));
 
         let result;
-        if (src === 'telepolis') {
-            if (!this.selectedCategories.includes('telepolis')) {
-                result = [];
-            } else {
-                const tp = App.telepolisFeedCategorySet();
-                result = base.filter((item) => tp.has(String(item.category || '')));
-            }
-        } else if (src === 'bild') {
-            if (!this.selectedCategories.includes('bild')) {
-                result = [];
-            } else {
-                const bild = App.bildFeedCategorySet();
-                result = base.filter((item) => bild.has(String(item.category || '')));
-            }
-        } else if (src === 'heise' || App.isGenericRubricNewsSource(src)) {
-            if (this.selectedCategories.length === 0) {
-                result = [];
-            } else {
-                // Use Set for O(1) lookup instead of O(n) includes()
-                const catSet = new Set(this.selectedCategories);
-                result = base.filter((item) => catSet.has(item.category));
-            }
-        } else {
+        if (visibleCategorySet.size === 0) {
             result = base;
+        } else if (this.selectedCategories.length === 0) {
+            result = [];
+        } else {
+            const catSet = new Set(
+                this.selectedCategories.filter((category) => visibleCategorySet.has(String(category || '').trim()))
+            );
+            if (catSet.size === 0) {
+                result = [];
+            } else {
+                result = base.filter((item) => catSet.has(String(item.category || '').trim()));
+            }
         }
 
         // Cache the result
@@ -5360,6 +6210,7 @@ class App {
             updateInterval,
             customInterval,
             selectedCategories: this.selectedCategories,
+            disabledCategoriesBySource: this.disabledCategoriesBySource,
             sortMode: this.sortMode,
             sortDateSingle: this.sortDateSingle,
             sortDateFrom: this.sortDateFrom,
@@ -5379,12 +6230,29 @@ class App {
     }
 
     async persistCategorySettings() {
+        const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const visibleValues = [...this.getVisibleCategoryValueSet()];
+        const selectedSet = new Set(
+            (Array.isArray(this.selectedCategories) ? this.selectedCategories : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+        );
+        this.disabledCategoriesBySource = {
+            ...(this.disabledCategoriesBySource && typeof this.disabledCategoriesBySource === 'object'
+                ? this.disabledCategoriesBySource
+                : {}),
+            [currentSource]: visibleValues.filter((value) => !selectedSet.has(value))
+        };
         this.settings = {
             ...this.settings,
-            selectedCategories: this.selectedCategories
+            selectedCategories: this.selectedCategories,
+            disabledCategoriesBySource: this.disabledCategoriesBySource
         };
         try {
-            await this.storage.saveSettings(this.settings);
+            await this.storage.saveSettings({
+                selectedCategories: this.selectedCategories,
+                disabledCategoriesBySource: this.disabledCategoriesBySource
+            });
         } catch (e) {
             console.error(e);
         }
@@ -5430,10 +6298,12 @@ class App {
         if (typeof window !== 'undefined') {
             window.__newsSource = v;
         }
+        this.selectedCategories = [];
+        if (this.settings) {
+            this.settings.selectedCategories = [];
+        }
         this.scraper.configureSource(v);
         this.syncCategoryFiltersVisibility();
-        this.ensureDefaultCategorySelectionForSource();
-        await this.persistCategorySettings();
         if (typeof HeiseComments !== 'undefined') {
             HeiseComments.clearCommentCache();
         }
@@ -5445,10 +6315,138 @@ class App {
             logo.src = `${this.getBrandLogoUrl()}?_=s${Date.now()}`;
         }
         this.applyHeaderBrandMode(this._headerBrandMode);
+        this.refreshHeaderSourceControls();
         if (this._headerBrandMode === 'text') {
             this.scheduleHeaderBrandTextFit();
         }
         await this.fetchNews();
+    }
+
+    /**
+     * Load the previous canonical article URLs for one source.
+     * Reuses the in-memory list when it already belongs to that source, otherwise falls back to IndexedDB.
+     * @param {string} sourceId
+     * @returns {Promise<Set<string>>}
+     */
+    async getPreviousArticleUrlSetForSource(sourceId) {
+        const normalizedSource = this.normalizeNewsSource(sourceId);
+        if (!normalizedSource) {
+            return new Set();
+        }
+
+        if (normalizedSource === this._loadedNewsSource && Array.isArray(this.newsItems) && this.newsItems.length > 0) {
+            return new Set(
+                this.newsItems
+                    .map((item) => App.canonicalArticleUrl(item && (item.url || item.link || '')))
+                    .filter(Boolean)
+            );
+        }
+
+        const cachedNews = await this.storage.getAllNews();
+        const prevUrls = new Set();
+        (Array.isArray(cachedNews) ? cachedNews : []).forEach((item) => {
+            const itemSource = App.normalizeStoredNewsSourceId(item && item.newsSource);
+            if (itemSource !== normalizedSource) {
+                return;
+            }
+            const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
+            if (url) {
+                prevUrls.add(url);
+            }
+        });
+        return prevUrls;
+    }
+
+    persistPendingNewArticleUrlState() {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+        try {
+            localStorage.setItem(
+                PENDING_NEW_ARTICLE_URLS_STORAGE_KEY,
+                JSON.stringify(App.normalizePendingNewArticleUrlState(this._pendingNewArticleUrlsBySource))
+            );
+        } catch (e) {
+            console.warn('persistPendingNewArticleUrlState:', e);
+        }
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {Set<string>}
+     */
+    getPendingNewArticleUrlSetForSource(sourceId) {
+        const normalizedSource = this.normalizeNewsSource(sourceId);
+        if (!normalizedSource) {
+            return new Set();
+        }
+        const raw = this._pendingNewArticleUrlsBySource && this._pendingNewArticleUrlsBySource[normalizedSource];
+        return new Set(
+            (Array.isArray(raw) ? raw : [])
+                .map((url) => App.canonicalArticleUrl(url))
+                .filter(Boolean)
+        );
+    }
+
+    /**
+     * @param {string} sourceId
+     * @returns {boolean}
+     */
+    hasPendingNewArticleSourceEntry(sourceId) {
+        const normalizedSource = this.normalizeNewsSource(sourceId);
+        return !!(
+            normalizedSource &&
+            this._pendingNewArticleUrlsBySource &&
+            Object.prototype.hasOwnProperty.call(this._pendingNewArticleUrlsBySource, normalizedSource)
+        );
+    }
+
+    /**
+     * @param {string} sourceId
+     * @param {Iterable<string>} urls
+     */
+    setPendingNewArticleUrlsForSource(sourceId, urls) {
+        const normalizedSource = this.normalizeNewsSource(sourceId);
+        if (!normalizedSource) {
+            return;
+        }
+        const normalizedUrls = [...new Set(
+            Array.from(urls || [])
+                .map((url) => App.canonicalArticleUrl(url))
+                .filter(Boolean)
+        )];
+        this._pendingNewArticleUrlsBySource[normalizedSource] = normalizedUrls;
+        this.persistPendingNewArticleUrlState();
+    }
+
+    /**
+     * @param {string} sourceId
+     * @param {Array<Record<string, unknown>>} items
+     */
+    mergePendingNewArticlesForSource(sourceId, items) {
+        const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
+            if (url) {
+                pending.add(url);
+            }
+        });
+        this.setPendingNewArticleUrlsForSource(sourceId, pending);
+    }
+
+    /**
+     * @param {string} sourceId
+     * @param {Array<Record<string, unknown>>} items
+     */
+    syncVisibleNewArticleIdsFromPending(sourceId, items) {
+        const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
+        this._newArticleIds = new Set();
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
+            if (url && pending.has(url) && item && item.id) {
+                this._newArticleIds.add(item.id);
+            }
+        });
     }
 
     async fetchNews(forceRefresh = false, options = {}) {
@@ -5472,11 +6470,7 @@ class App {
             }
             newsItems = NewsScraper.filterOutAdvertorialItems(newsItems);
 
-            const prevUrls = new Set(
-                (this.newsItems || [])
-                    .map((i) => App.canonicalArticleUrl(i.url || i.link || ''))
-                    .filter(Boolean)
-            );
+            const prevUrls = await this.getPreviousArticleUrlSetForSource(currentSource);
             const hadPrevious = prevUrls.size > 0;
             currentSource = this.normalizeNewsSource(this.settings?.newsSource);
 
@@ -5489,19 +6483,28 @@ class App {
             // Update state
             this._filterCache.clear();
             this.newsItems = this.applyArticleFlags(newsItems);
+            this._loadedNewsSource = currentSource;
             this.selectedArticleIds = new Set(
                 [...this.selectedArticleIds].filter((id) => this.newsItems.some((n) => n && n.id === id))
             );
+            this.renderCategoryFilters(this.newsItems);
+            this.ensureDefaultCategorySelectionForSource();
 
-            this._newArticleIds = new Set();
+            const newlyDetectedItems = [];
             if (hadPrevious) {
                 for (const item of newsItems) {
                     const u = App.canonicalArticleUrl(item.url || item.link || '');
                     if (u && !prevUrls.has(u)) {
-                        this._newArticleIds.add(item.id);
+                        newlyDetectedItems.push(item);
                     }
                 }
             }
+            if (newlyDetectedItems.length > 0) {
+                this.mergePendingNewArticlesForSource(currentSource, newlyDetectedItems);
+            } else if (!this.hasPendingNewArticleSourceEntry(currentSource)) {
+                this.mergePendingNewArticlesForSource(currentSource, this.newsItems);
+            }
+            this.syncVisibleNewArticleIdsFromPending(currentSource, this.newsItems);
 
             await this.applySortPipeline({ render: true });
             if (gen !== this._newsFetchGeneration) {
@@ -5573,12 +6576,18 @@ class App {
             const filteredCached = NewsScraper.filterOutAdvertorialItems(forCurrentSource);
 
             if (filteredCached.length > 0) {
-                this._newArticleIds = new Set();
                 this._filterCache.clear();
                 this.newsItems = this.applyArticleFlags(filteredCached);
+                this._loadedNewsSource = currentSource;
+                if (!this.hasPendingNewArticleSourceEntry(currentSource)) {
+                    this.mergePendingNewArticlesForSource(currentSource, this.newsItems);
+                }
+                this.syncVisibleNewArticleIdsFromPending(currentSource, this.newsItems);
                 this.selectedArticleIds = new Set(
                     [...this.selectedArticleIds].filter((id) => this.newsItems.some((n) => n && n.id === id))
                 );
+                this.renderCategoryFilters(this.newsItems);
+                this.ensureDefaultCategorySelectionForSource();
                 await this.applySortPipeline({ render: true });
 
                 const lastUpdate = new Date().toLocaleTimeString('de-DE', {
@@ -5592,7 +6601,9 @@ class App {
                 }
             } else {
                 this.filteredNewsItems = [];
+                this._loadedNewsSource = '';
                 this.currentPage = 1;
+                this.renderCategoryFilters([]);
                 this.renderNews([], false);
                 this.syncLoadMoreAndCount();
                 if (!suppressStatus) {
@@ -5601,6 +6612,7 @@ class App {
             }
         } catch (error) {
             console.error('Error loading cached news:', error);
+            this.renderCategoryFilters([]);
             this.renderNews([], false);
         }
     }
@@ -5914,6 +6926,9 @@ class App {
                         sourceId,
                         knownUrlsBySource.get(sourceId) || new Set()
                     );
+                    if (newItems.length > 0) {
+                        this.mergePendingNewArticlesForSource(sourceId, newItems);
+                    }
                     await this.prewarmBackgroundArtifactsForArticles(newItems);
                 } catch (e) {
                     console.warn(`Background refresh failed for source ${sourceId}:`, e);
@@ -6516,6 +7531,17 @@ class App {
         const id = card.dataset.id;
         if (id && this._newArticleIds) {
             this._newArticleIds.delete(id);
+        }
+        const item = Array.isArray(this.newsItems)
+            ? this.newsItems.find((entry) => entry && entry.id === id)
+            : null;
+        const sourceId = this.normalizeNewsSource(this._loadedNewsSource || this.settings?.newsSource);
+        const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
+        if (sourceId && url) {
+            const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
+            if (pending.delete(url)) {
+                this.setPendingNewArticleUrlsForSource(sourceId, pending);
+            }
         }
         const badge = card.querySelector('.news-card-new-badge');
         if (badge) {
@@ -8449,7 +9475,7 @@ class App {
         this.applyThemeSurfaceVariables();
     }
 
-    /** Applies --bg-* / --border-color and --header-* from settings (or optional modal-built palette). */
+    /** Applies --bg-* / --border-color, --text-*, --header-* and header transparency vars from settings (or optional modal-built palette). */
     applyThemeSurfaceVariables(palette) {
         const pal =
             palette ||
@@ -8457,31 +9483,43 @@ class App {
         const mode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
         const surf = App.resolveThemeSurfaceForMode(pal, mode);
         const hdr = App.resolveThemeHeaderForMode(pal, mode);
+        const text = App.resolveThemeTextForMode(pal, mode);
+        const hdrTransparency = App.resolveThemeHeaderTransparencyForMode(pal, mode);
         const root = document.documentElement.style;
         root.setProperty('--bg-primary', surf.bgPrimary);
         root.setProperty('--bg-secondary', surf.bgSecondary);
         root.setProperty('--bg-card', surf.bgCard);
         root.setProperty('--border-color', surf.borderColor);
+        root.setProperty('--text-primary', text.textPrimary);
+        root.setProperty('--text-secondary', text.textSecondary);
         root.setProperty('--header-surface', hdr.headerSurface);
         root.setProperty('--header-text', hdr.headerText);
         root.setProperty('--header-border', hdr.headerBorder);
+        root.setProperty('--header-shell-border-mix', hdrTransparency.shellBorderMix);
+        root.setProperty('--header-overlay-opacity', hdrTransparency.overlayOpacity);
+        root.setProperty('--header-panel-fill', hdrTransparency.panelFill);
+        root.setProperty('--header-panel-border-fill', hdrTransparency.panelBorderFill);
+        root.setProperty('--header-control-fill', hdrTransparency.controlFill);
+        root.setProperty('--header-control-border-fill', hdrTransparency.controlBorderFill);
     }
 
     /**
-     * @returns {{ themeCustomColors: { light: Object, dark: Object }, themeCustomHeaderColors: { light: Object, dark: Object }, themeSurfaceBrightness: { light: number, dark: number } }}
+     * @returns {{ colorTheme: string, themeCustomColors: { light: Object, dark: Object }, themeCustomHeaderColors: { light: Object, dark: Object }, themeSurfaceBrightness: { light: number, dark: number }, themeHeaderTransparency: { light: number, dark: number } }}
      */
     buildThemeSurfacePaletteFromSettings() {
         const themeCustomColors = App.normalizeThemeCustomColors(this.settings?.themeCustomColors);
         const themeCustomHeaderColors = App.normalizeThemeCustomHeaderColors(this.settings?.themeCustomHeaderColors);
         const themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
-        return { themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness };
+        const themeHeaderTransparency = App.normalizeThemeHeaderTransparency(this.settings?.themeHeaderTransparency);
+        const colorTheme = App.normalizeColorTheme(this.settings?.colorTheme);
+        return { colorTheme, themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness, themeHeaderTransparency };
     }
 
     /** Read theme modal controls (live preview in Settings). */
     buildThemeSurfacePaletteFromModal() {
         const el = this.elements;
-        let bl = 100;
-        let bd = 100;
+        let bl = 50;
+        let bd = 50;
         if (el.themeBrightnessLight) {
             const n = parseInt(el.themeBrightnessLight.value, 10);
             if (Number.isFinite(n)) {
@@ -8494,10 +9532,32 @@ class App {
                 bd = n;
             }
         }
-        const themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness({ light: bl, dark: bd });
+        let htl = THEME_DEFAULT_HEADER_TRANSPARENCY.light;
+        let htd = THEME_DEFAULT_HEADER_TRANSPARENCY.dark;
+        if (el.themeLightHeaderTransparency) {
+            const n = parseInt(el.themeLightHeaderTransparency.value, 10);
+            if (Number.isFinite(n)) {
+                htl = n;
+            }
+        }
+        if (el.themeDarkHeaderTransparency) {
+            const n = parseInt(el.themeDarkHeaderTransparency.value, 10);
+            if (Number.isFinite(n)) {
+                htd = n;
+            }
+        }
+        const themeSurfaceBrightness = App.normalizeThemeSurfaceBrightness({ light: bl, dark: bd, version: 2 });
+        const themeHeaderTransparency = App.normalizeThemeHeaderTransparency({
+            light: htl,
+            dark: htd,
+            version: 1
+        });
         const themeCustomColors = this.gatherThemeCustomColorsFromModalForSave();
         const themeCustomHeaderColors = this.gatherThemeCustomHeaderColorsFromModalForSave();
-        return { themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness };
+        const colorTheme = App.normalizeColorTheme(
+            this.elements.settingsColorThemeSelect?.value || this.elements.colorThemeSelect?.value || this.settings?.colorTheme
+        );
+        return { colorTheme, themeCustomColors, themeCustomHeaderColors, themeSurfaceBrightness, themeHeaderTransparency };
     }
 
     populateThemeSettingsModal() {
@@ -8516,8 +9576,9 @@ class App {
         const tc = App.normalizeThemeCustomColors(this.settings?.themeCustomColors);
         const tch = App.normalizeThemeCustomHeaderColors(this.settings?.themeCustomHeaderColors);
         const br = App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+        const ht = App.normalizeThemeHeaderTransparency(this.settings?.themeHeaderTransparency);
 
-        const mergeMode = (mode) => ({ ...THEME_DEFAULT_SURFACE[mode], ...tc[mode] });
+        const mergeMode = (mode) => ({ ...getThemeSurfaceDefaults(ct, mode), ...tc[mode] });
         const mergeHeader = (mode) => ({ ...THEME_DEFAULT_HEADER[mode], ...tch[mode] });
         const L = mergeMode('light');
         const D = mergeMode('dark');
@@ -8563,6 +9624,9 @@ class App {
         if (el.themeLightHeaderBorder) {
             el.themeLightHeaderBorder.value = HL.headerBorder;
         }
+        if (el.themeLightHeaderTransparency) {
+            el.themeLightHeaderTransparency.value = String(ht.light);
+        }
         if (el.themeDarkHeaderSurface) {
             el.themeDarkHeaderSurface.value = HD.headerSurface;
         }
@@ -8572,31 +9636,104 @@ class App {
         if (el.themeDarkHeaderBorder) {
             el.themeDarkHeaderBorder.value = HD.headerBorder;
         }
+        if (el.themeDarkHeaderTransparency) {
+            el.themeDarkHeaderTransparency.value = String(ht.dark);
+        }
         this.syncThemeModalBrightnessHints();
+    }
+
+    /**
+     * Reset modal surface color controls to the selected preset theme defaults.
+     * Brightness sliders stay untouched; header color controls are separate.
+     * @param {string} colorTheme
+     */
+    applyThemeSurfaceDefaultsToModal(colorTheme) {
+        const el = this.elements;
+        const normalizedTheme = App.normalizeColorTheme(colorTheme);
+        const L = getThemeSurfaceDefaults(normalizedTheme, 'light');
+        const D = getThemeSurfaceDefaults(normalizedTheme, 'dark');
+        if (el.themeLightBgPrimary) {
+            el.themeLightBgPrimary.value = L.bgPrimary;
+        }
+        if (el.themeLightBgSecondary) {
+            el.themeLightBgSecondary.value = L.bgSecondary;
+        }
+        if (el.themeLightBgCard) {
+            el.themeLightBgCard.value = L.bgCard;
+        }
+        if (el.themeLightBorder) {
+            el.themeLightBorder.value = L.borderColor;
+        }
+        if (el.themeDarkBgPrimary) {
+            el.themeDarkBgPrimary.value = D.bgPrimary;
+        }
+        if (el.themeDarkBgSecondary) {
+            el.themeDarkBgSecondary.value = D.bgSecondary;
+        }
+        if (el.themeDarkBgCard) {
+            el.themeDarkBgCard.value = D.bgCard;
+        }
+        if (el.themeDarkBorder) {
+            el.themeDarkBorder.value = D.borderColor;
+        }
+    }
+
+    /**
+     * Builds the localized hint text for a brightness slider.
+     * @param {number} percent 0–100
+     * @returns {string}
+     */
+    formatThemeBrightnessHint(percent) {
+        const v = App.normalizeThemeSurfaceBrightnessValue(percent);
+        let tpl;
+        if (v === 50) {
+            tpl = this._i18nThemeBrightnessHintNeutral || '{value} %';
+        } else if (v > 50) {
+            tpl = this._i18nThemeBrightnessHintLighter || '{value} %';
+        } else {
+            tpl = this._i18nThemeBrightnessHintDarker || '{value} %';
+        }
+        return String(tpl).replace(/\{value\}/g, String(v));
     }
 
     syncThemeModalBrightnessHints() {
         const el = this.elements;
         const hintL = document.getElementById('themeBrightnessLightHint');
         const hintD = document.getElementById('themeBrightnessDarkHint');
+        const hintHTL = document.getElementById('themeHeaderTransparencyLightHint');
+        const hintHTD = document.getElementById('themeHeaderTransparencyDarkHint');
         if (el.themeBrightnessLight && hintL) {
-            hintL.textContent = `${el.themeBrightnessLight.value}%`;
+            hintL.textContent = this.formatThemeBrightnessHint(el.themeBrightnessLight.value);
         }
         if (el.themeBrightnessDark && hintD) {
-            hintD.textContent = `${el.themeBrightnessDark.value}%`;
+            hintD.textContent = this.formatThemeBrightnessHint(el.themeBrightnessDark.value);
+        }
+        if (el.themeLightHeaderTransparency && hintHTL) {
+            hintHTL.textContent = `${App.normalizeThemeHeaderTransparencyValue(el.themeLightHeaderTransparency.value)} %`;
+        }
+        if (el.themeDarkHeaderTransparency && hintHTD) {
+            hintHTD.textContent = `${App.normalizeThemeHeaderTransparencyValue(el.themeDarkHeaderTransparency.value)} %`;
         }
     }
 
-    applyThemeAppearancePreviewFromModal() {
+    applyThemeAppearancePreviewFromModal(previewModeOverride) {
         if (!this.elements.themeModeSelect) {
             return;
         }
-        const pref = App.normalizeThemePreference(this.elements.themeModeSelect.value);
-        if (pref === 'system') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        const forcedMode =
+            previewModeOverride === 'dark' || previewModeOverride === 'light'
+                ? previewModeOverride
+                : '';
+        if (forcedMode) {
+            document.documentElement.setAttribute('data-theme', forcedMode);
         } else {
-            document.documentElement.setAttribute('data-theme', pref);
+            const pref = App.normalizeThemePreference(this.elements.themeModeSelect.value);
+            if (pref === 'system') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+            } else {
+                document.documentElement.setAttribute('data-theme', pref);
+            }
         }
         const accent = App.normalizeColorTheme(this.elements.settingsColorThemeSelect?.value);
         document.documentElement.setAttribute('data-color-theme', accent);
@@ -8617,8 +9754,11 @@ class App {
         const el = this.elements;
         const readHex = (input) => (input ? App.normalizeHexColor(input.value) : null);
         const out = { light: {}, dark: {} };
-        const dl = THEME_DEFAULT_SURFACE.light;
-        const dd = THEME_DEFAULT_SURFACE.dark;
+        const colorTheme = App.normalizeColorTheme(
+            this.elements.settingsColorThemeSelect?.value || this.elements.colorThemeSelect?.value || this.settings?.colorTheme
+        );
+        const dl = getThemeSurfaceDefaults(colorTheme, 'light');
+        const dd = getThemeSurfaceDefaults(colorTheme, 'dark');
         const maybe = (key, val, def, bucket) => {
             if (val && val !== def) {
                 bucket[key] = val;
@@ -8663,36 +9803,61 @@ class App {
             }
         };
         on(el.themeModeSelect, 'change', () => this.applyThemeAppearancePreviewFromModal());
-        on(el.settingsColorThemeSelect, 'change', () => this.applyThemeAppearancePreviewFromModal());
-        const surf = () => this.applyThemeAppearancePreviewFromModal();
+        on(el.settingsColorThemeSelect, 'change', () => {
+            const colorTheme = App.normalizeColorTheme(el.settingsColorThemeSelect?.value);
+            this.applyThemeSurfaceDefaultsToModal(colorTheme);
+            this.applyThemeAppearancePreviewFromModal();
+        });
+        const surf = (mode) => this.applyThemeAppearancePreviewFromModal(mode);
         on(el.themeBrightnessLight, 'input', () => {
             this.syncThemeModalBrightnessHints();
-            surf();
+            surf('light');
         });
         on(el.themeBrightnessDark, 'input', () => {
             this.syncThemeModalBrightnessHints();
-            surf();
+            surf('dark');
         });
         [
             el.themeLightBgPrimary,
             el.themeLightBgSecondary,
             el.themeLightBgCard,
-            el.themeLightBorder,
+            el.themeLightBorder
+        ].forEach((inp) => on(inp, 'input', () => surf('light')));
+        [
             el.themeDarkBgPrimary,
             el.themeDarkBgSecondary,
             el.themeDarkBgCard,
-            el.themeDarkBorder,
+            el.themeDarkBorder
+        ].forEach((inp) => on(inp, 'input', () => surf('dark')));
+        [
             el.themeLightHeaderSurface,
             el.themeLightHeaderText,
             el.themeLightHeaderBorder,
+            el.themeLightHeaderTransparency
+        ].forEach((inp) =>
+            on(inp, 'input', () => {
+                this.syncThemeModalBrightnessHints();
+                surf('light');
+            })
+        );
+        [
             el.themeDarkHeaderSurface,
             el.themeDarkHeaderText,
-            el.themeDarkHeaderBorder
-        ].forEach((inp) => on(inp, 'input', () => surf()));
+            el.themeDarkHeaderBorder,
+            el.themeDarkHeaderTransparency
+        ].forEach((inp) =>
+            on(inp, 'input', () => {
+                this.syncThemeModalBrightnessHints();
+                surf('dark');
+            })
+        );
 
         on(el.themeResetDefaultsBtn, 'click', () => {
-            const L = THEME_DEFAULT_SURFACE.light;
-            const D = THEME_DEFAULT_SURFACE.dark;
+            const colorTheme = App.normalizeColorTheme(
+                el.settingsColorThemeSelect?.value || this.elements.colorThemeSelect?.value || this.settings?.colorTheme
+            );
+            const L = getThemeSurfaceDefaults(colorTheme, 'light');
+            const D = getThemeSurfaceDefaults(colorTheme, 'dark');
             const HL = THEME_DEFAULT_HEADER.light;
             const HD = THEME_DEFAULT_HEADER.dark;
             if (el.themeLightBgPrimary) {
@@ -8720,10 +9885,10 @@ class App {
                 el.themeDarkBorder.value = D.borderColor;
             }
             if (el.themeBrightnessLight) {
-                el.themeBrightnessLight.value = '100';
+                el.themeBrightnessLight.value = '50';
             }
             if (el.themeBrightnessDark) {
-                el.themeBrightnessDark.value = '100';
+                el.themeBrightnessDark.value = '50';
             }
             if (el.themeLightHeaderSurface) {
                 el.themeLightHeaderSurface.value = HL.headerSurface;
@@ -8734,6 +9899,9 @@ class App {
             if (el.themeLightHeaderBorder) {
                 el.themeLightHeaderBorder.value = HL.headerBorder;
             }
+            if (el.themeLightHeaderTransparency) {
+                el.themeLightHeaderTransparency.value = String(THEME_DEFAULT_HEADER_TRANSPARENCY.light);
+            }
             if (el.themeDarkHeaderSurface) {
                 el.themeDarkHeaderSurface.value = HD.headerSurface;
             }
@@ -8742,6 +9910,9 @@ class App {
             }
             if (el.themeDarkHeaderBorder) {
                 el.themeDarkHeaderBorder.value = HD.headerBorder;
+            }
+            if (el.themeDarkHeaderTransparency) {
+                el.themeDarkHeaderTransparency.value = String(THEME_DEFAULT_HEADER_TRANSPARENCY.dark);
             }
             this.syncThemeModalBrightnessHints();
             this.applyThemeAppearancePreviewFromModal();
@@ -8771,6 +9942,7 @@ class App {
         if (!sel) {
             return;
         }
+        this._availableLmModels = [];
         let savedModel =
             presetSavedModel !== undefined && presetSavedModel !== null
                 ? String(presetSavedModel).trim()
@@ -8843,6 +10015,7 @@ class App {
                 hintEl.textContent = this._i18nLmModelFileError;
             }
             hideLmLoadedStatus();
+            this.syncReasoningControlsForCurrentModel();
             return;
         }
 
@@ -8900,6 +10073,7 @@ class App {
             }
             sel.disabled = false;
             hideLmLoadedStatus();
+            this.syncReasoningControlsForCurrentModel();
             return;
         }
 
@@ -8912,6 +10086,7 @@ class App {
 
         appendAutomatic();
         const models = result.models || [];
+        this._availableLmModels = [...models];
         const idSet = new Set(models.map((m) => m.id));
 
         for (const m of models) {
@@ -8966,6 +10141,7 @@ class App {
         } else {
             sel.value = '';
         }
+        this.syncReasoningControlsForCurrentModel();
     }
 
     openSettingsModal() {
@@ -9228,6 +10404,7 @@ class App {
         this.updateRestSameOriginUi();
 
         this.elements.settingsModal.classList.add('active');
+        this._availableLmModels = [];
         void this.populateModelDropdown(model);
     }
 
@@ -9244,6 +10421,7 @@ class App {
         this.updateRestSameOriginVisibility();
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        this._availableLmModels = [];
         if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
             void this.populateModelDropdown();
         }
@@ -9252,6 +10430,7 @@ class App {
     onRestSameOriginChange() {
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        this._availableLmModels = [];
         if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
             void this.populateModelDropdown();
         }
@@ -9319,11 +10498,171 @@ class App {
         }
     }
 
+    /**
+     * @param {'off'|'low'|'medium'|'high'|'on'} value
+     * @returns {string}
+     */
+    getReasoningOptionLabel(value) {
+        switch (value) {
+            case 'low':
+                return this._i18nReasoningLevelLow;
+            case 'medium':
+                return this._i18nReasoningLevelMedium;
+            case 'high':
+                return this._i18nReasoningLevelHigh;
+            case 'on':
+                return this._i18nReasoningLevelOn;
+            case 'off':
+            default:
+                return this._i18nReasoningLevelOff;
+        }
+    }
+
+    /**
+     * @returns {{ capabilitiesKnown: boolean, allowedOptions: Array<'off'|'low'|'medium'|'high'|'on'>, defaultOption: 'off'|'low'|'medium'|'high'|'on'|null, visible: boolean, canEnable: boolean }}
+     */
+    getReasoningCapabilitiesForCurrentModel() {
+        const mode = this.elements.kiApiMode?.value === 'openai' ? 'openai' : 'lm_rest_v1';
+        if (mode !== 'lm_rest_v1') {
+            return {
+                capabilitiesKnown: true,
+                allowedOptions: ['off'],
+                defaultOption: 'off',
+                visible: false,
+                canEnable: false
+            };
+        }
+
+        let activeModelId = String(this.elements.lmModel?.value || '').trim();
+        if (!activeModelId) {
+            try {
+                activeModelId = String(sessionStorage.getItem('heise_lm_resolved_model_id') || '').trim();
+            } catch (_) {
+                activeModelId = '';
+            }
+        }
+
+        const findModelEntry = (candidateId) => {
+            const normalized = String(candidateId || '').trim();
+            if (!normalized || !Array.isArray(this._availableLmModels)) {
+                return null;
+            }
+            return (
+                this._availableLmModels.find(
+                    (entry) =>
+                        entry &&
+                        (
+                            entry.id === normalized ||
+                            (Array.isArray(entry.aliases) && entry.aliases.includes(normalized))
+                        )
+                ) || null
+            );
+        };
+
+        let modelEntry = findModelEntry(activeModelId);
+        if (!modelEntry && Array.isArray(this._availableLmModels)) {
+            const loadedEntries = this._availableLmModels.filter((entry) => entry && entry.loaded === true);
+            if (loadedEntries.length === 1) {
+                modelEntry = loadedEntries[0];
+            } else if (this._availableLmModels.length === 1) {
+                modelEntry = this._availableLmModels[0];
+            }
+        }
+        if (!modelEntry) {
+            return {
+                capabilitiesKnown: false,
+                allowedOptions: [],
+                defaultOption: null,
+                visible: false,
+                canEnable: false
+            };
+        }
+        const allowedOptions =
+            Array.isArray(modelEntry.reasoningAllowedOptions)
+                ? modelEntry.reasoningAllowedOptions.filter(Boolean)
+                : [];
+        const normalizedAllowed = allowedOptions.length ? [...allowedOptions] : ['off'];
+        const defaultOption =
+            modelEntry.reasoningDefault &&
+            normalizedAllowed.includes(modelEntry.reasoningDefault)
+                ? modelEntry.reasoningDefault
+                : normalizedAllowed.includes('off')
+                  ? 'off'
+                  : normalizedAllowed[0];
+
+        return {
+            capabilitiesKnown: true,
+            allowedOptions: normalizedAllowed,
+            defaultOption,
+            visible: true,
+            canEnable: normalizedAllowed.some((value) => value !== 'off')
+        };
+    }
+
+    syncReasoningControlsForCurrentModel() {
+        const select = this.elements.reasoningSelect;
+        const checkbox = this.elements.reasoningEnabledCheckbox;
+        if (!select && !checkbox) {
+            return;
+        }
+
+        const selectGroup = select ? select.closest('.setting-group') : null;
+        const checkboxGroup = checkbox ? checkbox.closest('.setting-group') : null;
+        const capability = this.getReasoningCapabilitiesForCurrentModel();
+        if (!capability.capabilitiesKnown) {
+            return;
+        }
+
+        if (selectGroup) {
+            selectGroup.style.display = capability.visible ? '' : 'none';
+        }
+        if (checkboxGroup) {
+            checkboxGroup.style.display = capability.visible ? '' : 'none';
+        }
+
+        const currentLevel = select
+            ? AISummarizer.normalizeLmReasoningParam(select.value)
+            : AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
+        const nextLevel = capability.allowedOptions.includes(currentLevel)
+            ? currentLevel
+            : capability.defaultOption;
+
+        if (select) {
+            select.innerHTML = '';
+            for (const value of capability.allowedOptions) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = this.getReasoningOptionLabel(value);
+                select.appendChild(option);
+            }
+            select.value = capability.allowedOptions.includes(nextLevel) ? nextLevel : capability.defaultOption;
+            select.disabled = !capability.canEnable;
+        }
+
+        if (checkbox) {
+            if (!capability.canEnable) {
+                checkbox.checked = false;
+            }
+            checkbox.disabled = !capability.canEnable;
+        }
+
+        const reasoningHint = document.getElementById('reasoningHint');
+        if (reasoningHint) {
+            reasoningHint.textContent = this._i18nReasoningLevelHint || '';
+        }
+        const reasoningEnabledHint = document.getElementById('reasoningEnabledHint');
+        if (reasoningEnabledHint) {
+            reasoningEnabledHint.textContent = this._i18nReasoningEnabledHint || '';
+        }
+    }
+
     closeSettingsModal() {
         this.elements.settingsModal.classList.remove('active');
     }
 
     openKiStatsModal() {
+        this._kiStatsPeriod = 'week';
+        this.syncKiStatsPeriodButtons(this._kiStatsPeriod);
         this.refreshKiStatsPanel();
         if (this.elements.kiStatsModal) {
             this.elements.kiStatsModal.classList.add('active');
@@ -9362,9 +10701,72 @@ class App {
         return `${(s / 60).toFixed(1)} min`;
     }
 
+    /**
+     * @param {'week'|'month'|'year'|'all'} period
+     */
+    syncKiStatsPeriodButtons(period) {
+        const normalized = period;
+        const allPeriodBtns = document.querySelectorAll('.btn-period');
+        if (!allPeriodBtns) {
+            return;
+        }
+        allPeriodBtns.forEach((btn) => {
+            const isActive = btn.getAttribute('data-period') === normalized;
+            btn.classList.toggle('btn-period-active', isActive);
+        });
+    }
+
+    hideKiStatsChartTooltip() {
+        const tooltip = document.getElementById('kiStatsChartTooltip');
+        if (!tooltip) {
+            return;
+        }
+        tooltip.hidden = true;
+        tooltip.textContent = '';
+    }
+
+    bindKiStatsChartPointTooltips() {
+        const svg = document.getElementById('kiStatsChartSvg');
+        const tooltip = document.getElementById('kiStatsChartTooltip');
+        const chartInner = svg ? svg.closest('.ki-stats-chart-inner') : null;
+        if (!svg || !tooltip || !chartInner) {
+            return;
+        }
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+        const positionTooltip = (event, text) => {
+            tooltip.textContent = text;
+            tooltip.hidden = false;
+
+            const bounds = chartInner.getBoundingClientRect();
+            const left = clamp(event.clientX - bounds.left, 16, Math.max(bounds.width - 16, 16));
+            const top = clamp(event.clientY - bounds.top - 10, 12, Math.max(bounds.height - 12, 12));
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
+        };
+
+        const points = svg.querySelectorAll('.ki-stats-point');
+        points.forEach((point) => {
+            const show = (event) => {
+                const text = point.getAttribute('data-tooltip');
+                if (!text) {
+                    this.hideKiStatsChartTooltip();
+                    return;
+                }
+                positionTooltip(event, text);
+            };
+            point.addEventListener('mouseenter', show);
+            point.addEventListener('mousemove', show);
+            point.addEventListener('mouseleave', () => this.hideKiStatsChartTooltip());
+        });
+
+        svg.onmouseleave = () => this.hideKiStatsChartTooltip();
+    }
+
     refreshKiStatsPanel() {
+        const period = this._kiStatsPeriod || 'week';
         const snap =
-            typeof KiStats !== 'undefined' && KiStats.getSnapshot ? KiStats.getSnapshot() : null;
+            typeof KiStats !== 'undefined' && KiStats.getSnapshot ? KiStats.getSnapshot(period) : null;
         const emptyEl = document.getElementById('kiStatsEmpty');
         const panel = document.getElementById('kiStatsPanel');
         const hint = document.getElementById('kiStatsTokenHint');
@@ -9388,6 +10790,7 @@ class App {
             if (svg) {
                 svg.innerHTML = '';
             }
+            this.hideKiStatsChartTooltip();
             return;
         }
 
@@ -9436,7 +10839,6 @@ class App {
         }
 
         // Use the new three-lines chart with support for week/month/year
-        const period = this._kiStatsPeriod || 'month';
         const buckets =
             typeof KiStats !== 'undefined' && KiStats.getChartBucketsThreeLines
                 ? KiStats.getChartBucketsThreeLines(period, localeTag)
@@ -9611,7 +11013,7 @@ class App {
 
     /**
      * New chart: three lines showing total tokens, avg tokens per article, and avg duration.
-     * @param {Array<{ label: string, avgTokens: number|null, totalTokens: number, tokenSamples: number, avgDurationMs: number|null }>} buckets
+     * @param {Array<{ label: string, avgTokens: number|null, totalTokens: number, tokenSamples: number, avgDurationMs: number|null, topModel?: string|null }>} buckets
      * @param {string} localeTag
      */
     renderKiStatsThreeLinesChart(buckets, localeTag) {
@@ -9638,6 +11040,7 @@ class App {
         const rawTotal = this._i18nKiStatsChartTotalTokens || 'Total tokens';
         const rawAvgTok = this._i18nKiStatsChartAvgTokens || 'Avg. tokens / article';
         const rawAvgDur = this._i18nKiStatsChartAvgDuration || 'Avg. duration';
+        const rawTopModel = this._i18nKiStatsTopModel || 'Model';
         const tTotal = esc(rawTotal);
         const tAvgTok = esc(rawAvgTok);
         const tAvgDur = esc(rawAvgDur);
@@ -9653,14 +11056,22 @@ class App {
             return `${mins}:${secs.toString().padStart(5, '0')} min`;
         };
         
-        const tipTotal = (b) => esc(`${rawTotal}: ${fmtTok(b.totalTokens)}`);
+        const buildPointTooltip = (label, metricLabel, valueText, topModel) => {
+            const parts = [`${label} • ${metricLabel}: ${valueText}`];
+            if (topModel) {
+                parts.push(`${rawTopModel}: ${topModel}`);
+            }
+            return esc(parts.join(' • '));
+        };
+
+        const tipTotal = (b) => buildPointTooltip(b.label, rawTotal, fmtTok(b.totalTokens), b.topModel);
         const tipAvgTok = (b) => {
             if (b.avgTokens != null && b.avgTokens >= 0) {
-                return esc(`${rawAvgTok}: ${fmtTok(b.avgTokens)}`);
+                return buildPointTooltip(b.label, rawAvgTok, fmtTok(b.avgTokens), b.topModel);
             }
-            return esc(`${rawAvgTok}: ${na}`);
+            return buildPointTooltip(b.label, rawAvgTok, na, b.topModel);
         };
-        const tipAvgDur = (b) => esc(`${rawAvgDur}: ${fmtDur(b.avgDurationMs || 0)}`);
+        const tipAvgDur = (b) => buildPointTooltip(b.label, rawAvgDur, fmtDur(b.avgDurationMs || 0), b.topModel);
 
         /** Color palette */
         const colTotal = '#2563eb'; // blue-600
@@ -9795,22 +11206,35 @@ class App {
         parts.push(drawLine(valsAvgDur, colAvgDur, maxAvgDur));
 
         // Data points with tooltips (include zeros)
-        const drawPoints = (vals, color, formatter, maxVal, tooltipFn) => {
+        const drawPoints = (vals, color, maxVal, tooltipFn) => {
             return vals.map((val, i) => {
                 if (!Number.isFinite(val) || val < 0) return '';
                 const x = xPositions[i];
                 const y = yFor(val, maxVal);
-                return `<circle cx="${x}" cy="${y}" r="4" fill="${color}"><title>${tooltipFn({ ...buckets[i], avgDurationMs: buckets[i].avgDurationMs || 0 })}</title></circle>`;
+                const tooltipText = tooltipFn({ ...buckets[i], avgDurationMs: buckets[i].avgDurationMs || 0 });
+                return `<circle class="ki-stats-point" cx="${x}" cy="${y}" r="4" fill="${color}" data-tooltip="${tooltipText}"></circle>`;
             }).join('');
         };
 
-        parts.push(drawPoints(valsTotal, colTotal, fmtTok, maxTotal, (b) => tipTotal(b)));
-        parts.push(drawPoints(valsAvgTok, colAvgTok, fmtTok, maxAvgTok, (b) => tipAvgTok(b)));
-        parts.push(drawPoints(valsAvgDur, colAvgDur, fmtDur, maxAvgDur, (b) => tipAvgDur(b)));
+        parts.push(drawPoints(valsTotal, colTotal, maxTotal, (b) => tipTotal(b)));
+        parts.push(drawPoints(valsAvgTok, colAvgTok, maxAvgTok, (b) => tipAvgTok(b)));
+        parts.push(drawPoints(valsAvgDur, colAvgDur, maxAvgDur, (b) => tipAvgDur(b)));
 
         // X-axis labels
         const labelY = yBot + 18;
+        let labelStep = 1;
+        if (n > 24) {
+            labelStep = 4;
+        } else if (n > 16) {
+            labelStep = 3;
+        } else if (n > 10) {
+            labelStep = 2;
+        }
         for (let i = 0; i < n; i++) {
+            const isLast = i === n - 1;
+            if (!isLast && i % labelStep !== 0) {
+                continue;
+            }
             const cx = xPositions[i];
             const lab = esc(buckets[i].label);
             parts.push(
@@ -9821,6 +11245,8 @@ class App {
         svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.innerHTML = parts.join('');
+        this.hideKiStatsChartTooltip();
+        this.bindKiStatsChartPointTooltips();
     }
 
     confirmClearKiStats() {
@@ -9835,19 +11261,15 @@ class App {
     }
 
     switchKiStatsPeriod(btn) {
-        const period = btn.getAttribute('data-period');
+        const rawPeriod = btn.getAttribute('data-period');
+        const period = rawPeriod === 'day' ? 'week' : rawPeriod;
         if (!period) return;
-        
-        // Update active button state
-        const allPeriodBtns = document.querySelectorAll('.btn-period');
-        if (allPeriodBtns) {
-            allPeriodBtns.forEach((b) => b.classList.remove('btn-period-active'));
-        }
-        btn.classList.add('btn-period-active');
-        
+
+        this.syncKiStatsPeriodButtons(period);
+
         // Store period
         this._kiStatsPeriod = period;
-        
+
         // Refresh chart
         this.refreshKiStatsPanel();
     }
@@ -9857,12 +11279,16 @@ class App {
         if (!sel) {
             return;
         }
-        const enabled = this.getEnabledNewsSourceIds();
+        const enabled = this.getSortedEnabledNewsSourceIds();
         const reg =
             typeof window !== 'undefined' && window.NEWS_SOURCES_REGISTRY
                 ? window.NEWS_SOURCES_REGISTRY
                 : [];
         const byId = new Map(reg.map((r) => [r.id, r]));
+        const current =
+            (this.settings && this.settings.newsSource) ||
+            (this.elements.newsSourceSelect && this.elements.newsSourceSelect.value) ||
+            '';
         sel.innerHTML = '';
         for (const id of enabled) {
             const opt = document.createElement('option');
@@ -9879,6 +11305,11 @@ class App {
             }
             sel.appendChild(opt);
         }
+        const next = App.normalizeNewsSourceWithEnabled(current, enabled);
+        if (next) {
+            sel.value = next;
+        }
+        this.refreshHeaderSourceControls();
     }
 
     renderNewsSourcesSettingsChecklist() {
@@ -10163,9 +11594,18 @@ class App {
             this.elements.themeBrightnessLight && this.elements.themeBrightnessDark
                 ? App.normalizeThemeSurfaceBrightness({
                       light: parseInt(this.elements.themeBrightnessLight.value, 10),
-                      dark: parseInt(this.elements.themeBrightnessDark.value, 10)
+                      dark: parseInt(this.elements.themeBrightnessDark.value, 10),
+                      version: 2
                   })
                 : App.normalizeThemeSurfaceBrightness(this.settings?.themeSurfaceBrightness);
+        const themeHeaderTransparencySaved =
+            this.elements.themeLightHeaderTransparency && this.elements.themeDarkHeaderTransparency
+                ? App.normalizeThemeHeaderTransparency({
+                      light: parseInt(this.elements.themeLightHeaderTransparency.value, 10),
+                      dark: parseInt(this.elements.themeDarkHeaderTransparency.value, 10),
+                      version: 1
+                  })
+                : App.normalizeThemeHeaderTransparency(this.settings?.themeHeaderTransparency);
         const articleThumbnailsEnabledSaved = this.elements.articleThumbnailsEnabled
             ? App.normalizeArticleThumbnailsEnabled(this.elements.articleThumbnailsEnabled.checked)
             : prevArticleThumbnailsEnabled;
@@ -10183,6 +11623,7 @@ class App {
             localStorage.setItem('heise_theme_custom_colors', JSON.stringify(themeCustomColorsSaved));
             localStorage.setItem('heise_theme_custom_header_colors', JSON.stringify(themeCustomHeaderColorsSaved));
             localStorage.setItem('heise_theme_surface_brightness', JSON.stringify(themeSurfaceBrightnessSaved));
+            localStorage.setItem('heise_theme_header_transparency', JSON.stringify(themeHeaderTransparencySaved));
             localStorage.setItem('heise_article_thumbnails_enabled', articleThumbnailsEnabledSaved ? '1' : '0');
         } catch (_) {
             /* ignore */
@@ -10196,6 +11637,7 @@ class App {
         this.settings.themeCustomColors = themeCustomColorsSaved;
         this.settings.themeCustomHeaderColors = themeCustomHeaderColorsSaved;
         this.settings.themeSurfaceBrightness = themeSurfaceBrightnessSaved;
+        this.settings.themeHeaderTransparency = themeHeaderTransparencySaved;
         this.settings.articleThumbnailsEnabled = articleThumbnailsEnabledSaved;
         this.settings.backgroundSelectedSourcesRefreshEnabled =
             backgroundSelectedSourcesRefreshEnabledSaved;
@@ -10214,6 +11656,7 @@ class App {
                 themeCustomColors: themeCustomColorsSaved,
                 themeCustomHeaderColors: themeCustomHeaderColorsSaved,
                 themeSurfaceBrightness: themeSurfaceBrightnessSaved,
+                themeHeaderTransparency: themeHeaderTransparencySaved,
                 articleThumbnailsEnabled: articleThumbnailsEnabledSaved,
                 backgroundSelectedSourcesRefreshEnabled:
                     backgroundSelectedSourcesRefreshEnabledSaved
@@ -10228,10 +11671,11 @@ class App {
         this.rebuildNewsSourceSelect();
         await this.applySortLabelsFromLocale();
 
-        const next = App.normalizeNewsSourceWithEnabled(prev, enabled);
+        const next = App.normalizeNewsSourceWithEnabled(prev, this.getSortedEnabledNewsSourceIds());
         if (this.elements.newsSourceSelect) {
             this.elements.newsSourceSelect.value = next;
         }
+        this.refreshHeaderSourceControls();
 
         if (next !== prev) {
             await this.onNewsSourceChange();
@@ -10415,6 +11859,7 @@ class App {
         const settings = {
             ...this.settings,
             selectedCategories,
+            disabledCategoriesBySource: this.disabledCategoriesBySource,
             kiApiMode: mode,
             apiBaseUrl,
             lmRestRoot,

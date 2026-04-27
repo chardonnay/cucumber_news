@@ -10,3 +10,6 @@ __pycache__/
 
 # KI
 .cursor
+
+# Playwright / browser tooling artefacts
+.playwright-cli/

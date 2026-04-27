@@ -8,31 +8,47 @@ image::docs/images/diagram-adding-news-source.png[Flow for adding a news source,
 
 Edit `js/news-sources-registry.js`:
 
-* Append `{ id: 'your_id', siteUrl: 'https://…' }` in the desired *default order* (the UI uses this order).
+* Add a registry row with at least `id`, `siteUrl`, `displayName`, and `language`.
+* Add `hosts` when the article URLs use aliases different from the main `siteUrl` host.
+* For registry-driven sources, prefer `feedStrategy`:
+** `bing_news` for the shared Bing News → synthetic RSS path
+** `direct_rss` for an official RSS URL proxied by the dev server
+** `google_news` if you explicitly want the generic Google News RSS path
+* Add `searchSites` for `bing_news` if the publisher needs multiple host/path hints.
+* Add `feedUrl` for `direct_rss`, plus an optional `feedVersion` when you need a cache-busting revision marker.
 
 Use a stable `id` (snake_case matches existing entries, e.g. `it_administrator`).
 
+The settings checklist follows registry order, but the header dropdown currently sorts *enabled* sources alphabetically by the visible localized label.
+
 === 2. Configure scraping
 
-Edit `js/news-scraper.js` — in `configureSource`:
+For many sources, the registry entry is enough and no extra `configureSource` branch is needed. `NewsScraper` already maps registry rows with `feedStrategy` to `GET /api/source-feed`.
 
-* Add a `case 'your_id':` branch setting `baseUrl`, `feedUrl`, `feedType` (`'atom'` or `'rss'`), `cacheName`, and either `atomLinkHost` or `rssItemHost` to match link hostnames in the feed.
-* If the browser cannot fetch the feed due to CORS, set `feedProxyPath` (e.g. `'/api/your-feed'`).
+Add a dedicated `configureSource` branch in `js/news-scraper.js` only if the source needs bespoke handling, for example:
 
-Implement or extend parsers:
+* a dedicated proxy route such as `/api/bild-feed`
+* custom host matching or multi-feed composition
+* non-standard category inference
+* special thumbnail extraction or advertorial filtering
+* a dedicated comment helper route
 
-* Atom → `parseAtomFeed`
-* RSS 2.0 → `parseRss2Feed` (may need a small branch for category inference, like `it_administrator`).
+If you do add source-specific parsing logic:
 
-Add `getFallbackNews` demo entry and `clearAllFeedCaches` cache name.
+* Atom → extend `parseAtomFeed`
+* RSS 2.0 → extend `parseRss2Feed`
+* emit meaningful `category` and, where possible, `categoryName` values — the visible category chips in the UI are generated dynamically from the loaded article items of the active source
+
+Add a fallback demo item in `getFallbackNews` and ensure `clearAllFeedCaches` knows the cache name when you introduce a new dedicated cache.
 
 === 3. Dev server proxy (if needed)
 
 In `scripts/dev_server.py`:
 
-* Add a cached fetch function (mirror `_t3n_fetch_rss_xml` / `_golem_fetch_rss_xml`).
-* Expose `GET /api/your-feed` with `Content-Type: application/rss+xml` or `atom+xml` and CORS headers consistent with other feed routes.
-* Document the route in the server banner string at the bottom of the file.
+* Prefer the shared `GET /api/source-feed` path for new publishers where `bing_news` or `direct_rss` is sufficient.
+* Add a dedicated cached fetch helper and `GET /api/your-feed` route only when the shared source-feed proxy is not enough.
+* If the source needs comment metadata, add `GET /api/your-comments` (full parser or stub/metadata route, depending on what the site exposes).
+* Document new routes in both the server banner string and `docs/dev-server-api.adoc`.
 
 === 4. Content Security Policy
 
@@ -40,8 +56,9 @@ If the browser should fall back to a *direct* `fetch` to the publisher, add the 
 
 === 5. UI, i18n, and migrations
 
-* `js/app.js` — brand logo URL in `getBrandLogoUrl`, optional wordmark/alt branches in locale application, and a *catalog migration* bump (`newsSourcesCatalogMigrationVersion`) so existing users get the new id in `enabledNewsSources`.
+* `js/app.js` — brand logo URL in `getBrandLogoUrl`, optional wordmark/alt branches in locale application, and, if required, a *catalog migration* bump (`newsSourcesCatalogMigrationVersion`) so existing users get the new id in `enabledNewsSources`.
 * `locales/de.json` and `locales/en.json` — `header.news_source_your_id`, and optional `brand_wordmark_*` / `logo_alt_*` keys.
+* No dedicated filter-group wiring is normally required anymore; category chips are derived from article data at runtime.
 
 === 6. AI summarizer metadata
 
@@ -54,5 +71,8 @@ Edit `js/ai-summarizer.js`:
 === 7. Manual test checklist
 
 * Load via `python3 scripts/dev_server.py`, select the new source, confirm articles appear.
+* Confirm the source shows up in the settings checklist and, when enabled, in the header dropdown.
+* Confirm visible categories are generated from the loaded articles and start enabled by default.
 * Toggle summaries with LM Studio running (same-origin REST).
 * Open an article with “alternative links” and verify `/api/search-news` returns third-party URLs only.
+* If the source uses a dedicated feed route, call that route directly and confirm it returns valid RSS/Atom.
