@@ -25,6 +25,7 @@ In KI-Server: REST v1, check "REST über dieselbe Origin …", Save.
 from __future__ import annotations
 
 import argparse
+import calendar
 import html
 import http.client
 import json
@@ -33,7 +34,10 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import requests
+
 from urllib.error import HTTPError, URLError
 from typing import Optional
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
@@ -719,6 +723,33 @@ def _normalize_source_feed_direct_url(raw: str) -> str:
         return ""
 
 
+def _normalize_source_feed_section_url(raw: str, site_url: str) -> str:
+    s = str(raw or "").strip()
+    base = _normalize_source_feed_site_url(site_url)
+    if not s or not base:
+        return ""
+    try:
+        u = urlparse(urljoin(base + "/", s))
+        base_host = (urlparse(base).hostname or "").lower()
+        host = (u.hostname or "").lower()
+        if base_host.startswith("www."):
+            base_host = base_host[4:]
+        if host.startswith("www."):
+            host_cmp = host[4:]
+        else:
+            host_cmp = host
+        if u.scheme != "https" or not host_cmp:
+            return ""
+        if host_cmp != base_host and not host_cmp.endswith(f".{base_host}"):
+            return ""
+        path = re.sub(r"/{2,}", "/", u.path or "/")
+        if path != "/" and path.endswith("/"):
+            path = path[:-1]
+        return f"https://{host}{path}"
+    except Exception:
+        return ""
+
+
 def _default_bing_market_for_language(lang: str) -> str:
     code = _normalize_source_feed_lang(lang)
     mapping = {
@@ -801,6 +832,202 @@ def _build_source_feed_rss_xml(
             source_el.text = source_name
     xml = ET.tostring(rss, encoding="utf-8", xml_declaration=True)
     return xml.decode("utf-8", errors="replace")
+
+
+def _source_feed_article_date_from_url(url: str) -> tuple[str, float]:
+    match = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", str(url or ""))
+    if not match:
+        return "", 0.0
+    try:
+        y, m, d = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        stamp = calendar.timegm((y, m, d, 12, 0, 0, 0, 0, 0))
+        return time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stamp)), stamp
+    except Exception:
+        return "", 0.0
+
+
+def _source_feed_title_from_url(url: str) -> str:
+    path = urlparse(str(url or "")).path
+    parts = [p for p in path.split("/") if p]
+    slug = ""
+    for part in reversed(parts):
+        if part.isdigit():
+            continue
+        slug = part
+        break
+    if not slug:
+        return ""
+    return " ".join(word.capitalize() for word in re.sub(r"[-_]+", " ", slug).split())
+
+
+def _source_feed_clean_section_title(title: str) -> str:
+    cleaned = " ".join(str(title or "").split()).strip()
+    trailing_labels = (
+        "Celebrities",
+        "Entertainment",
+        "Health",
+        "Life",
+        "Money",
+        "Music",
+        "News",
+        "NHL",
+        "Opinion",
+        "Politics",
+        "Sports",
+        "Tech",
+        "Travel",
+        "TV",
+        "World",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for label in trailing_labels:
+            suffix = f" {label}"
+            if len(cleaned) > len(suffix) + 12 and cleaned.endswith(suffix):
+                cleaned = cleaned[: -len(suffix)].rstrip()
+                changed = True
+                break
+    return cleaned
+
+
+def _source_feed_normalize_article_url(raw_url: str, base_url: str, site_url: str) -> str:
+    raw = str(raw_url or "").strip()
+    if not raw:
+        return ""
+    try:
+        u = urlparse(urljoin(base_url, raw))
+        base_host = (urlparse(site_url).hostname or "").lower()
+        host = (u.hostname or "").lower()
+        if base_host.startswith("www."):
+            base_host = base_host[4:]
+        host_cmp = host[4:] if host.startswith("www.") else host
+        if u.scheme not in ("http", "https") or not host_cmp:
+            return ""
+        if host_cmp != base_host and not host_cmp.endswith(f".{base_host}"):
+            return ""
+        path = re.sub(r"/{2,}", "/", u.path or "")
+        if not re.search(r"/(story|picture-gallery)/", path):
+            return ""
+        if not re.search(r"/\d{4}/\d{2}/\d{2}/", path):
+            return ""
+        return f"https://{host}{path}"
+    except Exception:
+        return ""
+
+
+def _source_feed_first_srcset_url(srcset: str) -> str:
+    first = str(srcset or "").split(",", 1)[0].strip()
+    return first.split(" ", 1)[0].strip()
+
+
+class _SourceFeedSectionArticleParser(HTMLParser):
+    def __init__(self, page_url: str, site_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.page_url = page_url
+        self.site_url = site_url
+        self.rows: list[dict[str, str]] = []
+        self._seen: set[str] = set()
+        self._current_url = ""
+        self._text_parts: list[str] = []
+        self._fallback_title = ""
+        self._thumbnail_url = ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr = {k.lower(): (v or "") for k, v in attrs}
+        if tag.lower() == "a":
+            url = _source_feed_normalize_article_url(attr.get("href", ""), self.page_url, self.site_url)
+            if url:
+                self._current_url = url
+                self._text_parts = []
+                self._thumbnail_url = ""
+            return
+        if not self._current_url:
+            return
+        lower_tag = tag.lower()
+        if lower_tag == "img":
+            alt = " ".join(attr.get("alt", "").split()).strip()
+            if alt:
+                self._fallback_title = alt
+            if not self._thumbnail_url:
+                candidate = (
+                    attr.get("src")
+                    or attr.get("data-src")
+                    or _source_feed_first_srcset_url(attr.get("srcset", ""))
+                )
+                if candidate:
+                    self._thumbnail_url = urljoin(self.page_url, candidate)
+        elif lower_tag == "source" and not self._thumbnail_url:
+            candidate = _source_feed_first_srcset_url(attr.get("srcset", ""))
+            if candidate:
+                self._thumbnail_url = urljoin(self.page_url, candidate)
+
+    def handle_data(self, data: str) -> None:
+        if self._current_url:
+            text = " ".join(str(data or "").split()).strip()
+            if text:
+                self._text_parts.append(text)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "a" or not self._current_url:
+            return
+        url = self._current_url
+        title = " ".join(" ".join(self._text_parts).split()).strip()
+        title = _source_feed_clean_section_title(html.unescape(title))
+        if len(title) > 220:
+            title = title[:220].rsplit(" ", 1)[0].strip()
+        if not title and self._fallback_title:
+            title = _source_feed_clean_section_title(html.unescape(self._fallback_title))
+        if not title:
+            title = _source_feed_title_from_url(url)
+        if title and url not in self._seen:
+            published_at, sort_ts = _source_feed_article_date_from_url(url)
+            row = {
+                "title": title,
+                "url": url,
+                "source": "USA Today",
+                "sourceName": "USA Today",
+                "sourceUrl": self.site_url,
+                "publishedAt": published_at,
+                "_sort": str(sort_ts),
+            }
+            if self._thumbnail_url.startswith("http"):
+                row["thumbnailUrl"] = self._thumbnail_url
+            self._seen.add(url)
+            self.rows.append(row)
+        self._current_url = ""
+        self._text_parts = []
+        self._fallback_title = ""
+        self._thumbnail_url = ""
+
+
+def _source_feed_fetch_html_sections(label: str, site_url: str, section_urls: list[str], limit: int) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for section_url in section_urls:
+        req = Request(
+            section_url,
+            headers={
+                "User-Agent": FETCH_UA,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+            page_html = resp.read().decode("utf-8", errors="replace")
+        parser = _SourceFeedSectionArticleParser(section_url, site_url)
+        parser.feed(page_html)
+        for row in parser.rows:
+            url = str(row.get("url") or "")
+            if not url or url in seen:
+                continue
+            row["source"] = label
+            row["sourceName"] = label
+            seen.add(url)
+            rows.append(row)
+    rows.sort(key=lambda row: float(row.get("_sort") or 0.0), reverse=True)
+    for row in rows:
+        row.pop("_sort", None)
+    return rows[: max(1, limit)]
 
 
 def _google_news_feed_url_for_language(lang: str) -> str:
@@ -1482,20 +1709,37 @@ def _extract_news_article_from_html(html: str) -> dict | None:
 
 
 def _http_get_text(url: str) -> tuple[int, str]:
-    req = Request(
-        url,
-        headers={
-            "User-Agent": FETCH_UA,
-            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "de,en-US;q=0.9,en;q=0.8",
-        },
-        method="GET",
-    )
-    with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-        body = resp.read()
-        status = resp.getcode() or 200
-    text = body.decode("utf-8", errors="replace")
-    return status, text
+    """
+    Fetch a URL and return (status_code, text).
+    Uses `requests` to get proper control over redirects and to distinguish
+    a genuine redirect loop (which raises TooManyRedirects) from other HTTP
+    errors — rather than the opaque "redirect error that would lead to an
+    infinite loop" message that urllib/urlopen throws.
+    """
+    try:
+        session = requests.Session()
+        session.max_redirects = 10
+        resp = session.get(
+            url,
+            headers={
+                "User-Agent": FETCH_UA,
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "de,en-US;q=0.9,en;q=0.8",
+            },
+            timeout=FETCH_TIMEOUT,
+            allow_redirects=True,
+        )
+        return resp.status_code, resp.text
+    except requests.exceptions.TooManyRedirects:
+        # Surface as HTTP 598 (Loop Detection) so callers can handle it
+        # distinctly from a plain HTTP error.
+        return 598, ""
+    except requests.exceptions.Timeout:
+        raise TimeoutError("request timed out") from None
+    except requests.exceptions.RequestException as e:
+        # Wrap in a generic OSError subclass so the existing call-site
+        # `except (HTTPError, URLError, TimeoutError, OSError)` still catches it.
+        raise OSError(str(e)) from e
 
 
 def _parse_int_loose(v: object) -> int | None:
@@ -2102,7 +2346,13 @@ def build_heise_comments_payload(article_url: str) -> dict:
                 forum_out = None
             warnings.append(f"Forum fetch failed: {e}")
         else:
-            if "Heise Login Service" in forum_html[:8000] and "tree_thread_list" not in forum_html:
+            if _st == 598:
+                warnings.append(
+                    "Forum URL redirected too many times (possible loop or unreachable); "
+                    "try opening the discussion in a browser."
+                )
+                forum_out = None
+            elif "Heise Login Service" in forum_html[:8000] and "tree_thread_list" not in forum_html:
                 warnings.append(
                     "Forum page returned login wall; try opening the discussion in a browser."
                 )
@@ -2632,12 +2882,13 @@ def make_handler(lm_target: str) -> type:
                 raw_feed_url = unquote((qs.get("feed_url") or [""])[0])
                 feed_url = _normalize_source_feed_direct_url(raw_feed_url)
                 lang = _normalize_source_feed_lang((qs.get("lang") or ["en"])[0])
+                rev = (((qs.get("rev") or [""])[0]) or "").strip()[:64]
                 try:
                     lim = int((qs.get("limit") or ["30"])[0])
                 except (TypeError, ValueError):
                     lim = 30
                 lim = max(1, min(30, lim))
-                if engine not in ("bing_news", "google_news", "direct_rss"):
+                if engine not in ("bing_news", "google_news", "direct_rss", "html_sections"):
                     err = json.dumps({"ok": False, "error": "invalid_engine"}, ensure_ascii=False).encode("utf-8")
                     self.send_response(400)
                     cors_headers(self)
@@ -2666,6 +2917,17 @@ def make_handler(lm_target: str) -> type:
                     derived_site = _normalize_source_feed_site(site_url)
                     if derived_site:
                         sites.append(derived_site)
+                section_urls: list[str] = []
+                seen_section_urls: set[str] = set()
+                for raw_section_url in qs.get("section_url") or []:
+                    section_url = _normalize_source_feed_section_url(unquote(raw_section_url), site_url)
+                    if section_url and section_url not in seen_section_urls:
+                        seen_section_urls.add(section_url)
+                        section_urls.append(section_url)
+                if engine == "html_sections" and not section_urls:
+                    section_url = _normalize_source_feed_section_url(site_url, site_url)
+                    if section_url:
+                        section_urls.append(section_url)
                 mkt = ((qs.get("mkt") or [""])[0] or "").strip()
                 cache_key = json.dumps(
                     {
@@ -2676,7 +2938,9 @@ def make_handler(lm_target: str) -> type:
                         "lang": lang,
                         "limit": lim,
                         "sites": sites,
+                        "section_urls": section_urls,
                         "mkt": mkt,
+                        "rev": rev,
                     },
                     ensure_ascii=False,
                     sort_keys=True,
@@ -2719,6 +2983,17 @@ def make_handler(lm_target: str) -> type:
                         with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
                             xml = resp.read().decode("utf-8", errors="replace")
                         xml = _enrich_direct_rss_with_article_images(xml, feed_url)
+                    elif engine == "html_sections":
+                        items = _source_feed_fetch_html_sections(label, site_url, section_urls, lim)
+                        if not items:
+                            raise RuntimeError("html_sections_empty")
+                        xml = _build_source_feed_rss_xml(
+                            label,
+                            site_url,
+                            lang,
+                            items,
+                            description=f"{label} (via section pages)",
+                        )
                     else:
                         feed_url = _google_news_feed_url_for_language(lang)
                         req = Request(
@@ -2917,7 +3192,7 @@ def main() -> int:
         f"GET /api/t3n-feed → t3n RSS (browser CORS proxy)\n"
         f"GET /api/it-administrator-feed → IT-Administrator RSS (browser CORS proxy)\n"
         f"GET /api/verge-feed → The Verge Atom (browser CORS proxy); optional ?url=… (https://www.theverge.com/rss/…/*.xml)\n"
-        f"GET /api/source-feed?engine=… → registry-backed source feed proxy (Bing News → synthetic RSS, Google News → proxied RSS)\n"
+        f"GET /api/source-feed?engine=… → registry-backed source feed proxy (Bing News, direct RSS, Google News, HTML sections)\n"
         f"GET /api/golem-comments?url=… → Golem comment count + forum URL from RSS (no green/red parse)\n"
         f"GET /api/bild-comments?url=… → stub (link to article; no feed comment API)\n"
         f"GET /api/computerbase-comments?url=… → stub (link to article; no feed comment API)\n"

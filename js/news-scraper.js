@@ -146,7 +146,7 @@ class NewsScraper {
     }
 
     /**
-     * @param {{ id?: string, siteUrl?: string, displayName?: string, language?: string, feedStrategy?: string, feedUrl?: string, feedVersion?: string }} entry
+     * @param {{ id?: string, siteUrl?: string, displayName?: string, language?: string, feedStrategy?: string, feedUrl?: string, feedVersion?: string, sectionUrls?: string[] }} entry
      * @returns {string}
      */
     static buildSourceFeedProxyPath(entry) {
@@ -160,11 +160,21 @@ class NewsScraper {
         params.set('site_url', String(entry.siteUrl || ''));
         params.set('lang', String(entry.language || 'en'));
         params.set('limit', '30');
-        if (entry.feedVersion) {
-            params.set('rev', String(entry.feedVersion));
-        }
+        params.set('rev', entry.feedVersion ? String(entry.feedVersion) : 'source-history-20260427a');
         if (entry.feedStrategy === 'direct_rss' && entry.feedUrl) {
             params.set('feed_url', String(entry.feedUrl));
+        }
+        if (entry.feedStrategy === 'html_sections' && Array.isArray(entry.sectionUrls)) {
+            entry.sectionUrls.forEach((sectionUrl) => {
+                if (!sectionUrl) {
+                    return;
+                }
+                const normalizedSectionUrl = String(sectionUrl).trim();
+                if (!normalizedSectionUrl) {
+                    return;
+                }
+                params.append('section_url', normalizedSectionUrl);
+            });
         }
         if (entry.feedStrategy === 'bing_news') {
             const sites = NewsScraper.getSourceSearchSites(entry);
@@ -224,7 +234,8 @@ class NewsScraper {
             (
                 registryEntry.feedStrategy === 'bing_news' ||
                 registryEntry.feedStrategy === 'google_news' ||
-                registryEntry.feedStrategy === 'direct_rss'
+                registryEntry.feedStrategy === 'direct_rss' ||
+                registryEntry.feedStrategy === 'html_sections'
             )
         ) {
             this.baseUrl = String(registryEntry.siteUrl || '');
@@ -1044,7 +1055,8 @@ class NewsScraper {
             (
                 entry.feedStrategy === 'bing_news' ||
                 entry.feedStrategy === 'google_news' ||
-                entry.feedStrategy === 'direct_rss'
+                entry.feedStrategy === 'direct_rss' ||
+                entry.feedStrategy === 'html_sections'
             )
         );
     }

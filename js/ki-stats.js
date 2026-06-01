@@ -607,7 +607,7 @@ class KiStats {
     }
 
     /**
-     * OpenAI-style `usage` on chat completions.
+     * OpenAI/Anthropic-style `usage` on chat completions/messages.
      * @param {unknown} data
      * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
      */
@@ -689,7 +689,7 @@ class KiStats {
     }
 
     /**
-     * @param {unknown} data — OpenAI-compatible (`usage`) or LM Studio REST (`stats`)
+     * @param {unknown} data — OpenAI-compatible/Anthropic (`usage`) or LM Studio REST (`stats`)
      * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
      */
     static extractUsageFromChatResponse(data) {

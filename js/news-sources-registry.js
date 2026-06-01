@@ -94,7 +94,7 @@
         }
     }
 
-    /** @type {readonly { id: string, siteUrl: string, displayName?: string, language?: string, feedStrategy?: string, feedVersion?: string, filterMode?: string, hosts?: string[], searchSites?: string[] }[]} */
+    /** @type {readonly { id: string, siteUrl: string, displayName?: string, language?: string, feedStrategy?: string, feedVersion?: string, filterMode?: string, hosts?: string[], searchSites?: string[], sectionUrls?: string[] }[]} */
     const REG = [
         { id: 'heise', siteUrl: 'https://www.heise.de', displayName: 'heise.de', language: 'de', filterMode: 'heise', hosts: ['heise.de'] },
         { id: 'bild', siteUrl: 'https://www.bild.de', displayName: 'BILD', language: 'de', filterMode: 'single', hosts: ['bild.de'] },
@@ -112,7 +112,26 @@
         { id: 'guardian', siteUrl: 'https://www.theguardian.com', displayName: 'The Guardian', language: 'en', feedStrategy: 'bing_news', hosts: ['theguardian.com'] },
         { id: 'daily_mail', siteUrl: 'https://www.dailymail.co.uk', displayName: 'Daily Mail / MailOnline', language: 'en', feedStrategy: 'bing_news', hosts: ['dailymail.co.uk'] },
         { id: 'fox_news', siteUrl: 'https://www.foxnews.com', displayName: 'Fox News', language: 'en', feedStrategy: 'bing_news', hosts: ['foxnews.com'] },
-        { id: 'usa_today', siteUrl: 'https://www.usatoday.com', displayName: 'USA Today', language: 'en', feedStrategy: 'bing_news', hosts: ['usatoday.com'] },
+        {
+            id: 'usa_today',
+            siteUrl: 'https://www.usatoday.com',
+            displayName: 'USA Today',
+            language: 'en',
+            feedStrategy: 'html_sections',
+            feedVersion: '20260428a',
+            hosts: ['usatoday.com'],
+            sectionUrls: [
+                'https://www.usatoday.com/',
+                'https://www.usatoday.com/news/',
+                'https://www.usatoday.com/sports/',
+                'https://www.usatoday.com/money/',
+                'https://www.usatoday.com/entertainment/',
+                'https://www.usatoday.com/life/',
+                'https://www.usatoday.com/tech/',
+                'https://www.usatoday.com/travel/',
+                'https://www.usatoday.com/opinion/'
+            ]
+        },
         { id: 'washington_post', siteUrl: 'https://www.washingtonpost.com', displayName: 'The Washington Post', language: 'en', feedStrategy: 'bing_news', hosts: ['washingtonpost.com'] },
         { id: 'wall_street_journal', siteUrl: 'https://www.wsj.com', displayName: 'The Wall Street Journal', language: 'en', feedStrategy: 'bing_news', hosts: ['wsj.com'] },
         { id: 'reuters', siteUrl: 'https://www.reuters.com', displayName: 'Reuters', language: 'en', feedStrategy: 'bing_news', hosts: ['reuters.com'] },

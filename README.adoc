@@ -5,7 +5,7 @@
 
 image::images/cucumber-news-banner-v2.png[Cucumber NewsScraper banner,width=800,align=center]
 
-Multi-source, responsive news dashboard with optional *AI summaries* (LM Studio REST v1 or OpenAI-compatible APIs), local IndexedDB cache, and a Python dev server for feeds, comments metadata, and same-origin KI proxying. Besides the original tech/news sources (Heise, Telepolis, Golem, ComputerBase, t3n, IT-Administrator, BILD, The Verge), the source catalog now also includes a broad international publisher list in `js/news-sources-registry.js` (for example Reuters, AP News, BBC News, CNN, New York Times, Guardian, Washington Post, Wall Street Journal, Bloomberg, Financial Times, Fox News, USA Today, Politico, Deutsche Welle, Der Spiegel, WELT, Süddeutsche Zeitung, FAZ, Tagesschau, Le Monde, El País, Nikkei, CBC News, ABC Australia, Al Jazeera and many more).
+Multi-source, responsive news dashboard with optional *AI summaries* (LM Studio REST v1, OpenAI-compatible APIs, or Anthropic Messages API), local IndexedDB cache, and a Python dev server for feeds, comments metadata, and same-origin KI proxying. Besides the original tech/news sources (Heise, Telepolis, Golem, ComputerBase, t3n, IT-Administrator, BILD, The Verge), the source catalog now also includes a broad international publisher list in `js/news-sources-registry.js` (for example Reuters, AP News, BBC News, CNN, New York Times, Guardian, Washington Post, Wall Street Journal, Bloomberg, Financial Times, Fox News, USA Today, Politico, Deutsche Welle, Der Spiegel, WELT, Süddeutsche Zeitung, FAZ, Tagesschau, Le Monde, El País, Nikkei, CBC News, ABC Australia, Al Jazeera and many more).
 
 License: link:LICENSE[MIT] (see <<license,License>>). Feed content and trademarks belong to their respective publishers.
 
@@ -33,9 +33,16 @@ The bundled server serves static files and proxies LM Studio (`POST /api/v1/chat
 === KI (LM Studio)
 
 . Start LM Studio local server (e.g. port `1234`).
-. Open *KI-Server* in the dashboard: mode *LM Studio REST v1*, base URL `http://127.0.0.1:1234` (no path), model either explicitly selected from the LM Studio list or left on *No specific choice — server decides*.
+. Open *KI-Server* in the dashboard: mode *LM Studio REST v1*, base URL `http://127.0.0.1:1234` (no path), model either explicitly selected from the LM Studio list or left on *Automatic* so Cucumber uses the model currently loaded in LM Studio.
 . Enable *REST via same page origin* when using `dev_server`, save, reload.
-. The *Reasoning* controls are model-aware in LM Studio mode: the UI only shows levels reported by the current model via `/api/v1/models`, disables the toggle for models without reasoning support, and hides the controls entirely in *OpenAI-compatible* mode.
+. The *Reasoning* controls are model-aware in LM Studio mode: the UI only shows levels reported by the current model via `/api/v1/models`, disables the toggle for models without reasoning support, and hides the controls entirely in OpenAI-compatible and Anthropic modes.
+
+=== KI (Anthropic)
+
+. Open *KI-Server* in the dashboard and choose *Anthropic Messages API* under *API mode*.
+. Use base URL `https://api.anthropic.com/v1`.
+. Enter an Anthropic API key. The app calls `GET /v1/models` for the model list and `POST /v1/messages` for summaries; leaving *Model* on *Automatic* uses the first model returned by Anthropic.
+. The *Reasoning* controls are hidden in Anthropic mode because this app only sends the standard Messages API fields used here (`model`, `system`, `messages`, `temperature`, `max_tokens`, `stream`).
 
 Details: link:docs/ki-integration.adoc[AI integration guide].
 

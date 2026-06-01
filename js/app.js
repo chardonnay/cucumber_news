@@ -104,10 +104,15 @@ const THEME_BORDER_BRIGHTNESS_MAX = 0.20;
 /**
  * Maximum text mix amount in the *opposite* direction of the surface shift,
  * to maintain readable contrast at the slider extremes. 50 is neutral.
- * The cap is small on purpose — strong text bleaching looks washed out, and tests
- * (see CHANGELOG) show ~4.4:1 contrast at the extremes with this value.
+ *
+ * Sized so that, combined with `THEME_SURFACE_BRIGHTNESS_MAX = 0.28`, the primary
+ * text keeps at least WCAG AA (4.5:1) against every default surface (bgPrimary,
+ * bgSecondary, bgCard) in both light and dark mode at any slider position.
+ * The previous value (0.22) bleached the text too aggressively and dropped the
+ * worst-case contrast to ~4.1:1. With 0.14 the worst-case primary contrast is
+ * ~4.6:1 (dark mode, slider=100, against bgCard) — see CHANGELOG.
  */
-const THEME_TEXT_CONTRAST_MAX = 0.22;
+const THEME_TEXT_CONTRAST_MAX = 0.14;
 
 /** Per-accent surface defaults so the page background changes with the selected color theme. */
 const COLOR_THEME_SURFACE_DEFAULTS = {
@@ -245,7 +250,9 @@ class App {
         this.favoriteNewsSources = [];
         this.selectedArticleIds = new Set();
         this.currentPage = 1;
-        const itemsPerPage = 15;
+        // Many registry-backed feeds expose 10-14 current entries; keep the first page below that
+        // so older loaded articles stay reachable via "Mehr laden" / "Alles anzeigen".
+        const itemsPerPage = 9;
         this.itemsPerPage = itemsPerPage;
 
         /** Article IDs that appeared since the previous fetch (cleared after 3s hover or highlight removal). */
@@ -407,8 +414,20 @@ class App {
             selectedSourcesGenerationProgressValue: document.getElementById(
                 'selectedSourcesGenerationProgressValue'
             ),
+            selectedSourcesGenerationCurrentArticlesValue: document.getElementById(
+                'selectedSourcesGenerationCurrentArticlesValue'
+            ),
             selectedSourcesGenerationEtaValue: document.getElementById(
                 'selectedSourcesGenerationEtaValue'
+            ),
+            selectedSourcesGenerationScopeSelect: document.getElementById(
+                'selectedSourcesGenerationScopeSelect'
+            ),
+            selectedSourcesGenerationPeriodSelect: document.getElementById(
+                'selectedSourcesGenerationPeriodSelect'
+            ),
+            startSelectedSourcesGenerationBtn: document.getElementById(
+                'startSelectedSourcesGenerationBtn'
             ),
             cancelSelectedSourcesGenerationBtn: document.getElementById(
                 'cancelSelectedSourcesGenerationBtn'
@@ -501,7 +520,7 @@ class App {
         this._i18nKiStatsChartNewTpl = '';
         this._i18nKiStatsTopModel = 'Model';
         this._i18nLmModelHintDefault = '';
-        this._i18nLmModelAutomatic = 'No specific choice — server decides';
+        this._i18nLmModelAutomatic = 'Automatic — use the currently loaded LM Studio model';
         this._i18nLmModelLoading = 'Loading model list…';
         this._i18nLmModelLoadErrorTpl = 'Could not load model list: {error}';
         this._i18nLmModelRefreshTitle = 'Reload model list';
@@ -1009,9 +1028,19 @@ class App {
         this.wireThemeSettingsListeners();
 
         // Refresh button
-        this.elements.refreshBtn.addEventListener('click', () => this.fetchNews(true));
+        this.elements.refreshBtn.addEventListener('click', () => {
+            if (this._selectedSourcesGenerationInProgress) {
+                return;
+            }
+            void this.fetchNews(true);
+        });
         if (this.elements.generateSelectedSourcesBtn) {
             this.elements.generateSelectedSourcesBtn.addEventListener('click', () =>
+                this.openSelectedSourcesGenerationSetup()
+            );
+        }
+        if (this.elements.startSelectedSourcesGenerationBtn) {
+            this.elements.startSelectedSourcesGenerationBtn.addEventListener('click', () =>
                 void this.confirmAndRunSelectedSourcesGeneration()
             );
         }
@@ -1130,6 +1159,11 @@ class App {
         }
         if (this.elements.lmModel) {
             this.elements.lmModel.addEventListener('change', () => this.syncReasoningControlsForCurrentModel());
+        }
+        if (this.elements.reasoningEnabledCheckbox) {
+            this.elements.reasoningEnabledCheckbox.addEventListener('change', () =>
+                this.syncReasoningControlsForCurrentModel()
+            );
         }
 
         if (this.elements.articleTranslationEnabled) {
@@ -1717,6 +1751,8 @@ class App {
         const currentSource = this.getCurrentHeaderNewsSourceId();
         const sortedSources = this.getSortedEnabledNewsSourceIds();
         const currentIndex = sortedSources.indexOf(currentSource);
+        const selectedSourcesGenerationInProgress =
+            this._selectedSourcesGenerationInProgress === true;
         const favoriteToggleBtn = this.elements.headerSourceFavoriteToggleBtn;
         const prevBtn = this.elements.headerSourcePrevBtn;
         const favoritesBtn = this.elements.headerSourceFavoritesBtn;
@@ -1728,21 +1764,24 @@ class App {
             const label = currentIsFavorite
                 ? this._i18nHeaderSourceFavoriteRemoveTitle
                 : this._i18nHeaderSourceFavoriteAddTitle;
-            favoriteToggleBtn.disabled = !currentSource;
+            favoriteToggleBtn.disabled = selectedSourcesGenerationInProgress || !currentSource;
             favoriteToggleBtn.setAttribute('aria-pressed', currentIsFavorite ? 'true' : 'false');
             favoriteToggleBtn.setAttribute('title', label);
             favoriteToggleBtn.setAttribute('aria-label', label);
         }
 
         if (prevBtn) {
-            const disabled = currentIndex <= 0;
+            const disabled = selectedSourcesGenerationInProgress || currentIndex <= 0;
             prevBtn.disabled = disabled;
             prevBtn.setAttribute('title', this._i18nHeaderSourcePrevTitle);
             prevBtn.setAttribute('aria-label', this._i18nHeaderSourcePrevTitle);
         }
 
         if (nextBtn) {
-            const disabled = currentIndex < 0 || currentIndex >= sortedSources.length - 1;
+            const disabled =
+                selectedSourcesGenerationInProgress ||
+                currentIndex < 0 ||
+                currentIndex >= sortedSources.length - 1;
             nextBtn.disabled = disabled;
             nextBtn.setAttribute('title', this._i18nHeaderSourceNextTitle);
             nextBtn.setAttribute('aria-label', this._i18nHeaderSourceNextTitle);
@@ -1750,6 +1789,7 @@ class App {
 
         if (favoritesBtn) {
             const disabled =
+                selectedSourcesGenerationInProgress ||
                 enabledFavorites.length === 0 ||
                 (enabledFavorites.length === 1 && enabledFavorites[0] === currentSource);
             const label =
@@ -1767,6 +1807,10 @@ class App {
         if (!sel) {
             return;
         }
+        if (this._selectedSourcesGenerationInProgress) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
         const sortedSources = this.getSortedEnabledNewsSourceIds();
         const next = App.normalizeNewsSourceWithEnabled(sourceId, sortedSources);
         const current = this.getCurrentHeaderNewsSourceId();
@@ -1779,6 +1823,10 @@ class App {
     }
 
     async moveHeaderNewsSource(step) {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
         const sortedSources = this.getSortedEnabledNewsSourceIds();
         const current = this.getCurrentHeaderNewsSourceId();
         const currentIndex = sortedSources.indexOf(current);
@@ -1791,6 +1839,10 @@ class App {
     }
 
     async moveHeaderToNextFavoriteNewsSource() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
         const favorites = this.getEnabledFavoriteNewsSourceIdsSorted();
         if (favorites.length === 0) {
             this.refreshHeaderSourceControls();
@@ -1807,6 +1859,10 @@ class App {
     }
 
     async toggleCurrentNewsSourceFavorite() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.refreshHeaderSourceControls();
+            return;
+        }
         const current = this.getCurrentHeaderNewsSourceId();
         if (!current) {
             return;
@@ -1866,6 +1922,49 @@ class App {
         }
     }
 
+    openSelectedSourcesGenerationSetup() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBusy ||
+                    'Die Vollgenerierung läuft bereits.',
+                true
+            );
+            this.openSelectedSourcesGenerationModal();
+            return;
+        }
+        if (
+            this._scheduledAutoUpdateInProgress ||
+            this._summarizeAllInProgress ||
+            this._autoSummarizeNewInProgress
+        ) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBlocked ||
+                    'Bitte warten, bis laufende KI- oder Aktualisierungsjobs beendet sind.',
+                true
+            );
+            return;
+        }
+        if (this.elements.selectedSourcesGenerationPeriodSelect) {
+            this.elements.selectedSourcesGenerationPeriodSelect.value = 'today';
+        }
+        if (this.elements.selectedSourcesGenerationScopeSelect) {
+            this.elements.selectedSourcesGenerationScopeSelect.value = 'enabled';
+        }
+        this._selectedSourcesGenerationCancelRequested = false;
+        this.setSelectedSourcesGenerationState({
+            phase: 'idle',
+            currentSourceId: '',
+            totalSources: 0,
+            completedSources: 0,
+            remainingSources: 0,
+            failedSources: 0,
+            currentSourceTotalArticles: 0,
+            currentSourceCompletedArticles: 0,
+            estimatedRemainingArticles: 0
+        });
+        this.openSelectedSourcesGenerationModal();
+    }
+
     closeSelectedSourcesGenerationModal() {
         if (
             this._selectedSourcesGenerationInProgress &&
@@ -1889,9 +1988,20 @@ class App {
         const remaining = Number.isFinite(state.remainingSources)
             ? state.remainingSources
             : Math.max(total - completed, 0);
+        const currentSourceTotalArticles = Number.isFinite(state.currentSourceTotalArticles)
+            ? Math.max(0, state.currentSourceTotalArticles)
+            : 0;
+        const currentSourceCompletedArticles = Number.isFinite(state.currentSourceCompletedArticles)
+            ? Math.max(0, Math.min(state.currentSourceCompletedArticles, currentSourceTotalArticles))
+            : 0;
 
         let phaseText = this._i18nSelectedSourcesGenerationStatusPreparing || 'Vorbereitung …';
         switch (state.phase) {
+            case 'idle':
+                phaseText =
+                    this._i18nSelectedSourcesGenerationStatusReady ||
+                    'Zeitraum wählen und Start starten.';
+                break;
             case 'fetching':
                 phaseText =
                     this._i18nSelectedSourcesGenerationStatusFetching ||
@@ -1940,6 +2050,10 @@ class App {
             this.elements.selectedSourcesGenerationProgressValue.textContent =
                 `${completed} / ${total}`;
         }
+        if (this.elements.selectedSourcesGenerationCurrentArticlesValue) {
+            this.elements.selectedSourcesGenerationCurrentArticlesValue.textContent =
+                `${currentSourceCompletedArticles} / ${currentSourceTotalArticles}`;
+        }
         if (this.elements.selectedSourcesGenerationEtaValue) {
             this.elements.selectedSourcesGenerationEtaValue.textContent =
                 this.formatSelectedSourcesGenerationEta(
@@ -1950,6 +2064,21 @@ class App {
         if (this.elements.generateSelectedSourcesBtn) {
             this.elements.generateSelectedSourcesBtn.disabled =
                 this._selectedSourcesGenerationInProgress;
+        }
+        if (this.elements.selectedSourcesGenerationPeriodSelect) {
+            this.elements.selectedSourcesGenerationPeriodSelect.disabled =
+                this._selectedSourcesGenerationInProgress;
+        }
+        if (this.elements.selectedSourcesGenerationScopeSelect) {
+            this.elements.selectedSourcesGenerationScopeSelect.disabled =
+                this._selectedSourcesGenerationInProgress;
+        }
+        if (this.elements.startSelectedSourcesGenerationBtn) {
+            this.elements.startSelectedSourcesGenerationBtn.disabled =
+                this._selectedSourcesGenerationInProgress ||
+                this._selectedSourcesGenerationCancelRequested;
+            this.elements.startSelectedSourcesGenerationBtn.textContent =
+                this._i18nSelectedSourcesGenerationStartBtn || 'Starten';
         }
         if (this.elements.cancelSelectedSourcesGenerationBtn) {
             this.elements.cancelSelectedSourcesGenerationBtn.disabled =
@@ -1963,6 +2092,170 @@ class App {
                         : this._i18nSelectedSourcesGenerationCancelBtn || 'Abbrechen'
                     : this._i18nSelectedSourcesGenerationCloseBtn || 'Schließen';
         }
+        if (this.elements.refreshBtn) {
+            this.elements.refreshBtn.disabled = this._selectedSourcesGenerationInProgress;
+        }
+        if (this.elements.newsSourceSelect) {
+            this.elements.newsSourceSelect.disabled = this._selectedSourcesGenerationInProgress;
+        }
+        this.setDashboardSourceSettingsDisabled(this._selectedSourcesGenerationInProgress);
+        this.refreshHeaderSourceControls();
+    }
+
+    getOrderedSelectedSourcesForGeneration(sourceIds) {
+        const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const ordered = [];
+        const seen = new Set();
+        const normalizedSourceIds = (Array.isArray(sourceIds) ? sourceIds : [])
+            .map((sourceId) => this.normalizeNewsSource(sourceId))
+            .filter(Boolean);
+        if (currentSource && normalizedSourceIds.includes(currentSource)) {
+            ordered.push(currentSource);
+            seen.add(currentSource);
+        }
+        normalizedSourceIds.forEach((normalized) => {
+            if (!normalized || seen.has(normalized)) {
+                return;
+            }
+            seen.add(normalized);
+            ordered.push(normalized);
+        });
+        return ordered;
+    }
+
+    static normalizeSelectedSourcesGenerationScope(raw) {
+        const value = String(raw || '').trim();
+        return value === 'favorites' ? 'favorites' : 'enabled';
+    }
+
+    getSelectedSourcesGenerationScope() {
+        return App.normalizeSelectedSourcesGenerationScope(
+            this.elements.selectedSourcesGenerationScopeSelect
+                ? this.elements.selectedSourcesGenerationScopeSelect.value
+                : 'enabled'
+        );
+    }
+
+    getSelectedSourcesGenerationSourceIds() {
+        const scope = this.getSelectedSourcesGenerationScope();
+        if (scope === 'favorites') {
+            return this.getEnabledFavoriteNewsSourceIdsSorted();
+        }
+        return this.getEnabledNewsSourceIds();
+    }
+
+    getSelectedSourcesGenerationScopeLabel(scope) {
+        const normalized = App.normalizeSelectedSourcesGenerationScope(scope);
+        const select = this.elements.selectedSourcesGenerationScopeSelect;
+        if (select) {
+            const option = Array.from(select.options || []).find((opt) => opt.value === normalized);
+            if (option && option.textContent) {
+                return option.textContent.trim();
+            }
+        }
+        return normalized === 'favorites' ? 'Nur Favoriten' : 'Alle abonnierten Quellen';
+    }
+
+    static normalizeSelectedSourcesGenerationPeriod(raw) {
+        const value = String(raw || '').trim();
+        if (value === 'last_7_days' || value === 'last_30_days' || value === 'all_loaded') {
+            return value;
+        }
+        return 'today';
+    }
+
+    getSelectedSourcesGenerationPeriod() {
+        return App.normalizeSelectedSourcesGenerationPeriod(
+            this.elements.selectedSourcesGenerationPeriodSelect
+                ? this.elements.selectedSourcesGenerationPeriodSelect.value
+                : 'today'
+        );
+    }
+
+    static formatLocalDateInputValue(date = new Date()) {
+        const d = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    getSelectedSourcesGenerationPeriodRange(period) {
+        const normalized = App.normalizeSelectedSourcesGenerationPeriod(period);
+        if (normalized === 'all_loaded') {
+            return { period: normalized, start: -Infinity, end: Infinity };
+        }
+        const today = new Date();
+        const dayOffset = normalized === 'last_30_days' ? 29 : normalized === 'last_7_days' ? 6 : 0;
+        const startDate = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() - dayOffset,
+            0,
+            0,
+            0,
+            0
+        );
+        const start = App.getLocalDayBounds(App.formatLocalDateInputValue(startDate)).start;
+        const end = App.getLocalDayBounds(App.formatLocalDateInputValue(today)).end;
+        return { period: normalized, start, end };
+    }
+
+    getSelectedSourcesGenerationPeriodLabel(period) {
+        const normalized = App.normalizeSelectedSourcesGenerationPeriod(period);
+        const select = this.elements.selectedSourcesGenerationPeriodSelect;
+        if (select) {
+            const option = Array.from(select.options || []).find((opt) => opt.value === normalized);
+            if (option && option.textContent) {
+                return option.textContent.trim();
+            }
+        }
+        const labels = {
+            today: 'Heute',
+            last_7_days: 'Letzte 7 Tage',
+            last_30_days: 'Letzte 30 Tage',
+            all_loaded: 'Alle geladenen Artikel'
+        };
+        return labels[normalized] || labels.today;
+    }
+
+    static getNewsItemPublishedMs(item) {
+        const n = Number(item && item.publishedMs);
+        if (Number.isFinite(n) && n > 0) {
+            return n;
+        }
+        for (const key of ['publishedAt', 'published', 'pubDate', 'date']) {
+            const raw = item && item[key];
+            if (!raw) {
+                continue;
+            }
+            const parsed = Date.parse(String(raw));
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        }
+        return NaN;
+    }
+
+    static isNewsItemInGenerationPeriod(item, periodRange) {
+        if (!periodRange || periodRange.period === 'all_loaded') {
+            return true;
+        }
+        const ms = App.getNewsItemPublishedMs(item);
+        return (
+            Number.isFinite(ms) &&
+            ms >= Number(periodRange.start) &&
+            ms <= Number(periodRange.end)
+        );
+    }
+
+    filterNewsItemsForSelectedSourcesGenerationPeriod(items, periodRange) {
+        if (!periodRange || periodRange.period === 'all_loaded') {
+            return Array.isArray(items) ? items : [];
+        }
+        return (Array.isArray(items) ? items : []).filter((item) =>
+            App.isNewsItemInGenerationPeriod(item, periodRange)
+        );
     }
 
     setSelectedSourcesGenerationState(patch = {}) {
@@ -2004,20 +2297,49 @@ class App {
             return;
         }
 
-        const enabled = this.getEnabledNewsSourceIds();
-        if (!Array.isArray(enabled) || enabled.length === 0) {
+        const selectedSourceIds = this.getSelectedSourcesGenerationSourceIds();
+        if (!Array.isArray(selectedSourceIds) || selectedSourceIds.length === 0) {
+            if (this.getSelectedSourcesGenerationScope() === 'favorites') {
+                this.showStatus(
+                    this._i18nSelectedSourcesGenerationNoFavorites ||
+                        'Keine favorisierten abonnierten Quellen vorhanden.',
+                    true
+                );
+                return;
+            }
             this.showStatus(this._i18nDashboardNeedOne || 'Mindestens eine Newsquelle muss aktiviert sein.', true);
             return;
         }
 
-        const msg =
+        const period = this.getSelectedSourcesGenerationPeriod();
+        const periodRange = this.getSelectedSourcesGenerationPeriodRange(period);
+        const scope = this.getSelectedSourcesGenerationScope();
+        const ordered = this.getOrderedSelectedSourcesForGeneration(selectedSourceIds);
+        let totalArticles = 0;
+        try {
+            const cachedNews = await this.storage.getAllNews();
+            const articleCountsBySource = this.buildArticleCountsBySource(cachedNews, periodRange);
+            totalArticles = this.sumEstimatedArticlesForSources(ordered, articleCountsBySource);
+        } catch (error) {
+            console.warn('selected sources generation preflight count:', error);
+        }
+
+        const periodLabel = this.getSelectedSourcesGenerationPeriodLabel(period);
+        const scopeLabel = this.getSelectedSourcesGenerationScopeLabel(scope);
+        const template =
+            this._i18nSelectedSourcesGenerationConfirmWithCount ||
             this._i18nSelectedSourcesGenerationConfirm ||
-            'Alle unter Einstellungen aktivierten Quellen jetzt vollständig laden und erzeugen?';
+            'Für {scope} im Zeitraum „{period}“ sind aktuell {count} geladene Artikel aus {sources} Quelle(n) betroffen. Wirklich starten? Der Vorgang kann lange dauern.';
+        const msg = template
+            .replace(/\{scope\}/g, scopeLabel)
+            .replace(/\{period\}/g, periodLabel)
+            .replace(/\{count\}/g, String(totalArticles))
+            .replace(/\{sources\}/g, String(ordered.length));
         if (typeof window !== 'undefined' && window.confirm && !window.confirm(msg)) {
             return;
         }
 
-        await this.runSelectedSourcesGeneration(enabled);
+        await this.runSelectedSourcesGeneration(selectedSourceIds, { period, periodRange, scope });
     }
 
     /**
@@ -2292,6 +2614,9 @@ class App {
             settings.selectedCategories = selCats;
 
             const apiNorm = AISummarizer.normalizeOpenAiApiBase(settings.apiBaseUrl || '');
+            const anthropicNorm = AISummarizer.normalizeAnthropicApiBase(
+                settings.anthropicApiBaseUrl || ''
+            );
             let lmRestRoot = AISummarizer.normalizeLmRestServerRoot(settings.lmRestRoot || '');
             const derivedRest = AISummarizer.normalizeLmRestServerRoot(settings.apiBaseUrl || '');
             const apiDefault = 'http://127.0.0.1:1234/v1';
@@ -2304,7 +2629,7 @@ class App {
                 lmRestRoot = derivedRest;
             }
 
-            const kiMode = settings.kiApiMode === 'openai' ? 'openai' : 'lm_rest_v1';
+            const kiMode = AISummarizer.normalizeKiApiMode(settings.kiApiMode);
 
             let newsSrcCatalogVer = Number(settings.newsSourcesCatalogMigrationVersion);
             if (!Number.isFinite(newsSrcCatalogVer)) {
@@ -2385,6 +2710,37 @@ class App {
             const disabledCategoriesBySource = App.normalizeDisabledCategoriesBySource(
                 settings.disabledCategoriesBySource
             );
+
+            // Migrate legacy flat selectedCategories → per-source disabledCategoriesBySource.
+            // Old users stored a flat array of *selected* category values; the new system
+            // stores which categories are *disabled* per source.  When no per-source entry
+            // exists yet but the legacy array has data, derive disabled = known − selected
+            // for the active source so old deselections carry over.
+            if (
+                Object.keys(disabledCategoriesBySource).length === 0 &&
+                Array.isArray(selCats) &&
+                selCats.length > 0 &&
+                newsSource
+            ) {
+                const selectedSet = new Set(
+                    selCats.map((v) => String(v || '').trim()).filter(Boolean)
+                );
+                const allKnown = [
+                    'it', 'security', 'ki', 'wissenschaft', 'mobiles', 'entertainment',
+                    'wirtschaft', 'netzpolitik', 'journal', 'heise_ix', 'heise_ct',
+                    'heise_foto', 'heise_mac', 'heise_make', 'heise_autos', 'telepolis', 'bild'
+                ];
+                const disabled = allKnown.filter((v) => !selectedSet.has(v));
+                if (disabled.length > 0 && disabled.length < allKnown.length) {
+                    disabledCategoriesBySource[newsSource] = disabled;
+                    try {
+                        await this.storage.saveSettings({ disabledCategoriesBySource });
+                    } catch (e) {
+                        console.warn('selectedCategories migration:', e);
+                    }
+                }
+            }
+
             const favoriteNewsSources = App.normalizeFavoriteNewsSourcesArray(
                 settings.favoriteNewsSources
             );
@@ -2395,6 +2751,22 @@ class App {
                 settings.reasoningEnabled,
                 reasoningStored
             );
+            let lmModelSelectionMode = AISummarizer.normalizeLmModelSelectionMode(
+                settings.lmModelSelectionMode
+            );
+            try {
+                const lsModelSelectionMode = localStorage.getItem('heise_lm_model_selection_mode');
+                if (lsModelSelectionMode) {
+                    lmModelSelectionMode =
+                        AISummarizer.normalizeLmModelSelectionMode(lsModelSelectionMode);
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            const lmModel =
+                lmModelSelectionMode === 'manual'
+                    ? String(settings.lmModel || '').trim()
+                    : '';
 
             let alternativeLinksCount = 5;
             if (settings.alternativeLinksCount != null && settings.alternativeLinksCount !== '') {
@@ -2458,7 +2830,10 @@ class App {
                 ...settings,
                 apiBaseUrl: apiNorm,
                 lmRestRoot,
+                anthropicApiBaseUrl: anthropicNorm,
                 kiApiMode: kiMode,
+                lmModel,
+                lmModelSelectionMode,
                 restSameOrigin: settings.restSameOrigin === true || settings.restSameOrigin === 'true',
                 headerBrandMode: settings.headerBrandMode === 'text' ? 'text' : 'logo',
                 enabledNewsSources: enabledOrdered,
@@ -2595,21 +2970,17 @@ class App {
             try {
                 localStorage.setItem('heise_api_base', apiNorm);
                 localStorage.setItem('heise_lm_rest_root', lmRestRoot);
+                localStorage.setItem('heise_anthropic_api_base', anthropicNorm);
                 localStorage.setItem('heise_ki_api_mode', kiMode);
                 localStorage.setItem('heise_lm_api_token', settings.lmApiToken || '');
+                localStorage.setItem('heise_lm_model', lmModel);
+                localStorage.setItem('heise_lm_model_selection_mode', lmModelSelectionMode);
                 localStorage.setItem(
                     'heise_rest_same_origin',
                     settings.restSameOrigin === true || settings.restSameOrigin === 'true' ? '1' : '0'
                 );
             } catch (_) {
                 /* ignore */
-            }
-            if (settings.lmModel !== undefined && settings.lmModel !== null) {
-                try {
-                    localStorage.setItem('heise_lm_model', settings.lmModel || '');
-                } catch (_) {
-                    /* ignore */
-                }
             }
 
             let summaryCacheDays = 14;
@@ -3435,21 +3806,18 @@ class App {
             return;
         }
         const id = App.normalizeColorTheme(sel.value);
-        const themeCustomColors = App.normalizeThemeCustomColors({ light: {}, dark: {} });
         sel.value = id;
         document.documentElement.setAttribute('data-color-theme', id);
         if (this.settings) {
             this.settings.colorTheme = id;
-            this.settings.themeCustomColors = themeCustomColors;
         }
         try {
             localStorage.setItem('heise_color_theme', id);
-            localStorage.setItem('heise_theme_custom_colors', JSON.stringify(themeCustomColors));
         } catch (e) {
             console.warn('localStorage:', e);
         }
         try {
-            await this.storage.saveSettings({ colorTheme: id, themeCustomColors });
+            await this.storage.saveSettings({ colorTheme: id });
         } catch (e) {
             console.warn('persistColorTheme:', e);
         }
@@ -4063,6 +4431,18 @@ class App {
                     this._i18nSelectedSourcesGenerationConfirm =
                         selectedSourcesGen.confirm;
                 }
+                if (selectedSourcesGen.confirm_with_count) {
+                    this._i18nSelectedSourcesGenerationConfirmWithCount =
+                        selectedSourcesGen.confirm_with_count;
+                }
+                if (selectedSourcesGen.no_favorites) {
+                    this._i18nSelectedSourcesGenerationNoFavorites =
+                        selectedSourcesGen.no_favorites;
+                }
+                if (selectedSourcesGen.status_ready) {
+                    this._i18nSelectedSourcesGenerationStatusReady =
+                        selectedSourcesGen.status_ready;
+                }
                 if (selectedSourcesGen.status_preparing) {
                     this._i18nSelectedSourcesGenerationStatusPreparing =
                         selectedSourcesGen.status_preparing;
@@ -4119,6 +4499,10 @@ class App {
                     this._i18nSelectedSourcesGenerationCloseBtn =
                         selectedSourcesGen.close_btn;
                 }
+                if (selectedSourcesGen.start_btn) {
+                    this._i18nSelectedSourcesGenerationStartBtn =
+                        selectedSourcesGen.start_btn;
+                }
 
                 const setText = (id, text) => {
                     const el = document.getElementById(id);
@@ -4128,6 +4512,35 @@ class App {
                 };
                 setText('selectedSourcesGenerationTitle', selectedSourcesGen.modal_title);
                 setText('selectedSourcesGenerationHint', selectedSourcesGen.modal_hint);
+                setText('selectedSourcesGenerationScopeLabel', selectedSourcesGen.scope_label);
+                setText(
+                    'selectedSourcesGenerationScopeEnabledOption',
+                    selectedSourcesGen.scope_enabled
+                );
+                setText(
+                    'selectedSourcesGenerationScopeFavoritesOption',
+                    selectedSourcesGen.scope_favorites
+                );
+                setText('selectedSourcesGenerationScopeHint', selectedSourcesGen.scope_hint);
+                setText('selectedSourcesGenerationPeriodLabel', selectedSourcesGen.period_label);
+                setText('selectedSourcesGenerationPeriodHint', selectedSourcesGen.period_hint);
+                setText(
+                    'selectedSourcesGenerationPeriodTodayOption',
+                    selectedSourcesGen.period_today
+                );
+                setText(
+                    'selectedSourcesGenerationPeriodLast7Option',
+                    selectedSourcesGen.period_last_7_days
+                );
+                setText(
+                    'selectedSourcesGenerationPeriodLast30Option',
+                    selectedSourcesGen.period_last_30_days
+                );
+                setText(
+                    'selectedSourcesGenerationPeriodAllLoadedOption',
+                    selectedSourcesGen.period_all_loaded
+                );
+                setText('startSelectedSourcesGenerationBtn', selectedSourcesGen.start_btn);
                 setText('selectedSourcesGenerationCurrentLabel', selectedSourcesGen.label_current);
                 setText(
                     'selectedSourcesGenerationRemainingLabel',
@@ -4137,12 +4550,39 @@ class App {
                     'selectedSourcesGenerationProgressLabel',
                     selectedSourcesGen.label_progress
                 );
+                setText(
+                    'selectedSourcesGenerationCurrentArticlesLabel',
+                    selectedSourcesGen.label_current_articles
+                );
                 setText('selectedSourcesGenerationEtaLabel', selectedSourcesGen.label_eta);
                 this.renderSelectedSourcesGenerationState();
             }
 
             const ki = data.ki_modal;
             if (ki) {
+                const apiModeLabel = document.querySelector('label[for="kiApiMode"]');
+                if (apiModeLabel && ki.api_mode) {
+                    apiModeLabel.textContent = ki.api_mode;
+                }
+                const serverUrlLabel = document.querySelector('label[for="apiBaseUrl"]');
+                if (serverUrlLabel && ki.server_url) {
+                    serverUrlLabel.textContent = ki.server_url;
+                }
+                const apiModeSelect = document.getElementById('kiApiMode');
+                if (apiModeSelect) {
+                    const restOption = apiModeSelect.querySelector('option[value="lm_rest_v1"]');
+                    const openAiOption = apiModeSelect.querySelector('option[value="openai"]');
+                    const anthropicOption = apiModeSelect.querySelector('option[value="anthropic"]');
+                    if (restOption && ki.mode_rest) {
+                        restOption.textContent = ki.mode_rest;
+                    }
+                    if (openAiOption && ki.mode_openai) {
+                        openAiOption.textContent = ki.mode_openai;
+                    }
+                    if (anthropicOption && ki.mode_anthropic) {
+                        anthropicOption.textContent = ki.mode_anthropic;
+                    }
+                }
                 if (ki.batch_summarize_progress) {
                     this._i18nBatchSummarizeProgress = ki.batch_summarize_progress;
                 }
@@ -4156,8 +4596,41 @@ class App {
                 if (ki.model_hint_default) {
                     this._i18nLmModelHintDefault = ki.model_hint_default;
                 }
+                if (ki.model_hint_openai) {
+                    this._i18nOpenAiModelHint = ki.model_hint_openai;
+                }
+                if (ki.model_hint_anthropic) {
+                    this._i18nAnthropicModelHint = ki.model_hint_anthropic;
+                }
                 if (ki.model_automatic) {
                     this._i18nLmModelAutomatic = ki.model_automatic;
+                }
+                if (ki.model_automatic_openai) {
+                    this._i18nOpenAiModelAutomatic = ki.model_automatic_openai;
+                }
+                if (ki.model_automatic_anthropic) {
+                    this._i18nAnthropicModelAutomatic = ki.model_automatic_anthropic;
+                }
+                if (ki.api_token) {
+                    this._i18nKiApiTokenLabel = ki.api_token;
+                }
+                if (ki.api_token_placeholder) {
+                    this._i18nKiApiTokenPlaceholder = ki.api_token_placeholder;
+                }
+                if (ki.hint_rest) {
+                    this._i18nKiHintRest = ki.hint_rest;
+                }
+                if (ki.hint_openai) {
+                    this._i18nKiHintOpenAi = ki.hint_openai;
+                }
+                if (ki.hint_anthropic) {
+                    this._i18nKiHintAnthropic = ki.hint_anthropic;
+                }
+                if (ki.api_token_anthropic) {
+                    this._i18nAnthropicApiTokenLabel = ki.api_token_anthropic;
+                }
+                if (ki.api_token_anthropic_placeholder) {
+                    this._i18nAnthropicApiTokenPlaceholder = ki.api_token_anthropic_placeholder;
                 }
                 if (ki.model_loading) {
                     this._i18nLmModelLoading = ki.model_loading;
@@ -6285,7 +6758,19 @@ class App {
         if (!sel) {
             return;
         }
+        if (this._selectedSourcesGenerationInProgress) {
+            const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+            if (currentSource) {
+                sel.value = currentSource;
+            }
+            this.refreshHeaderSourceControls();
+            return;
+        }
         const v = this.normalizeNewsSource(sel.value);
+        // Invalidate in-flight fetches immediately. Otherwise a slow previous-source request can
+        // finish during the awaited settings/cache work below and render or persist under `v`.
+        this._newsFetchGeneration += 1;
+        this.showLoadingState();
         if (this.settings) {
             this.settings.newsSource = v;
         }
@@ -6453,37 +6938,59 @@ class App {
         const gen = ++this._newsFetchGeneration;
         const suppressStatus = options && options.suppressStatus === true;
         const suppressAutoSummarize = options && options.suppressAutoSummarize === true;
-        let currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const fetchSource = this.normalizeNewsSource(this.settings?.newsSource);
+        const scraper = new NewsScraper();
+        scraper.configureSource(fetchSource);
         try {
             // Show loading state
             this.showLoadingState();
 
             // Clear cache if force refresh
             if (forceRefresh) {
-                await this.scraper.clearCache();
+                await scraper.clearCache();
+            }
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
+                return;
             }
 
             // Fetch news from scraper (defensive second filter — must drop Golem /news/anzeige-… slugs)
-            let newsItems = await this.scraper.fetchNews();
-            if (gen !== this._newsFetchGeneration) {
+            let newsItems = await scraper.fetchNews();
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
                 return;
             }
-            newsItems = NewsScraper.filterOutAdvertorialItems(newsItems);
+            newsItems = NewsScraper.filterOutAdvertorialItems(newsItems).map((item) => ({
+                ...item,
+                newsSource: fetchSource
+            }));
 
-            const prevUrls = await this.getPreviousArticleUrlSetForSource(currentSource);
+            const prevUrls = await this.getPreviousArticleUrlSetForSource(fetchSource);
             const hadPrevious = prevUrls.size > 0;
-            currentSource = this.normalizeNewsSource(this.settings?.newsSource);
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
+                return;
+            }
 
             // Save to IndexedDB
-            await this.storage.replaceNewsForSource(currentSource, newsItems);
-            if (gen !== this._newsFetchGeneration) {
+            await this.storage.replaceNewsForSource(fetchSource, newsItems);
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
                 return;
             }
 
             // Update state
             this._filterCache.clear();
             this.newsItems = this.applyArticleFlags(newsItems);
-            this._loadedNewsSource = currentSource;
+            this._loadedNewsSource = fetchSource;
             this.selectedArticleIds = new Set(
                 [...this.selectedArticleIds].filter((id) => this.newsItems.some((n) => n && n.id === id))
             );
@@ -6500,14 +7007,17 @@ class App {
                 }
             }
             if (newlyDetectedItems.length > 0) {
-                this.mergePendingNewArticlesForSource(currentSource, newlyDetectedItems);
-            } else if (!this.hasPendingNewArticleSourceEntry(currentSource)) {
-                this.mergePendingNewArticlesForSource(currentSource, this.newsItems);
+                this.mergePendingNewArticlesForSource(fetchSource, newlyDetectedItems);
+            } else if (!this.hasPendingNewArticleSourceEntry(fetchSource)) {
+                this.mergePendingNewArticlesForSource(fetchSource, this.newsItems);
             }
-            this.syncVisibleNewArticleIdsFromPending(currentSource, this.newsItems);
+            this.syncVisibleNewArticleIdsFromPending(fetchSource, this.newsItems);
 
             await this.applySortPipeline({ render: true });
-            if (gen !== this._newsFetchGeneration) {
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
                 return;
             }
 
@@ -6539,14 +7049,17 @@ class App {
 
             return {
                 ok: true,
-                source: currentSource,
+                source: fetchSource,
                 items: Array.isArray(this.newsItems) ? [...this.newsItems] : [],
                 usedCache: false
             };
 
         } catch (error) {
             console.error('Error fetching news:', error);
-            if (gen !== this._newsFetchGeneration) {
+            if (
+                gen !== this._newsFetchGeneration ||
+                this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
+            ) {
                 return;
             }
             if (!suppressStatus) {
@@ -6557,7 +7070,7 @@ class App {
             await this.loadCachedNews({ suppressStatus });
             return {
                 ok: false,
-                source: currentSource,
+                source: fetchSource,
                 items: Array.isArray(this.newsItems) ? [...this.newsItems] : [],
                 usedCache: true,
                 error
@@ -6642,14 +7155,18 @@ class App {
     /**
      * Build article counts per source from cached rows.
      * @param {Array<Record<string, unknown>>} rows
+     * @param {{ period?: string, start?: number, end?: number }|null} [periodRange]
      * @returns {Map<string, number>}
      */
-    buildArticleCountsBySource(rows) {
+    buildArticleCountsBySource(rows, periodRange = null) {
         /** @type {Map<string, number>} */
         const out = new Map();
         (Array.isArray(rows) ? rows : []).forEach((row) => {
             const sourceId = App.normalizeStoredNewsSourceId(row && row.newsSource);
             if (!sourceId) {
+                return;
+            }
+            if (periodRange && !App.isNewsItemInGenerationPeriod(row, periodRange)) {
                 return;
             }
             out.set(sourceId, (out.get(sourceId) || 0) + 1);
@@ -6862,9 +7379,7 @@ class App {
             return;
         }
 
-        const reasoningConfig = this.summarizer
-            ? this.summarizer.getLmReasoningConfig()
-            : { enabled: false, level: 'off' };
+        const reasoningConfig = this.getSupportedReasoningConfigForCurrentModel();
         const params = new URLSearchParams({ q: query, limit: '5', ai: '1' });
         if (reasoningConfig.enabled) {
             params.set('reasoning', reasoningConfig.level);
@@ -6926,9 +7441,7 @@ class App {
                         sourceId,
                         knownUrlsBySource.get(sourceId) || new Set()
                     );
-                    if (newItems.length > 0) {
-                        this.mergePendingNewArticlesForSource(sourceId, newItems);
-                    }
+                    this.mergePendingNewArticlesForSource(sourceId, newItems);
                     await this.prewarmBackgroundArtifactsForArticles(newItems);
                 } catch (e) {
                     console.warn(`Background refresh failed for source ${sourceId}:`, e);
@@ -6942,24 +7455,15 @@ class App {
     /**
      * Fetch and fully prewarm every enabled source from the settings dialog.
      * @param {string[]} sourceIds
+     * @param {{ period?: string, periodRange?: { period?: string, start?: number, end?: number } }} [options]
      * @returns {Promise<void>}
      */
-    async runSelectedSourcesGeneration(sourceIds) {
+    async runSelectedSourcesGeneration(sourceIds, options = {}) {
+        const period = App.normalizeSelectedSourcesGenerationPeriod(options.period);
+        const periodRange =
+            options.periodRange || this.getSelectedSourcesGenerationPeriodRange(period);
         const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
-        const ordered = [];
-        const seen = new Set();
-        if (currentSource) {
-            ordered.push(currentSource);
-            seen.add(currentSource);
-        }
-        (Array.isArray(sourceIds) ? sourceIds : []).forEach((sourceId) => {
-            const normalized = this.normalizeNewsSource(sourceId);
-            if (!normalized || seen.has(normalized)) {
-                return;
-            }
-            seen.add(normalized);
-            ordered.push(normalized);
-        });
+        const ordered = this.getOrderedSelectedSourcesForGeneration(sourceIds);
 
         if (ordered.length === 0) {
             this.showStatus(this._i18nDashboardNeedOne || 'Mindestens eine Newsquelle muss aktiviert sein.', true);
@@ -6967,7 +7471,7 @@ class App {
         }
 
         const cachedNews = await this.storage.getAllNews();
-        const articleCountsBySource = this.buildArticleCountsBySource(cachedNews);
+        const articleCountsBySource = this.buildArticleCountsBySource(cachedNews, periodRange);
         const initialEstimatedArticles = this.sumEstimatedArticlesForSources(
             ordered,
             articleCountsBySource
@@ -7018,6 +7522,7 @@ class App {
                 }
 
                 let items = [];
+                let itemsForGeneration = [];
                 try {
                     if (sourceId === currentSource) {
                         const result = await this.fetchNews(true, {
@@ -7039,7 +7544,9 @@ class App {
                             forceRefresh: true
                         });
                     }
-                    articleCountsBySource.set(sourceId, items.length);
+                    itemsForGeneration =
+                        this.filterNewsItemsForSelectedSourcesGenerationPeriod(items, periodRange);
+                    articleCountsBySource.set(sourceId, itemsForGeneration.length);
                 } catch (error) {
                     failedSources += 1;
                     console.warn(`Selected sources generation fetch failed for ${sourceId}:`, error);
@@ -7071,17 +7578,17 @@ class App {
                     completedSources: completed,
                     remainingSources: remainingAfterCurrent,
                     failedSources,
-                    currentSourceTotalArticles: items.length,
+                    currentSourceTotalArticles: itemsForGeneration.length,
                     currentSourceCompletedArticles: 0,
                     estimatedRemainingArticles:
-                        items.length +
+                        itemsForGeneration.length +
                         this.sumEstimatedArticlesForSources(
                             ordered.slice(completed + 1),
                             articleCountsBySource
                         )
                 });
 
-                const finishedSource = await this.prewarmBackgroundArtifactsForArticles(items, {
+                const finishedSource = await this.prewarmBackgroundArtifactsForArticles(itemsForGeneration, {
                     shouldCancel: () => this._selectedSourcesGenerationCancelRequested,
                     updateVisibleCards: sourceId === currentSource,
                     onProgress: (doneArticles, totalArticles) => {
@@ -7117,8 +7624,8 @@ class App {
                     completedSources: completed,
                     remainingSources: Math.max(ordered.length - completed, 0),
                     failedSources,
-                    currentSourceTotalArticles: items.length,
-                    currentSourceCompletedArticles: items.length,
+                    currentSourceTotalArticles: itemsForGeneration.length,
+                    currentSourceCompletedArticles: itemsForGeneration.length,
                     estimatedRemainingArticles: this.sumEstimatedArticlesForSources(
                         ordered.slice(completed),
                         articleCountsBySource
@@ -8159,11 +8666,14 @@ class App {
         }
 
         try {
-            const apiMode = this.settings?.kiApiMode || 'lm_rest_v1';
-            let baseUrl = this.settings?.apiBaseUrl || '';
+            const apiMode = AISummarizer.normalizeKiApiMode(this.settings?.kiApiMode);
+            let baseUrl =
+                apiMode === 'anthropic'
+                    ? this.settings?.anthropicApiBaseUrl || ''
+                    : this.settings?.apiBaseUrl || '';
 
             // Dev-Server same-origin: http://127.0.0.1:* (automatisch erkannt)
-            if (this._devServerDetected && baseUrl === '') {
+            if (apiMode !== 'anthropic' && this._devServerDetected && baseUrl === '') {
                 baseUrl = window.location.origin;
             }
 
@@ -8177,6 +8687,7 @@ class App {
                 kiApiMode: apiMode,
                 apiBaseUrl: baseUrl,
                 lmRestRoot: this.settings?.lmRestRoot || '',
+                anthropicApiBaseUrl: this.settings?.anthropicApiBaseUrl || '',
                 restSameOrigin: this.settings?.restSameOrigin === true,
                 pageOrigin: typeof window !== 'undefined' && window.location ? window.location.origin : ''
             });
@@ -8185,7 +8696,13 @@ class App {
                 return 'unknown';
             }
 
-            const resp = await fetch(url, { method: 'GET', headers: this._getAuthHeaders() });
+            const token = this.settings?.lmApiToken || '';
+            if (apiMode === 'anthropic' && !token) {
+                console.warn('KI-Server: Anthropic API-Token fehlt.');
+                return 'unknown';
+            }
+            const headers = this.summarizer.buildModelsGetHeaders(apiMode, token, url);
+            const resp = await fetch(url, { method: 'GET', headers });
             if (resp.ok && resp.status === 200) {
                 dot.classList.remove('ki-status-dot--err');
                 dot.classList.add('ki-status-dot--ok');
@@ -8547,9 +9064,7 @@ class App {
                 this.showStatus(this._i18nRedditError, true);
                 return;
             }
-            const reasoningConfig = this.summarizer
-                ? this.summarizer.getLmReasoningConfig()
-                : { enabled: false, level: 'off' };
+            const reasoningConfig = this.getSupportedReasoningConfigForCurrentModel();
             const params = new URLSearchParams({ q: query, limit: '5', ai: '1' });
             if (reasoningConfig.enabled) {
                 params.set('reasoning', reasoningConfig.level);
@@ -9948,13 +10463,25 @@ class App {
                 ? String(presetSavedModel).trim()
                 : String(sel.value || '').trim();
         if (!savedModel) {
+            const modelSelectionMode = AISummarizer.normalizeLmModelSelectionMode(
+                this.settings?.lmModelSelectionMode
+            );
             try {
-                savedModel = (localStorage.getItem('heise_lm_model') || '').trim();
+                const lsModelSelectionMode = AISummarizer.normalizeLmModelSelectionMode(
+                    localStorage.getItem('heise_lm_model_selection_mode')
+                );
+                if (lsModelSelectionMode === 'manual' || modelSelectionMode === 'manual') {
+                    savedModel = (localStorage.getItem('heise_lm_model') || '').trim();
+                }
             } catch (_) {
                 savedModel = '';
             }
         }
-        if (!savedModel && this.settings?.lmModel) {
+        if (
+            !savedModel &&
+            AISummarizer.normalizeLmModelSelectionMode(this.settings?.lmModelSelectionMode) === 'manual' &&
+            this.settings?.lmModel
+        ) {
             savedModel = String(this.settings.lmModel).trim();
         }
         const hintEl = document.getElementById('lmModelHint');
@@ -9978,24 +10505,28 @@ class App {
         hideLmLoadedStatus();
         const refreshBtn = this.elements.lmModelRefreshBtn;
 
-        const mode = this.elements.kiApiMode?.value === 'openai' ? 'openai' : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(this.elements.kiApiMode?.value);
         const rawUrl = (this.elements.apiBaseUrl?.value || '').trim();
         let lmRestRoot = 'http://127.0.0.1:1234';
         let apiBaseUrl = 'http://127.0.0.1:1234/v1';
+        let anthropicApiBaseUrl = 'https://api.anthropic.com/v1';
         if (mode === 'lm_rest_v1') {
             lmRestRoot = AISummarizer.normalizeLmRestServerRoot(rawUrl || lmRestRoot);
             apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(`${lmRestRoot}/v1`);
+        } else if (mode === 'anthropic') {
+            anthropicApiBaseUrl = AISummarizer.normalizeAnthropicApiBase(rawUrl || anthropicApiBaseUrl);
         } else {
             apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(rawUrl || apiBaseUrl);
             lmRestRoot = AISummarizer.normalizeLmRestServerRoot(apiBaseUrl);
         }
-        const restSameOrigin = this.elements.restSameOrigin?.checked === true;
+        const restSameOrigin = mode === 'lm_rest_v1' && this.elements.restSameOrigin?.checked === true;
         const token = this.elements.lmApiToken ? (this.elements.lmApiToken.value || '').trim() : '';
 
         const listUrl = AISummarizer.getModelsListUrlFromSettings({
             kiApiMode: mode,
             lmRestRoot,
             apiBaseUrl,
+            anthropicApiBaseUrl,
             restSameOrigin,
             pageOrigin: typeof window !== 'undefined' && window.location ? window.location.origin : ''
         });
@@ -10036,6 +10567,7 @@ class App {
                 kiApiMode: mode,
                 lmRestRoot,
                 apiBaseUrl,
+                anthropicApiBaseUrl,
                 restSameOrigin,
                 lmApiToken: token
             });
@@ -10048,7 +10580,12 @@ class App {
         const appendAutomatic = () => {
             const o = document.createElement('option');
             o.value = '';
-            o.textContent = this._i18nLmModelAutomatic;
+            o.textContent =
+                mode === 'lm_rest_v1'
+                    ? this._i18nLmModelAutomatic
+                    : mode === 'anthropic'
+                      ? this._i18nAnthropicModelAutomatic || 'Automatic — use first model from GET /v1/models'
+                      : this._i18nOpenAiModelAutomatic || 'Automatic — use the default model';
             sel.appendChild(o);
         };
 
@@ -10077,17 +10614,23 @@ class App {
             return;
         }
 
-        let resolvedId = '';
-        try {
-            resolvedId = (sessionStorage.getItem('heise_lm_resolved_model_id') || '').trim();
-        } catch (_) {
-            /* ignore */
-        }
-
         appendAutomatic();
         const models = result.models || [];
         this._availableLmModels = [...models];
         const idSet = new Set(models.map((m) => m.id));
+        let autoResolvedId = '';
+        if (!savedModel) {
+            const loadedModel = models.find((m) => m && m.loaded === true);
+            const fallbackModel = loadedModel || models[0] || null;
+            autoResolvedId = fallbackModel && fallbackModel.id ? String(fallbackModel.id).trim() : '';
+            if (autoResolvedId) {
+                try {
+                    sessionStorage.setItem('heise_lm_resolved_model_id', autoResolvedId);
+                } catch (_) {
+                    /* ignore */
+                }
+            }
+        }
 
         for (const m of models) {
             const o = document.createElement('option');
@@ -10095,7 +10638,7 @@ class App {
             o.textContent = AISummarizer.formatModelOptionLabel(m, { loadedMark });
             const tip = AISummarizer.getModelTitleTooltip(m);
             const activeExplicit = Boolean(savedModel && savedModel === m.id);
-            const activeAuto = Boolean(!savedModel && resolvedId && resolvedId === m.id);
+            const activeAuto = Boolean(!savedModel && autoResolvedId && autoResolvedId === m.id);
             let fullTitle = tip;
             if (activeExplicit || activeAuto) {
                 fullTitle += this._i18nLmModelActiveSuffix || '';
@@ -10118,7 +10661,17 @@ class App {
 
         sel.disabled = false;
         if (hintEl) {
-            hintEl.textContent = this._i18nLmModelHintDefault || '';
+            if (mode === 'anthropic') {
+                hintEl.textContent =
+                    this._i18nAnthropicModelHint ||
+                    'Anthropic: model list is loaded with GET /v1/models. Automatic uses the first returned model; selecting a model pins it.';
+            } else if (mode === 'openai') {
+                hintEl.textContent =
+                    this._i18nOpenAiModelHint ||
+                    'OpenAI-compatible: model list is loaded with GET /v1/models when available. Empty selection uses the default model.';
+            } else {
+                hintEl.textContent = this._i18nLmModelHintDefault || '';
+            }
         }
         if (mode === 'lm_rest_v1') {
             const loadedMs = models.filter((m) => m && m.loaded);
@@ -10151,9 +10704,7 @@ class App {
         } catch (_) {
             mode = this.settings?.kiApiMode || 'lm_rest_v1';
         }
-        if (mode !== 'openai' && mode !== 'lm_rest_v1') {
-            mode = 'lm_rest_v1';
-        }
+        mode = AISummarizer.normalizeKiApiMode(mode);
         if (this.elements.kiApiMode) {
             this.elements.kiApiMode.value = mode;
         }
@@ -10165,26 +10716,57 @@ class App {
                     localStorage.getItem('heise_lm_rest_root') ||
                     this.settings?.lmRestRoot ||
                     '';
+            } else if (mode === 'anthropic') {
+                base =
+                    localStorage.getItem('heise_anthropic_api_base') ||
+                    this.settings?.anthropicApiBaseUrl ||
+                    '';
             } else {
                 base = localStorage.getItem('heise_api_base') || this.settings?.apiBaseUrl || '';
             }
         } catch (_) {
-            base = mode === 'lm_rest_v1' ? this.settings?.lmRestRoot || '' : this.settings?.apiBaseUrl || '';
+            if (mode === 'lm_rest_v1') {
+                base = this.settings?.lmRestRoot || '';
+            } else if (mode === 'anthropic') {
+                base = this.settings?.anthropicApiBaseUrl || '';
+            } else {
+                base = this.settings?.apiBaseUrl || '';
+            }
         }
         if (!base) {
-            base = mode === 'lm_rest_v1' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:1234/v1';
+            base =
+                mode === 'lm_rest_v1'
+                    ? 'http://127.0.0.1:1234'
+                    : mode === 'anthropic'
+                      ? 'https://api.anthropic.com/v1'
+                      : 'http://127.0.0.1:1234/v1';
         }
 
         this.elements.apiBaseUrl.value =
             mode === 'lm_rest_v1'
                 ? AISummarizer.normalizeLmRestServerRoot(base)
+                : mode === 'anthropic'
+                  ? AISummarizer.normalizeAnthropicApiBase(base)
                 : AISummarizer.normalizeOpenAiApiBase(base);
 
-        let model = '';
+        let lmModelSelectionMode = AISummarizer.normalizeLmModelSelectionMode(
+            this.settings?.lmModelSelectionMode
+        );
         try {
-            model = localStorage.getItem('heise_lm_model') || this.settings?.lmModel || '';
+            const lsModelSelectionMode = localStorage.getItem('heise_lm_model_selection_mode');
+            if (lsModelSelectionMode) {
+                lmModelSelectionMode = AISummarizer.normalizeLmModelSelectionMode(lsModelSelectionMode);
+            }
         } catch (_) {
-            model = this.settings?.lmModel || '';
+            /* ignore */
+        }
+        let model = '';
+        if (lmModelSelectionMode === 'manual') {
+            try {
+                model = localStorage.getItem('heise_lm_model') || this.settings?.lmModel || '';
+            } catch (_) {
+                model = this.settings?.lmModel || '';
+            }
         }
 
         let token = '';
@@ -10402,6 +10984,7 @@ class App {
         this.updateRestSameOriginVisibility();
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        this.syncKiProviderText();
 
         this.elements.settingsModal.classList.add('active');
         this._availableLmModels = [];
@@ -10409,18 +10992,30 @@ class App {
     }
 
     onKiApiModeChange() {
-        const mode = this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
         let v = (this.elements.apiBaseUrl.value || '').trim();
         if (v) {
             if (mode === 'lm_rest_v1') {
                 this.elements.apiBaseUrl.value = AISummarizer.normalizeLmRestServerRoot(v);
+            } else if (mode === 'anthropic') {
+                const looksLikeDefaultLocal =
+                    /^https?:\/\/127\.0\.0\.1:1234\/?v?1?$/i.test(v) ||
+                    /^https?:\/\/localhost:1234\/?v?1?$/i.test(v);
+                this.elements.apiBaseUrl.value = looksLikeDefaultLocal
+                    ? AISummarizer.normalizeAnthropicApiBase('')
+                    : AISummarizer.normalizeAnthropicApiBase(v);
             } else {
                 this.elements.apiBaseUrl.value = AISummarizer.normalizeOpenAiApiBase(v);
             }
+        } else if (mode === 'anthropic') {
+            this.elements.apiBaseUrl.value = AISummarizer.normalizeAnthropicApiBase('');
         }
         this.updateRestSameOriginVisibility();
         this.syncKiServerUrlHint();
         this.updateRestSameOriginUi();
+        this.syncKiProviderText();
         this._availableLmModels = [];
         if (this.elements.settingsModal && this.elements.settingsModal.classList.contains('active')) {
             void this.populateModelDropdown();
@@ -10437,7 +11032,9 @@ class App {
     }
 
     onApiBaseUrlUserInput() {
-        const mode = this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
         if (mode !== 'lm_rest_v1' || !this.elements.restSameOrigin) {
             return;
         }
@@ -10450,7 +11047,9 @@ class App {
     }
 
     updateRestSameOriginVisibility() {
-        const mode = this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
         const wrap = document.getElementById('restSameOriginWrap');
         if (wrap) {
             wrap.style.display = mode === 'lm_rest_v1' ? 'block' : 'none';
@@ -10458,7 +11057,9 @@ class App {
     }
 
     updateRestSameOriginUi() {
-        const mode = this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
         const input = this.elements.apiBaseUrl;
         if (!input) {
             return;
@@ -10472,7 +11073,9 @@ class App {
     }
 
     syncKiServerUrlHint() {
-        const mode = this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
         const hint = this.elements.serverUrlHint;
         if (!hint) {
             return;
@@ -10491,10 +11094,51 @@ class App {
         }
         if (mode === 'lm_rest_v1') {
             hint.textContent =
+                this._i18nKiHintRest ||
                 'Direkt zu LM Studio: Server-Stamm ohne Pfad (kann OPTIONS/CORS erfordern). Beispiel: http://127.0.0.1:1234 — oder CORS-Proxy :1244 / „REST über dieselbe Origin“ mit dev_server.';
+        } else if (mode === 'anthropic') {
+            hint.textContent =
+                this._i18nKiHintAnthropic ||
+                'Anthropic Messages API: Basis-URL mit /v1, die App nutzt POST …/v1/messages und GET …/v1/models. Standard: https://api.anthropic.com/v1';
         } else {
             hint.textContent =
+                this._i18nKiHintOpenAi ||
                 'OpenAI-kompatibel: Basis-URL mit /v1, die App nutzt POST …/v1/chat/completions. Beispiel: http://127.0.0.1:1234/v1';
+        }
+    }
+
+    syncKiProviderText() {
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
+        const tokenLabel = document.querySelector('label[for="lmApiToken"]');
+        if (tokenLabel) {
+            tokenLabel.textContent =
+                mode === 'anthropic'
+                    ? this._i18nAnthropicApiTokenLabel || 'API key (required)'
+                    : this._i18nKiApiTokenLabel || 'API-Token (optional)';
+        }
+        if (this.elements.lmApiToken) {
+            this.elements.lmApiToken.setAttribute(
+                'placeholder',
+                mode === 'anthropic'
+                    ? this._i18nAnthropicApiTokenPlaceholder || 'Anthropic API key'
+                    : this._i18nKiApiTokenPlaceholder || 'Nur wenn LM Studio „Require Authentication“ nutzt'
+            );
+        }
+        const hintEl = document.getElementById('lmModelHint');
+        if (hintEl) {
+            if (mode === 'anthropic') {
+                hintEl.textContent =
+                    this._i18nAnthropicModelHint ||
+                    'Anthropic: model list is loaded with GET /v1/models. Automatic uses the first returned model; selecting a model pins it.';
+            } else if (mode === 'openai') {
+                hintEl.textContent =
+                    this._i18nOpenAiModelHint ||
+                    'OpenAI-compatible: model list is loaded with GET /v1/models when available. Empty selection uses the default model.';
+            } else {
+                hintEl.textContent = this._i18nLmModelHintDefault || '';
+            }
         }
     }
 
@@ -10522,7 +11166,7 @@ class App {
      * @returns {{ capabilitiesKnown: boolean, allowedOptions: Array<'off'|'low'|'medium'|'high'|'on'>, defaultOption: 'off'|'low'|'medium'|'high'|'on'|null, visible: boolean, canEnable: boolean }}
      */
     getReasoningCapabilitiesForCurrentModel() {
-        const mode = this.elements.kiApiMode?.value === 'openai' ? 'openai' : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(this.elements.kiApiMode?.value);
         if (mode !== 'lm_rest_v1') {
             return {
                 capabilitiesKnown: true,
@@ -10581,7 +11225,8 @@ class App {
             Array.isArray(modelEntry.reasoningAllowedOptions)
                 ? modelEntry.reasoningAllowedOptions.filter(Boolean)
                 : [];
-        const normalizedAllowed = allowedOptions.length ? [...allowedOptions] : ['off'];
+        const exposesReasoningConfig = AISummarizer.modelExposesLmReasoningConfig(modelEntry);
+        const normalizedAllowed = exposesReasoningConfig ? [...allowedOptions] : ['off'];
         const defaultOption =
             modelEntry.reasoningDefault &&
             normalizedAllowed.includes(modelEntry.reasoningDefault)
@@ -10595,8 +11240,25 @@ class App {
             allowedOptions: normalizedAllowed,
             defaultOption,
             visible: true,
-            canEnable: normalizedAllowed.some((value) => value !== 'off')
+            canEnable: exposesReasoningConfig && normalizedAllowed.some((value) => value !== 'off')
         };
+    }
+
+    /**
+     * @returns {{ enabled: boolean, level: 'off'|'low'|'medium'|'high'|'on' }}
+     */
+    getSupportedReasoningConfigForCurrentModel() {
+        const config = this.summarizer
+            ? this.summarizer.getLmReasoningConfig()
+            : { enabled: false, level: 'off' };
+        if (!config.enabled) {
+            return config;
+        }
+        const capability = this.getReasoningCapabilitiesForCurrentModel();
+        if (!capability.canEnable || !capability.allowedOptions.includes(config.level)) {
+            return { enabled: false, level: config.level };
+        }
+        return config;
     }
 
     syncReasoningControlsForCurrentModel() {
@@ -10610,6 +11272,18 @@ class App {
         const checkboxGroup = checkbox ? checkbox.closest('.setting-group') : null;
         const capability = this.getReasoningCapabilitiesForCurrentModel();
         if (!capability.capabilitiesKnown) {
+            if (selectGroup) {
+                selectGroup.style.display = 'none';
+            }
+            if (checkboxGroup) {
+                checkboxGroup.style.display = 'none';
+            }
+            if (select) {
+                select.disabled = true;
+            }
+            if (checkbox) {
+                checkbox.disabled = true;
+            }
             return;
         }
 
@@ -11212,7 +11886,10 @@ class App {
                 const x = xPositions[i];
                 const y = yFor(val, maxVal);
                 const tooltipText = tooltipFn({ ...buckets[i], avgDurationMs: buckets[i].avgDurationMs || 0 });
-                return `<circle class="ki-stats-point" cx="${x}" cy="${y}" r="4" fill="${color}" data-tooltip="${tooltipText}"></circle>`;
+                return [
+                    `<circle class="ki-stats-point-marker" cx="${x}" cy="${y}" r="4" fill="${color}"></circle>`,
+                    `<circle class="ki-stats-point" cx="${x}" cy="${y}" r="12" fill="transparent" pointer-events="all" data-tooltip="${tooltipText}"></circle>`
+                ].join('');
             }).join('');
         };
 
@@ -11392,6 +12069,7 @@ class App {
             ul.appendChild(li);
         }
         this.syncNewsSourcesToggleVisibleBtn();
+        this.setDashboardSourceSettingsDisabled(this._selectedSourcesGenerationInProgress);
     }
 
     filterNewsSourcesSettingsList() {
@@ -11417,6 +12095,10 @@ class App {
         const btn = this.elements.newsSourcesToggleVisibleBtn;
         const ul = this.elements.newsSourcesSettingsList;
         if (!btn || !ul) {
+            return;
+        }
+        if (this._selectedSourcesGenerationInProgress) {
+            btn.disabled = true;
             return;
         }
         const visible = Array.from(ul.querySelectorAll('.news-sources-settings__item')).filter(
@@ -11458,6 +12140,9 @@ class App {
     }
 
     toggleVisibleNewsSourcesBulk() {
+        if (this._selectedSourcesGenerationInProgress) {
+            return;
+        }
         const ul = this.elements.newsSourcesSettingsList;
         if (!ul) {
             return;
@@ -11496,7 +12181,47 @@ class App {
         });
     }
 
+    setDashboardSourceSettingsDisabled(disabled) {
+        const sourceSettingsDisabled = disabled === true;
+        if (this.elements.dashboardSettingsBtn) {
+            this.elements.dashboardSettingsBtn.disabled = sourceSettingsDisabled;
+        }
+        if (this.elements.newsSourcesFilterInput) {
+            this.elements.newsSourcesFilterInput.disabled = sourceSettingsDisabled;
+        }
+        if (this.elements.saveDashboardSettings) {
+            this.elements.saveDashboardSettings.disabled = sourceSettingsDisabled;
+        }
+        if (this.elements.newsSourcesToggleVisibleBtn) {
+            this.elements.newsSourcesToggleVisibleBtn.disabled = sourceSettingsDisabled;
+        }
+        if (this.elements.backgroundSelectedSourcesRefreshEnabled) {
+            this.elements.backgroundSelectedSourcesRefreshEnabled.disabled = sourceSettingsDisabled;
+        }
+        const ul = this.elements.newsSourcesSettingsList;
+        if (ul) {
+            ul.querySelectorAll(
+                'input.news-sources-settings__source-cb, input.heise-magazine-feed-cb'
+            ).forEach((input) => {
+                input.disabled = sourceSettingsDisabled;
+            });
+        }
+        if (!sourceSettingsDisabled) {
+            this.syncNewsSourcesToggleVisibleBtn();
+        }
+    }
+
     async openDashboardSettingsModal() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBusy ||
+                    'Source generation in progress - please wait',
+                true
+            );
+            this.openSelectedSourcesGenerationModal();
+            this.setDashboardSourceSettingsDisabled(true);
+            return;
+        }
         await this.applySortLabelsFromLocale();
         this.renderNewsSourcesSettingsChecklist();
         if (this.elements.newsSourcesFilterInput) {
@@ -11544,6 +12269,16 @@ class App {
     }
 
     async saveDashboardSettings() {
+        if (this._selectedSourcesGenerationInProgress) {
+            this.showStatus(
+                this._i18nSelectedSourcesGenerationStatusBusy ||
+                    'Source generation in progress - please wait',
+                true
+            );
+            this.openSelectedSourcesGenerationModal();
+            this.setDashboardSourceSettingsDisabled(true);
+            return;
+        }
         const ul = this.elements.newsSourcesSettingsList;
         if (!ul || !this.settings) {
             this.closeDashboardSettingsModal();
@@ -11700,16 +12435,23 @@ class App {
                     : 'google'
         };
 
-        const mode =
-            this.elements.kiApiMode && this.elements.kiApiMode.value === 'openai' ? 'openai' : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(
+            this.elements.kiApiMode ? this.elements.kiApiMode.value : 'lm_rest_v1'
+        );
 
         const raw = (this.elements.apiBaseUrl.value || '').trim();
-        let apiBaseUrl;
-        let lmRestRoot;
+        let apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(this.settings?.apiBaseUrl || '');
+        let lmRestRoot = AISummarizer.normalizeLmRestServerRoot(this.settings?.lmRestRoot || '');
+        let anthropicApiBaseUrl = AISummarizer.normalizeAnthropicApiBase(
+            this.settings?.anthropicApiBaseUrl || ''
+        );
         if (mode === 'lm_rest_v1') {
             lmRestRoot = AISummarizer.normalizeLmRestServerRoot(raw);
             apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(`${lmRestRoot}/v1`);
             this.elements.apiBaseUrl.value = lmRestRoot;
+        } else if (mode === 'anthropic') {
+            anthropicApiBaseUrl = AISummarizer.normalizeAnthropicApiBase(raw);
+            this.elements.apiBaseUrl.value = anthropicApiBaseUrl;
         } else {
             apiBaseUrl = AISummarizer.normalizeOpenAiApiBase(raw);
             lmRestRoot = AISummarizer.normalizeLmRestServerRoot(apiBaseUrl);
@@ -11717,8 +12459,12 @@ class App {
         }
 
         const lmModel = (this.elements.lmModel.value || '').trim();
+        const lmModelSelectionMode = lmModel ? 'manual' : 'auto';
         const lmApiToken = this.elements.lmApiToken ? (this.elements.lmApiToken.value || '').trim() : '';
-        const restSameOrigin = this.elements.restSameOrigin ? this.elements.restSameOrigin.checked === true : false;
+        const restSameOrigin =
+            mode === 'lm_rest_v1' && this.elements.restSameOrigin
+                ? this.elements.restSameOrigin.checked === true
+                : false;
 
         let summaryCacheDays = 14;
         if (this.elements.summaryCacheDays) {
@@ -11736,13 +12482,19 @@ class App {
             ? App.normalizeKiRequestTimeoutSeconds(this.elements.kiRequestTimeoutSeconds.value)
             : App.normalizeKiRequestTimeoutSeconds(this.settings?.summaryRequestTimeoutSeconds);
 
-        const reasoningLevel = this.elements.reasoningSelect
-            ? AISummarizer.normalizeLmReasoningParam(this.elements.reasoningSelect.value)
-            : AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
+        const reasoningCapability = this.getReasoningCapabilitiesForCurrentModel();
+        const preserveStoredReasoning = mode === 'lm_rest_v1' && !reasoningCapability.capabilitiesKnown;
+        let reasoningLevel = preserveStoredReasoning
+            ? AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning)
+            : this.elements.reasoningSelect
+              ? AISummarizer.normalizeLmReasoningParam(this.elements.reasoningSelect.value)
+              : AISummarizer.normalizeLmReasoningParam(this.settings?.reasoning);
 
-        const reasoningEnabled = this.elements.reasoningEnabledCheckbox
-            ? this.elements.reasoningEnabledCheckbox.checked === true
-            : AISummarizer.normalizeLmReasoningEnabled(this.settings?.reasoningEnabled, reasoningLevel);
+        const reasoningEnabled = preserveStoredReasoning
+            ? AISummarizer.normalizeLmReasoningEnabled(this.settings?.reasoningEnabled, reasoningLevel)
+            : this.elements.reasoningEnabledCheckbox
+              ? this.elements.reasoningEnabledCheckbox.checked === true
+              : AISummarizer.normalizeLmReasoningEnabled(this.settings?.reasoningEnabled, reasoningLevel);
 
         const reasoningLevelForStorage = reasoningLevel;
 
@@ -11788,9 +12540,12 @@ class App {
             localStorage.setItem('heise_ki_api_mode', mode);
             localStorage.setItem('heise_api_base', apiBaseUrl);
             localStorage.setItem('heise_lm_rest_root', lmRestRoot);
+            localStorage.setItem('heise_anthropic_api_base', anthropicApiBaseUrl);
             localStorage.setItem('heise_lm_model', lmModel);
+            localStorage.setItem('heise_lm_model_selection_mode', lmModelSelectionMode);
             try {
                 sessionStorage.removeItem('heise_lm_resolved_model_id');
+                sessionStorage.removeItem('heise_anthropic_resolved_model_id');
             } catch (_) {
                 /* ignore */
             }
@@ -11863,12 +12618,14 @@ class App {
             kiApiMode: mode,
             apiBaseUrl,
             lmRestRoot,
+            anthropicApiBaseUrl,
             lmApiToken,
             restSameOrigin,
             summaryCacheDays,
             summaryConcurrency: summaryConcurrencySaved,
             summaryRequestTimeoutSeconds: summaryRequestTimeoutSaved,
             lmModel,
+            lmModelSelectionMode,
             reasoning: reasoningLevelForStorage,
             reasoningEnabled,
             alternativeLinksCount,

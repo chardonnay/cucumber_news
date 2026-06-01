@@ -6,8 +6,10 @@ All notable documentation and packaging changes for this repository may be recor
 
 * Documentation migrated to AsciiDoc; added MIT `LICENSE`, architecture and KI integration guides, diagrams, and dev-server API reference.
 * Documentation refreshed for the current source catalog, alphabetical header source selector, source favorites, dynamic per-source categories, selected-source generation, and the shared `/api/source-feed` dev-server route.
+* KI-Server API mode now supports Anthropic Messages API (`POST /v1/messages`) and Anthropic model discovery (`GET /v1/models`).
 * KI documentation updated for model-aware reasoning controls: native `/api/v1/models` capability metadata, conservative fallback on `/v1/models`, OpenAI-mode hiding, and persisted reasoning settings.
 * Theme brightness sliders are now perceptually balanced: the surface mix is moderated and eased so cards stay distinguishable at the slider extremes, borders keep their contrast, and `--text-primary` / `--text-secondary` follow the slider so text remains readable in both light and dark mode.
 * Brightness slider hint is now localized (de/en) and explains whether the slider currently darkens, lightens, or is at neutral.
+* Fix: tightened `THEME_TEXT_CONTRAST_MAX` from `0.22` to `0.14` so the brightness slider extremes keep primary text at >=4.5:1 against every default surface (WCAG AA). The previous cap allowed worst-case contrast to drop to ~4.1:1 (light slider=0 / dark slider=100); with the new cap the worst case is ~4.6:1.
 
 _(Maintain release sections below as you tag versions.)_

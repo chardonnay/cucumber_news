@@ -301,6 +301,11 @@
             color: var(--header-text);
         }
 
+        .header-heading {
+            font: inherit;
+            margin: 0;
+        }
+
         .header-brand-row {
             display: flex;
             align-items: center;
@@ -2186,6 +2191,29 @@
             margin-top: 1rem;
         }
 
+        .selected-sources-generation-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+            gap: 0.85rem;
+            margin-top: 1rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .selected-sources-generation-controls .setting-group {
+            margin: 0;
+        }
+
+        .selected-sources-generation-controls .setting-input {
+            width: 100%;
+        }
+
+        .selected-sources-generation-control__hint {
+            margin: 0.45rem 0 0;
+            color: var(--text-secondary);
+            font-size: 0.84rem;
+            line-height: 1.35;
+        }
+
         .selected-sources-generation-status__card {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -2587,7 +2615,7 @@
 </head>
 <body>
     <header class="header notranslate">
-        <h1 class="header-title">
+        <div class="header-title">
             <div class="header-brand-row">
                 <button
                     type="button"
@@ -2623,8 +2651,10 @@
                     <span class="sr-only">Quelle als Favorit markieren</span>
                 </button>
             </div>
-            <span class="header-subtitle" id="headerSubtitle">Cucumber NewsScraper</span>
-        </h1>
+            <h1 class="header-heading">
+                <span class="header-subtitle" id="headerSubtitle">Cucumber NewsScraper</span>
+            </h1>
+        </div>
         <div class="header-controls">
             <div
                 class="header-source-stack"
@@ -2717,7 +2747,7 @@
                 title="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
                 aria-label="Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erzeugen"
             >
-                Quellen erzeugen
+                Alle Artikel aus allen Quellen erneuern
             </button>
             <button type="button" class="summarize-all-btn" id="summarizeAllBtn"
                 title="Erzeugt KI-Zusammenfassungen für alle aktuell gefilterten Nachrichten (nutzt Cache, sofern gültig)"
@@ -2737,7 +2767,7 @@
             </button>
             <span class="settings-btn-wrap" title="KI-Verbindungsstatus (grün = letzte Anfrage ok)">
                 <span class="ki-status-dot" id="kiStatusDot" aria-hidden="true"></span>
-                <button type="button" class="settings-btn" id="settingsBtn" aria-label="KI-Server (LM Studio) einstellen">
+                <button type="button" class="settings-btn" id="settingsBtn" aria-label="KI-Server einstellen">
                     KI-Server
                 </button>
             </span>
@@ -3043,6 +3073,60 @@
             >
                 Lädt alle aktivierten Quellen nacheinander neu und erzeugt für deren Artikel KI-Zusammenfassungen, alternative Links und Reddit-Ergebnisse.
             </p>
+            <div class="selected-sources-generation-controls">
+                <div class="setting-group">
+                    <label
+                        id="selectedSourcesGenerationScopeLabel"
+                        class="setting-label"
+                        for="selectedSourcesGenerationScopeSelect"
+                    >
+                        Quellen
+                    </label>
+                    <select id="selectedSourcesGenerationScopeSelect" class="setting-input">
+                        <option id="selectedSourcesGenerationScopeEnabledOption" value="enabled" selected>
+                            Alle abonnierten Quellen
+                        </option>
+                        <option id="selectedSourcesGenerationScopeFavoritesOption" value="favorites">
+                            Nur Favoriten
+                        </option>
+                    </select>
+                    <p
+                        id="selectedSourcesGenerationScopeHint"
+                        class="selected-sources-generation-control__hint"
+                    >
+                        Favoriten werden über den Stern im Header markiert.
+                    </p>
+                </div>
+                <div class="setting-group">
+                    <label
+                        id="selectedSourcesGenerationPeriodLabel"
+                        class="setting-label"
+                        for="selectedSourcesGenerationPeriodSelect"
+                    >
+                        Zeitraum
+                    </label>
+                    <select id="selectedSourcesGenerationPeriodSelect" class="setting-input">
+                        <option id="selectedSourcesGenerationPeriodTodayOption" value="today" selected>
+                            Heute
+                        </option>
+                        <option id="selectedSourcesGenerationPeriodLast7Option" value="last_7_days">
+                            Letzte 7 Tage
+                        </option>
+                        <option id="selectedSourcesGenerationPeriodLast30Option" value="last_30_days">
+                            Letzte 30 Tage
+                        </option>
+                        <option id="selectedSourcesGenerationPeriodAllLoadedOption" value="all_loaded">
+                            Alle geladenen Artikel
+                        </option>
+                    </select>
+                    <p
+                        id="selectedSourcesGenerationPeriodHint"
+                        class="selected-sources-generation-control__hint"
+                    >
+                        Standard ist der aktuelle Tag; größere Zeiträume erhöhen Laufzeit und KI-Last.
+                    </p>
+                </div>
+            </div>
             <p
                 id="selectedSourcesGenerationState"
                 class="selected-sources-generation-state"
@@ -3096,6 +3180,20 @@
                 </div>
                 <div class="selected-sources-generation-status__card">
                     <span
+                        id="selectedSourcesGenerationCurrentArticlesLabel"
+                        class="selected-sources-generation-status__label"
+                    >
+                        Zusammenfassungen dieser Quelle
+                    </span>
+                    <span
+                        id="selectedSourcesGenerationCurrentArticlesValue"
+                        class="selected-sources-generation-status__value"
+                    >
+                        0 / 0
+                    </span>
+                </div>
+                <div class="selected-sources-generation-status__card">
+                    <span
                         id="selectedSourcesGenerationEtaLabel"
                         class="selected-sources-generation-status__label"
                     >
@@ -3114,17 +3212,20 @@
                 <button type="button" class="btn-secondary" id="cancelSelectedSourcesGenerationBtn">
                     Abbrechen
                 </button>
+                <button type="button" class="btn-primary" id="startSelectedSourcesGenerationBtn">
+                    Starten
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- KI / LM Studio Modal -->
+    <!-- KI-Server Modal -->
     <div class="modal-overlay notranslate" id="settingsModal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
         <div class="modal">
-            <h2 id="modal-title">KI-Zusammenfassung (LM Studio)</h2>
+            <h2 id="modal-title">KI-Zusammenfassung</h2>
             <p class="modal-hint" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
                 <strong>Empfohlen:</strong> <code>python3 scripts/dev_server.py</code>, Seite neu laden — die App erkennt den Server und aktiviert <strong>REST über dieselbe Origin</strong> automatisch (Well-known-URL). Kein CORS-<code>OPTIONS</code> an LM Studio.
-                Alternativ: <code>scripts/lm_studio_cors_proxy.py</code> (siehe README). OpenAI-Modus bleibt wählbar. <strong>HTTPS</strong>-Seite → API ebenfalls HTTPS („Mixed Content“).
+                Alternativ: <code>scripts/lm_studio_cors_proxy.py</code> (siehe README). OpenAI- und Anthropic-Modus bleiben wählbar. <strong>HTTPS</strong>-Seite → API ebenfalls HTTPS („Mixed Content“).
             </p>
 
             <div class="setting-group">
@@ -3132,6 +3233,7 @@
                 <select id="kiApiMode" class="setting-input" aria-describedby="serverUrlHint">
                     <option value="lm_rest_v1">LM Studio REST v1 — POST /api/v1/chat (empfohlen, LM Studio 0.4+)</option>
                     <option value="openai">OpenAI-kompatibel — POST /v1/chat/completions</option>
+                    <option value="anthropic">Anthropic Messages API — POST /v1/messages</option>
                 </select>
             </div>
 
@@ -3602,16 +3704,16 @@
         } catch (e) { /* ignore */ }
     </script>
     <!-- Application Scripts -->
-    <script src="js/storage.js?v=headertrans20260427a"></script>
-    <script src="js/news-sources-registry.js?v=sourcecatalog20260419c"></script>
-    <script src="js/news-scraper.js?v=globalnewscat20260427a"></script>
+    <script src="js/storage.js?v=lmloadedautoresolve20260430a"></script>
+    <script src="js/news-sources-registry.js?v=usatodaysections20260428a"></script>
+    <script src="js/news-scraper.js?v=usatodaysections20260428b"></script>
     <script src="js/ki-stats.js?v=kimodelhover20260426a"></script>
-    <script src="js/ai-summarizer.js?v=kimodelhover20260426a"></script>
+    <script src="js/ai-summarizer.js?v=lmloadedautoresolve20260430a"></script>
     <script src="js/heise-comments.js?v=telepolis-comments20260417a"></script>
     <script src="js/youtube-related.js"></script>
     <script src="js/article-translation.js?v=titletranslate20260417b"></script>
     <script src="js/article-exporter.js?v=thumbpdf20260415c"></script>
-    <script src="js/app.js?v=headertrans20260427a"></script>
+    <script src="js/app.js?v=reasoningofftoggle20260504a"></script>
     
 </body>
 </html>

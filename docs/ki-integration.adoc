@@ -8,13 +8,16 @@ image::docs/images/diagram-ki-integration.png[AI integration data flow,width=800
 
 * *LM Studio REST v1* (recommended with `dev_server`) — `POST /api/v1/chat` with `model`, `input`, and `system_prompt`. Responses may include `output[]` entries of type `message` and optionally `reasoning`. The UI shows only final `message` text, not internal reasoning.
 * *OpenAI-compatible* — `POST /v1/chat/completions` with a chat-style payload. Base URL must end with `/v1` (the client appends `/chat/completions`).
+* *Anthropic Messages API* — `POST /v1/messages` with `model`, top-level `system`, and `messages`. Base URL must end with `/v1` (the client appends `/messages`). The API key is sent as `x-api-key`, and the app uses `anthropic-version: 2023-06-01`.
 
 Enable *REST via same page origin* in settings when using `scripts/dev_server.py` so the browser does not call LM Studio cross-origin (avoids `OPTIONS` preflight failures on many LM Studio builds).
-The *Reasoning* controls are only shown in *LM Studio REST v1* mode. In *OpenAI-compatible* mode that settings block is hidden because this app does not send the LM Studio-specific `reasoning` field there.
+The *Reasoning* controls are only shown in *LM Studio REST v1* mode. In *OpenAI-compatible* and *Anthropic* modes that settings block is hidden because this app does not send the LM Studio-specific `reasoning` field there.
 
 === Model selection (settings)
 
-When a valid server URL is configured, the app loads the model list via native `GET /api/v1/models` first (same-origin proxy with `dev_server`, or direct to LM Studio). Only if that returns `404` does the client retry the older OpenAI-style `GET /v1/models`. You can pick a specific model or choose *No specific choice — server decides* (empty `model` setting): the client then resolves the first suitable LLM from the list (cached per tab in `sessionStorage`). Hover a list entry to see metadata returned by LM Studio (publisher, architecture, max context, format, loaded instance). Models currently loaded in LM Studio are marked with a bullet prefix in the dropdown label.
+When a valid server URL is configured in *LM Studio REST v1* mode, the app loads the model list via native `GET /api/v1/models` first (same-origin proxy with `dev_server`, or direct to LM Studio). Only if that returns `404` does the client retry the older OpenAI-style `GET /v1/models`. You can pick a specific model or choose *Automatic* (empty `model` setting): before each LM Studio REST request, Cucumber resolves the currently loaded model from the fresh model list and prefers entries with `loaded_instances`. Hover a list entry to see metadata returned by LM Studio (publisher, architecture, max context, format, loaded instance). Models currently loaded in LM Studio are marked with a bullet prefix in the dropdown label.
+
+In *Anthropic* mode, the app loads models via `GET /v1/models` using the configured Anthropic API key. *Automatic* uses the first model returned by the API; picking a model stores that exact model id.
 
 === Reasoning settings (LM Studio)
 
@@ -71,6 +74,7 @@ If `YOUTUBE_API_KEY` is set on the server, `GET /api/youtube-search` remains ava
 
 === Failure modes (short)
 
-* *CORS / Failed to fetch* — use `dev_server` + same-origin REST, or enable CORS in LM Studio, or use the OpenAI-compatible path; see link:troubleshooting.adoc[Troubleshooting].
+* *CORS / Failed to fetch* — for LM Studio use `dev_server` + same-origin REST, or enable CORS in LM Studio, or use the OpenAI-compatible path; see link:troubleshooting.adoc[Troubleshooting].
 * *HTTP 400* — wrong model id, or unsupported `reasoning` parameter (the client retries without it when possible).
+* *Anthropic 401/403* — missing or invalid Anthropic API key.
 * *Only reasoning, no message* — change model/settings or use *Regenerate*; the UI surfaces a clear error.

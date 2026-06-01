@@ -27,10 +27,16 @@
 
 * Base URL must be `http://host:port/v1` — not `…/v1/chat/completions` (the client appends the path).
 
+=== Anthropic mode: authentication or model errors
+
+* Base URL must be `https://api.anthropic.com/v1` (or another Anthropic-compatible `/v1` base URL) — not `…/v1/messages` (the client appends the path).
+* Enter an Anthropic API key; `GET /v1/models` and `POST /v1/messages` require it.
+* If *Automatic* cannot resolve a model, reload the model list in *KI-Server* or select a model id explicitly.
+
 === Reasoning options do not match the selected LM Studio model
 
 * The model-aware reasoning UI depends on native `GET /api/v1/models`. If the app can only reach the older OpenAI-style `GET /v1/models`, capability metadata is missing and the UI falls back conservatively to `Off` only.
-* Use *LM Studio REST v1* mode for model-aware reasoning controls. In *OpenAI-compatible* mode the reasoning block is intentionally hidden.
+* Use *LM Studio REST v1* mode for model-aware reasoning controls. In *OpenAI-compatible* and *Anthropic* modes the reasoning block is intentionally hidden.
 * Reload the model list in the KI settings dialog after changing the LM Studio server, model, or same-origin setting.
 * If the browser still shows stale options after a code update, hard reload the page so the current script versions are used.
 

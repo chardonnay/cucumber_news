@@ -1,5 +1,6 @@
 /**
- * Cucumber NewsScraper — AI summarizer (LM Studio REST `/api/v1/chat` or OpenAI-compatible `/v1/chat/completions`).
+ * Cucumber NewsScraper — AI summarizer (LM Studio REST `/api/v1/chat`,
+ * OpenAI-compatible `/v1/chat/completions`, or Anthropic Messages `/v1/messages`).
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Daniel Mengel
@@ -7,6 +8,10 @@
 
 /** Max tokens for model output (REST: max_output_tokens; OpenAI: max_tokens). */
 const MAX_SUMMARY_OUTPUT_TOKENS = 10000;
+const DEFAULT_OPENAI_API_BASE = 'http://127.0.0.1:1234/v1';
+const DEFAULT_LM_REST_ROOT = 'http://127.0.0.1:1234';
+const DEFAULT_ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
+const ANTHROPIC_API_VERSION = '2023-06-01';
 
 class AISummarizer {
     constructor() {
@@ -129,7 +134,7 @@ class AISummarizer {
     static normalizeOpenAiApiBase(raw) {
         let s = String(raw ?? '').trim();
         if (!s) {
-            return 'http://127.0.0.1:1234/v1';
+            return DEFAULT_OPENAI_API_BASE;
         }
         s = s.replace(/\/+$/, '');
         s = s.replace(/\/v1\/chat\/completions$/i, '/v1');
@@ -145,13 +150,46 @@ class AISummarizer {
     }
 
     /**
+     * Anthropic Messages API base URL (must end with `/v1`, never `/messages`).
+     */
+    static normalizeAnthropicApiBase(raw) {
+        let s = String(raw ?? '').trim();
+        if (!s) {
+            return DEFAULT_ANTHROPIC_API_BASE;
+        }
+        s = s.replace(/\/+$/, '');
+        s = s.replace(/\/v1\/messages$/i, '/v1');
+        s = s.replace(/\/messages$/i, '');
+        s = s.replace(/\/+$/, '');
+        while (/\/v1\/v1$/i.test(s)) {
+            s = s.replace(/\/v1\/v1$/i, '/v1');
+        }
+        if (!/\/v1$/i.test(s)) {
+            s = `${s}/v1`;
+        }
+        return s;
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {'openai'|'lm_rest_v1'|'anthropic'}
+     */
+    static normalizeKiApiMode(raw) {
+        const mode = String(raw ?? '').trim();
+        if (mode === 'openai' || mode === 'anthropic' || mode === 'lm_rest_v1') {
+            return mode;
+        }
+        return 'lm_rest_v1';
+    }
+
+    /**
      * LM Studio native REST v1: server root only (no /api/v1 path).
      * Requests go to `${root}/api/v1/chat`.
      */
     static normalizeLmRestServerRoot(raw) {
         let s = String(raw ?? '').trim();
         if (!s) {
-            return 'http://127.0.0.1:1234';
+            return DEFAULT_LM_REST_ROOT;
         }
         s = s.replace(/\/+$/, '');
         s = s.replace(/\/api\/v1\/chat$/i, '');
@@ -171,6 +209,17 @@ class AISummarizer {
             /* ignore */
         }
         return AISummarizer.normalizeOpenAiApiBase(fromLs);
+    }
+
+    /** Anthropic API base URL including /v1 (no trailing slash). */
+    getAnthropicApiBase() {
+        let fromLs = '';
+        try {
+            fromLs = localStorage.getItem('heise_anthropic_api_base') || '';
+        } catch (_) {
+            /* ignore */
+        }
+        return AISummarizer.normalizeAnthropicApiBase(fromLs);
     }
 
     getLmRestRoot() {
@@ -879,13 +928,19 @@ class AISummarizer {
         return `${root}/api/v1/chat`;
     }
 
-    /** @returns {'openai'|'lm_rest_v1'} */
+    /** Full URL for Anthropic Messages API request (only for `anthropic` mode). */
+    getAnthropicMessagesUrl() {
+        if (this.getKiApiMode() !== 'anthropic') {
+            return '';
+        }
+        return `${this.getAnthropicApiBase()}/messages`;
+    }
+
+    /** @returns {'openai'|'lm_rest_v1'|'anthropic'} */
     getKiApiMode() {
         try {
             const m = localStorage.getItem('heise_ki_api_mode');
-            if (m === 'lm_rest_v1' || m === 'openai') {
-                return m;
-            }
+            return AISummarizer.normalizeKiApiMode(m);
         } catch (_) {
             /* ignore */
         }
@@ -902,20 +957,49 @@ class AISummarizer {
         }
     }
 
+    /** @param {unknown} raw */
+    static normalizeLmModelSelectionMode(raw) {
+        return String(raw || '').trim() === 'manual' ? 'manual' : 'auto';
+    }
+
+    /** @returns {'auto'|'manual'} */
+    getLmModelSelectionMode() {
+        try {
+            return AISummarizer.normalizeLmModelSelectionMode(
+                localStorage.getItem('heise_lm_model_selection_mode')
+            );
+        } catch (_) {
+            return 'auto';
+        }
+    }
+
     /**
      * Resolved model id for OpenAI-compatible `/v1/chat/completions` only.
      * LM Studio REST (`lm_rest_v1`) uses {@link resolveLmRestModelId} so `model` is always set (required by LM Studio).
      */
     getModelName() {
-        try {
-            const m = localStorage.getItem('heise_lm_model');
-            if (m && m.trim()) {
-                return m.trim();
+        if (this.getLmModelSelectionMode() === 'manual') {
+            try {
+                const m = localStorage.getItem('heise_lm_model');
+                if (m && m.trim()) {
+                    return m.trim();
+                }
+            } catch (_) {
+                /* ignore */
             }
-        } catch (_) {
-            /* ignore */
         }
         if (this.getKiApiMode() === 'lm_rest_v1') {
+            return '';
+        }
+        if (this.getKiApiMode() === 'anthropic') {
+            try {
+                const resolved = sessionStorage.getItem('heise_anthropic_resolved_model_id');
+                if (resolved && resolved.trim()) {
+                    return resolved.trim();
+                }
+            } catch (_) {
+                /* ignore */
+            }
             return '';
         }
         return 'gpt-3.5-turbo';
@@ -969,13 +1053,14 @@ class AISummarizer {
      *   kiApiMode?: string,
      *   lmRestRoot?: string,
      *   apiBaseUrl?: string,
+     *   anthropicApiBaseUrl?: string,
      *   restSameOrigin?: boolean,
      *   pageOrigin?: string
      * }} opts
      * @returns {string} Empty if models cannot be requested (e.g. file: + same-origin).
      */
     static getModelsListUrlFromSettings(opts) {
-        const mode = opts && opts.kiApiMode === 'openai' ? 'openai' : 'lm_rest_v1';
+        const mode = AISummarizer.normalizeKiApiMode(opts && opts.kiApiMode);
         const restSo =
             mode === 'lm_rest_v1' &&
             (opts.restSameOrigin === true ||
@@ -999,8 +1084,27 @@ class AISummarizer {
             const root = AISummarizer.normalizeLmRestServerRoot(opts.lmRestRoot || '');
             return `${root}/api/v1/models`;
         }
+        if (mode === 'anthropic') {
+            const base = AISummarizer.normalizeAnthropicApiBase(
+                opts.anthropicApiBaseUrl || opts.apiBaseUrl || ''
+            );
+            return `${base}/models`;
+        }
         const base = AISummarizer.normalizeOpenAiApiBase(opts.apiBaseUrl || '');
         return `${base}/models`;
+    }
+
+    /**
+     * @param {'openai'|'lm_rest_v1'|'anthropic'} mode
+     * @param {string | undefined} tokenOverride
+     * @param {string} requestUrlForNgrokHint
+     * @returns {Record<string, string>}
+     */
+    buildModelsGetHeaders(mode, tokenOverride, requestUrlForNgrokHint) {
+        if (mode === 'anthropic') {
+            return this.buildAnthropicHeaders({ includeContentType: false, tokenOverride });
+        }
+        return this.buildLmRestGetHeaders(tokenOverride, requestUrlForNgrokHint);
     }
 
     /**
@@ -1094,6 +1198,36 @@ class AISummarizer {
     }
 
     /**
+     * @param {Array<object>} list Raw entries from LM Studio model list
+     * @returns {object[]} Normalized non-embedding model entries.
+     */
+    static normalizeModelList(list) {
+        if (!Array.isArray(list)) {
+            return [];
+        }
+        const normalized = [];
+        for (const row of list) {
+            const n = AISummarizer.normalizeModelListEntry(row);
+            if (n) {
+                normalized.push(n);
+            }
+        }
+        return normalized;
+    }
+
+    /**
+     * @param {object | null | undefined} modelEntry
+     * @returns {boolean}
+     */
+    static modelExposesLmReasoningConfig(modelEntry) {
+        return Boolean(
+            modelEntry &&
+                Array.isArray(modelEntry.reasoningAllowedOptions) &&
+                modelEntry.reasoningAllowedOptions.length > 0
+        );
+    }
+
+    /**
      * Short label for `<option>` text (metadata in parentheses).
      * @param {{ id: string, displayName: string, paramsString: string, quantLabel: string, loaded: boolean }} m
      * @param {{ loadedMark?: string }} [fmt]
@@ -1184,6 +1318,7 @@ class AISummarizer {
      *   kiApiMode?: string,
      *   lmRestRoot?: string,
      *   apiBaseUrl?: string,
+     *   anthropicApiBaseUrl?: string,
      *   restSameOrigin?: boolean,
      *   lmApiToken?: string,
      *   pageOrigin?: string
@@ -1192,10 +1327,12 @@ class AISummarizer {
      */
     async fetchAvailableModels(signal, opts) {
         const o = opts && typeof opts === 'object' ? opts : {};
+        const mode = AISummarizer.normalizeKiApiMode(o.kiApiMode ?? this.getKiApiMode());
         const url = AISummarizer.getModelsListUrlFromSettings({
-            kiApiMode: o.kiApiMode ?? this.getKiApiMode(),
+            kiApiMode: mode,
             lmRestRoot: o.lmRestRoot ?? this.getLmRestRoot(),
             apiBaseUrl: o.apiBaseUrl ?? this.getApiBase(),
+            anthropicApiBaseUrl: o.anthropicApiBaseUrl ?? this.getAnthropicApiBase(),
             restSameOrigin: o.restSameOrigin ?? this.isLmRestSameOrigin(),
             pageOrigin: o.pageOrigin
         });
@@ -1206,13 +1343,23 @@ class AISummarizer {
                     'Models list URL could not be built (same-origin REST needs http(s) page origin, not file://).'
             };
         }
+        const token =
+            o.lmApiToken !== undefined
+                ? String(o.lmApiToken || '').trim()
+                : this.getLmApiToken();
+        if (mode === 'anthropic' && !token) {
+            return {
+                ok: false,
+                error: 'Anthropic API token is required for GET /v1/models.'
+            };
+        }
         let response;
         let rawText;
         try {
             ({ response, rawText } = await AISummarizer.tryFetchModelsList(
                 url,
                 signal,
-                this.buildLmRestGetHeaders(o.lmApiToken, url)
+                this.buildModelsGetHeaders(mode, token, url)
             ));
         } catch (e) {
             const msg = e && e.message ? String(e.message) : 'Network error';
@@ -1255,16 +1402,7 @@ class AISummarizer {
      * @returns {string} First usable model id, preferring one reported as loaded, or empty string.
      */
     static pickFirstModelIdFromRawList(list) {
-        if (!Array.isArray(list) || list.length === 0) {
-            return '';
-        }
-        const normalized = [];
-        for (const row of list) {
-            const n = AISummarizer.normalizeModelListEntry(row);
-            if (n) {
-                normalized.push(n);
-            }
-        }
+        const normalized = AISummarizer.normalizeModelList(list);
         if (!normalized.length) {
             return '';
         }
@@ -1276,32 +1414,29 @@ class AISummarizer {
     }
 
     /**
-     * LM Studio REST requires `model` on every request. If the user left the name empty, list models via GET /api/v1/models (fallback: /v1/models) and use the first id (cached in sessionStorage for the tab).
+     * LM Studio REST requires `model` on every request. If the user left the name empty,
+     * list models via GET /api/v1/models (fallback: /v1/models) and prefer the model
+     * LM Studio currently reports as loaded. Do not trust a previously resolved
+     * session value here; users can switch the loaded model in LM Studio while the
+     * Cucumber tab stays open.
      * @param {AbortSignal} signal
-     * @returns {Promise<string>}
+     * @returns {Promise<{ id: string, modelEntry: object | null }>}
      */
-    async resolveLmRestModelId(signal) {
+    async resolveLmRestModelInfo(signal) {
         if (this.getKiApiMode() !== 'lm_rest_v1') {
             const n = this.getModelName();
-            return n || 'gpt-3.5-turbo';
+            return { id: n || 'gpt-3.5-turbo', modelEntry: null };
         }
-        try {
-            const m = localStorage.getItem('heise_lm_model');
-            if (m && m.trim()) {
-                return m.trim();
+        if (this.getLmModelSelectionMode() === 'manual') {
+            try {
+                const m = localStorage.getItem('heise_lm_model');
+                if (m && m.trim()) {
+                    return { id: m.trim(), modelEntry: null };
+                }
+            } catch (_) {
+                /* ignore */
             }
-        } catch (_) {
-            /* ignore */
         }
-        try {
-            const cached = sessionStorage.getItem('heise_lm_resolved_model_id');
-            if (cached && cached.trim()) {
-                return cached.trim();
-            }
-        } catch (_) {
-            /* ignore */
-        }
-
         const url = this.getLmRestModelsListUrl();
         let response;
         let rawText;
@@ -1314,7 +1449,7 @@ class AISummarizer {
         } catch (e) {
             const msg = e && e.message ? String(e.message) : 'Netzwerkfehler';
             throw new Error(
-                `Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein geladenes LM-Studio-Modell oder nutzen Sie „Keine spezifische Wahl …“ mit Dev-Server („REST über dieselbe Origin“), damit GET /api/v1/models zum LM-Server durchgereicht wird.`
+                `Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein geladenes LM-Studio-Modell oder nutzen Sie „Automatisch“, damit Cucumber per GET /api/v1/models das aktuell geladene LM-Studio-Modell ermitteln kann.`
             );
         }
         let data;
@@ -1338,18 +1473,120 @@ class AISummarizer {
             : Array.isArray(data?.models)
               ? data.models
               : [];
-        const id = AISummarizer.pickFirstModelIdFromRawList(list);
-        if (!id) {
+        const normalized = AISummarizer.normalizeModelList(list);
+        if (!normalized.length) {
             throw new Error(
                 'LM Studio meldet keine Modelle (leere Liste). Laden Sie ein Modell oder tragen Sie den Namen in den Einstellungen ein.'
             );
         }
+        const modelEntry = normalized.find((n) => n.loaded) || normalized[0];
+        const id = modelEntry.id;
         try {
             sessionStorage.setItem('heise_lm_resolved_model_id', id);
         } catch (_) {
             /* ignore */
         }
-        return id;
+        return { id, modelEntry };
+    }
+
+    /**
+     * @param {AbortSignal} signal
+     * @returns {Promise<string>}
+     */
+    async resolveLmRestModelId(signal) {
+        const info = await this.resolveLmRestModelInfo(signal);
+        return info.id;
+    }
+
+    /**
+     * Anthropic Messages requires `model`. If no model is pinned, list available models
+     * via official GET /v1/models and use the first entry returned by Anthropic.
+     * @param {AbortSignal} signal
+     * @returns {Promise<{ id: string, modelEntry: object | null }>}
+     */
+    async resolveAnthropicModelInfo(signal) {
+        if (this.getLmModelSelectionMode() === 'manual') {
+            try {
+                const m = localStorage.getItem('heise_lm_model');
+                if (m && m.trim()) {
+                    return { id: m.trim(), modelEntry: null };
+                }
+            } catch (_) {
+                /* ignore */
+            }
+        }
+        const token = this.getLmApiToken();
+        if (!token) {
+            throw new Error('Anthropic API token is required.');
+        }
+        const url = `${this.getAnthropicApiBase()}/models`;
+        let response;
+        let rawText;
+        try {
+            ({ response, rawText } = await AISummarizer.tryFetchModelsList(
+                url,
+                signal,
+                this.buildAnthropicHeaders({ includeContentType: false, tokenOverride: token })
+            ));
+        } catch (e) {
+            const msg = e && e.message ? String(e.message) : 'Netzwerkfehler';
+            throw new Error(
+                `Anthropic-Modell konnte nicht ermittelt werden (${msg}). Wählen Sie unter „Modell“ ein Modell aus GET /v1/models oder tragen Sie die Modell-ID manuell ein.`
+            );
+        }
+        let data;
+        try {
+            data = JSON.parse(rawText.trim());
+        } catch {
+            throw new Error(
+                `GET /v1/models lieferte kein JSON (HTTP ${response.status}). Prüfen Sie die Anthropic-Server-URL und den API-Token.`
+            );
+        }
+        if (!response.ok) {
+            const detail = data.error?.message || data.message || rawText.slice(0, 200);
+            throw new Error(`GET /v1/models fehlgeschlagen (HTTP ${response.status}): ${detail}`);
+        }
+        const list = Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.models)
+              ? data.models
+              : [];
+        const normalized = AISummarizer.normalizeModelList(list);
+        if (!normalized.length) {
+            throw new Error(
+                'Anthropic meldet keine nutzbaren Modelle (leere Liste). Wählen Sie ein Modell manuell oder prüfen Sie den API-Token.'
+            );
+        }
+        const modelEntry = normalized[0];
+        const id = modelEntry.id;
+        try {
+            sessionStorage.setItem('heise_anthropic_resolved_model_id', id);
+        } catch (_) {
+            /* ignore */
+        }
+        return { id, modelEntry };
+    }
+
+    /**
+     * @param {object | null | undefined} modelEntry
+     * @returns {{ enabled: boolean, level: 'off'|'low'|'medium'|'high'|'on' }}
+     */
+    getLmReasoningConfigForModel(modelEntry) {
+        const config = this.getLmReasoningConfig();
+        if (!config.enabled) {
+            return config;
+        }
+        if (!AISummarizer.modelExposesLmReasoningConfig(modelEntry)) {
+            return { enabled: false, level: config.level };
+        }
+        if (
+            modelEntry &&
+            Array.isArray(modelEntry.reasoningAllowedOptions) &&
+            !modelEntry.reasoningAllowedOptions.includes(config.level)
+        ) {
+            return { enabled: false, level: config.level };
+        }
+        return config;
     }
 
     /** URL used for ngrok / mixed-content hints */
@@ -1359,13 +1596,51 @@ class AISummarizer {
                 return window.location.origin;
             }
         }
-        return this.getKiApiMode() === 'lm_rest_v1' ? this.getLmRestRoot() : this.getApiBase();
+        if (this.getKiApiMode() === 'lm_rest_v1') {
+            return this.getLmRestRoot();
+        }
+        if (this.getKiApiMode() === 'anthropic') {
+            return this.getAnthropicApiBase();
+        }
+        return this.getApiBase();
+    }
+
+    /**
+     * Anthropic JSON/GET headers. Anthropic requires `x-api-key` and `anthropic-version`.
+     * Direct browser calls require the explicit browser-access opt-in header.
+     * @param {{ includeContentType?: boolean, tokenOverride?: string }} [opts]
+     * @returns {Record<string, string>}
+     */
+    buildAnthropicHeaders(opts = {}) {
+        const h = {
+            Accept: 'application/json',
+            'anthropic-version': ANTHROPIC_API_VERSION,
+            'anthropic-dangerous-direct-browser-access': 'true'
+        };
+        if (opts.includeContentType !== false) {
+            h['Content-Type'] = 'application/json';
+        }
+        const token =
+            opts.tokenOverride !== undefined
+                ? String(opts.tokenOverride || '').trim()
+                : this.getLmApiToken();
+        if (token) {
+            h['x-api-key'] = token;
+        }
+        const baseHint = this.getAnthropicApiBase();
+        if (baseHint.includes('ngrok')) {
+            h['ngrok-skip-browser-warning'] = 'true';
+        }
+        return h;
     }
 
     /**
      * POST JSON — Content-Type, optional Bearer (LM Studio auth), ngrok helper.
      */
     buildJsonHeaders() {
+        if (this.getKiApiMode() === 'anthropic') {
+            return this.buildAnthropicHeaders({ includeContentType: true });
+        }
         const h = {
             'Content-Type': 'application/json'
         };
@@ -1928,6 +2203,23 @@ Output rules:
     }
 
     /**
+     * Anthropic Messages API response: final assistant content is in `content[]` text blocks.
+     * @param {unknown} data
+     * @returns {string}
+     */
+    static extractAnthropicMessageText(data) {
+        if (!data || typeof data !== 'object') {
+            return '';
+        }
+        const row = /** @type {Record<string, unknown>} */ (data);
+        const text = AISummarizer.normalizeMessageContentParts(row.content).trim();
+        if (text) {
+            return text;
+        }
+        return AISummarizer.deepCollectAssistantText(row.content).trim();
+    }
+
+    /**
      * Token usage from chat completion JSON (`usage` object). LM Studio often matches OpenAI shape.
      * @param {unknown} data
      * @returns {{ totalTokens: number, promptTokens: number, completionTokens: number } | null}
@@ -2025,6 +2317,9 @@ Output rules:
         if (mode === 'lm_rest_v1') {
             return this._summarizeLmRestV1(url, title, description);
         }
+        if (mode === 'anthropic') {
+            return this._summarizeAnthropic(url, title, description);
+        }
         return this._summarizeOpenAiCompatible(url, title, description);
     }
 
@@ -2036,9 +2331,9 @@ Output rules:
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.getKiRequestTimeoutMs());
 
-        let modelName;
+        let modelInfo;
         try {
-            modelName = await this.resolveLmRestModelId(controller.signal);
+            modelInfo = await this.resolveLmRestModelInfo(controller.signal);
         } catch (error) {
             clearTimeout(timeoutId);
             return {
@@ -2046,6 +2341,7 @@ Output rules:
                 alternativeLinks: []
             };
         }
+        const modelName = modelInfo.id;
 
         const baseBody = {
             model: modelName,
@@ -2058,9 +2354,9 @@ Output rules:
             store: false
         };
         
-        const reasoningConfig = this.getLmReasoningConfig();
+        const reasoningConfig = this.getLmReasoningConfigForModel(modelInfo.modelEntry);
 
-        // If explicitly enabled, always send the selected enum, including `off`.
+        // If explicitly enabled and supported by the resolved model, send the selected enum.
         if (reasoningConfig.enabled) {
             baseBody.reasoning = reasoningConfig.level;
         }
@@ -2193,6 +2489,121 @@ Output rules:
         }
     }
 
+    async _summarizeAnthropic(url, title, description) {
+        const base = this.getAnthropicApiBase();
+        const chatUrl = `${base}/messages`;
+        const { prompt, systemContent } = this.buildPromptPayload(url, title, description);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.getKiRequestTimeoutMs());
+
+        let modelInfo;
+        try {
+            modelInfo = await this.resolveAnthropicModelInfo(controller.signal);
+        } catch (error) {
+            clearTimeout(timeoutId);
+            return {
+                summary: this._formatSummarizeError(error, url, base, { isAnthropic: true }),
+                alternativeLinks: []
+            };
+        }
+
+        const requestBody = {
+            model: modelInfo.id,
+            system: String(systemContent),
+            messages: [{ role: 'user', content: String(prompt) }],
+            temperature: 0.7,
+            max_tokens: MAX_SUMMARY_OUTPUT_TOKENS,
+            stream: false
+        };
+
+        if (
+            !Array.isArray(requestBody.messages) ||
+            requestBody.messages.length === 0 ||
+            !requestBody.messages.every(
+                (m) => m && typeof m.role === 'string' && typeof m.content === 'string'
+            )
+        ) {
+            console.error('KI: Ungültiges Anthropic messages-Array', requestBody);
+            throw new Error('Interner Fehler: Ungültige Anthropic-Nachrichten (messages).');
+        }
+
+        const token = this.getLmApiToken();
+        if (!token) {
+            clearTimeout(timeoutId);
+            return {
+                summary: this._formatSummarizeError(
+                    new Error('Anthropic API token is required.'),
+                    url,
+                    base,
+                    { isAnthropic: true }
+                ),
+                alternativeLinks: []
+            };
+        }
+
+        try {
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('heise_ki_debug') === '1') {
+                console.info('[KI debug] Anthropic POST', chatUrl, 'keys:', Object.keys(requestBody));
+            }
+        } catch (_) {
+            /* ignore */
+        }
+
+        const t0 = performance.now();
+        try {
+            const response = await fetch(chatUrl, {
+                method: 'POST',
+                headers: this.buildAnthropicHeaders({ includeContentType: true, tokenOverride: token }),
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+                mode: 'cors',
+                credentials: 'omit'
+            });
+
+            const rawText = await response.text();
+            let data;
+            try {
+                data = JSON.parse(rawText.trim());
+            } catch {
+                console.error('KI: Anthropic-Antwort ist kein JSON. Rohbeginn:', rawText.slice(0, 400));
+                throw new Error(response.ok ? 'Ungültige JSON-Antwort von Anthropic.' : `HTTP ${response.status}`);
+            }
+
+            if (!response.ok) {
+                const detail = data.error?.message || data.message || JSON.stringify(data);
+                console.error('KI HTTP-Fehler (Anthropic):', response.status, detail);
+                throw new Error(`API ${response.status}: ${detail}`);
+            }
+
+            const raw = AISummarizer.extractAnthropicMessageText(data);
+            if (!raw.trim()) {
+                throw new Error('Leere Anthropic-Antwort (kein Text im Modell-Output).');
+            }
+
+            try {
+                if (typeof KiStats !== 'undefined' && KiStats.recordArticleSummary) {
+                    KiStats.recordArticleSummary({
+                        durationMs: Math.round(performance.now() - t0),
+                        usage: AISummarizer.extractUsageFromChatResponse(data),
+                        model: AISummarizer.extractModelNameFromChatResponse(data, requestBody.model)
+                    });
+                }
+            } catch (_) {
+                /* ignore */
+            }
+
+            return this._packageSummaryResult(raw);
+        } catch (error) {
+            return {
+                summary: this._formatSummarizeError(error, url, base, { isAnthropic: true }),
+                alternativeLinks: []
+            };
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
     async _summarizeOpenAiCompatible(url, title, description) {
         const base = this.getApiBase();
         const chatUrl = `${base}/chat/completions`;
@@ -2309,6 +2720,9 @@ Output rules:
         if (mode === 'lm_rest_v1') {
             return this._completeLmRestV1(systemPrompt, userPrompt);
         }
+        if (mode === 'anthropic') {
+            return this._completeAnthropicPrompt(systemPrompt, userPrompt);
+        }
         return this._completeOpenAiCompatiblePrompt(systemPrompt, userPrompt);
     }
 
@@ -2319,13 +2733,14 @@ Output rules:
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.getKiRequestTimeoutMs());
 
-        let modelName;
+        let modelInfo;
         try {
-            modelName = await this.resolveLmRestModelId(controller.signal);
+            modelInfo = await this.resolveLmRestModelInfo(controller.signal);
         } catch (error) {
             clearTimeout(timeoutId);
             throw new Error(this._formatPromptError(error, hintBase, { isLmRest: true }));
         }
+        const modelName = modelInfo.id;
 
         const baseBody = {
             model: modelName,
@@ -2337,9 +2752,9 @@ Output rules:
             store: false
         };
         
-        const reasoningConfig = this.getLmReasoningConfig();
+        const reasoningConfig = this.getLmReasoningConfigForModel(modelInfo.modelEntry);
 
-        // If explicitly enabled, always send the selected enum, including `off`.
+        // If explicitly enabled and supported by the resolved model, send the selected enum.
         if (reasoningConfig.enabled) {
             baseBody.reasoning = reasoningConfig.level;
         }
@@ -2434,6 +2849,100 @@ Output rules:
         }
     }
 
+    async _completeAnthropicPrompt(systemPrompt, userPrompt) {
+        const base = this.getAnthropicApiBase();
+        const chatUrl = `${base}/messages`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.getKiRequestTimeoutMs());
+
+        let modelInfo;
+        try {
+            modelInfo = await this.resolveAnthropicModelInfo(controller.signal);
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw new Error(this._formatPromptError(error, base, { isAnthropic: true }));
+        }
+
+        const requestBody = {
+            model: modelInfo.id,
+            system: String(systemPrompt),
+            messages: [{ role: 'user', content: String(userPrompt) }],
+            temperature: 0.5,
+            max_tokens: MAX_SUMMARY_OUTPUT_TOKENS,
+            stream: false
+        };
+
+        if (
+            !Array.isArray(requestBody.messages) ||
+            requestBody.messages.length === 0 ||
+            !requestBody.messages.every(
+                (m) => m && typeof m.role === 'string' && typeof m.content === 'string'
+            )
+        ) {
+            console.error('KI: Ungültiges Anthropic messages-Array (completePrompt)', requestBody);
+            throw new Error('Interner Fehler: Ungültige Anthropic-Nachrichten (messages).');
+        }
+
+        const token = this.getLmApiToken();
+        if (!token) {
+            clearTimeout(timeoutId);
+            throw new Error(
+                this._formatPromptError(
+                    new Error('Anthropic API token is required.'),
+                    base,
+                    { isAnthropic: true }
+                )
+            );
+        }
+
+        try {
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('heise_ki_debug') === '1') {
+                console.info('[KI debug] Anthropic completePrompt POST', chatUrl);
+            }
+        } catch (_) {
+            /* ignore */
+        }
+
+        try {
+            const response = await fetch(chatUrl, {
+                method: 'POST',
+                headers: this.buildAnthropicHeaders({ includeContentType: true, tokenOverride: token }),
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+                mode: 'cors',
+                credentials: 'omit'
+            });
+
+            const rawText = await response.text();
+            let data;
+            try {
+                data = JSON.parse(rawText.trim());
+            } catch {
+                console.error('KI: Anthropic-Antwort ist kein JSON. Rohbeginn:', rawText.slice(0, 400));
+                throw new Error(response.ok ? 'Ungültige JSON-Antwort von Anthropic.' : `HTTP ${response.status}`);
+            }
+
+            if (!response.ok) {
+                const detail = data.error?.message || data.message || JSON.stringify(data);
+                console.error('KI HTTP-Fehler (Anthropic completePrompt):', response.status, detail);
+                throw new Error(`API ${response.status}: ${detail}`);
+            }
+
+            const raw = AISummarizer.extractAnthropicMessageText(data);
+            const sanitized = AISummarizer.sanitizePublicSummary(raw);
+            const out = (sanitized || '').trim() || raw;
+            if (!out.trim()) {
+                throw new Error('Leere Anthropic-Antwort (kein Text im Modell-Output).');
+            }
+            return out;
+        } catch (error) {
+            throw new Error(this._formatPromptError(error, base, { isAnthropic: true }));
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
     async _completeOpenAiCompatiblePrompt(systemPrompt, userPrompt) {
         const base = this.getApiBase();
         const chatUrl = `${base}/chat/completions`;
@@ -2523,7 +3032,7 @@ Output rules:
     }
 
     /**
-     * @param {{ isLmRest?: boolean }} opts
+     * @param {{ isLmRest?: boolean, isAnthropic?: boolean }} opts
      */
     _formatPromptError(error, hintBase, opts = {}) {
         console.error('KI-Prompt fehlgeschlagen:', error.name, error.message);
@@ -2540,6 +3049,9 @@ Output rules:
             } else if (opts.isLmRest) {
                 hint =
                     ' CORS/Preflight: Am zuverlässigsten `python3 scripts/dev_server.py`, Seite von dort öffnen und „REST über dieselbe Origin“ aktivieren. Oder `python3 scripts/lm_studio_cors_proxy.py` + Server-URL :1244. Alternativ: „OpenAI-kompatibel“. Siehe README.';
+            } else if (opts.isAnthropic) {
+                hint =
+                    ' Anthropic: Server-URL muss auf /v1 zeigen, der API-Token ist erforderlich, und der Browser muss api.anthropic.com per CORS erreichen können.';
             } else {
                 hint =
                     ' Netzwerk/CORS: In LM Studio „Enable CORS“, Local Server, Modell geladen. OpenAI-URL mit /v1. Siehe README.';
@@ -2550,7 +3062,7 @@ Output rules:
     }
 
     /**
-     * @param {{ isLmRest?: boolean }} opts
+     * @param {{ isLmRest?: boolean, isAnthropic?: boolean }} opts
      */
     _formatSummarizeError(error, url, hintBase, opts = {}) {
         console.error('KI-Zusammenfassung fehlgeschlagen:', error.name, error.message);
@@ -2567,6 +3079,9 @@ Output rules:
             } else if (opts.isLmRest) {
                 hint =
                     ' CORS/Preflight / OPTIONS: Am zuverlässigsten: `python3 scripts/dev_server.py`, Seite von dort öffnen und „REST über dieselbe Origin“ aktivieren. Oder `python3 scripts/lm_studio_cors_proxy.py` + Server-URL :1244. Alternativ: „OpenAI-kompatibel“. Siehe README.';
+            } else if (opts.isAnthropic) {
+                hint =
+                    ' Anthropic: Server-URL muss auf /v1 zeigen, der API-Token ist erforderlich, und der Browser muss api.anthropic.com per CORS erreichen können.';
             } else {
                 hint =
                     ' Netzwerk/CORS: In LM Studio „Enable CORS“, Local Server, Modell geladen. OpenAI-URL mit /v1. ngrok: HTTPS-URL. Siehe README.';

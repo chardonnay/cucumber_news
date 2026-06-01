@@ -377,14 +377,18 @@ class NewsStorage {
             apiBaseUrl: 'http://127.0.0.1:1234/v1',
             /** LM Studio 0.4+ native REST: server root only, e.g. http://127.0.0.1:1234 */
             lmRestRoot: 'http://127.0.0.1:1234',
-            /** openai | lm_rest_v1 */
+            /** Anthropic Messages API base including /v1, e.g. https://api.anthropic.com/v1 */
+            anthropicApiBaseUrl: 'https://api.anthropic.com/v1',
+            /** openai | lm_rest_v1 | anthropic */
             kiApiMode: 'lm_rest_v1',
-            /** Optional Bearer token if LM Studio requires authentication */
+            /** Optional Bearer token for LM/OpenAI-compatible APIs; required x-api-key for Anthropic */
             lmApiToken: '',
             /** REST calls to same origin as page (dev_server.py) — avoids browser OPTIONS to LM Studio */
             restSameOrigin: false,
-            /** LM Studio / local model id; empty = let server pick */
+            /** LM Studio / local model id when lmModelSelectionMode is manual; empty = use loaded model */
             lmModel: '',
+            /** auto = use currently loaded LM Studio model, manual = use lmModel exactly */
+            lmModelSelectionMode: 'auto',
             /** Days to keep AI summary in IndexedDB cache (0 = unlimited age) */
             summaryCacheDays: 14,
             /** Max parallel AI summary requests for batch / auto-summarize (1–16) */

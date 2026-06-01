@@ -2,7 +2,7 @@
 
 * *Browser-local storage* — Article lists, user settings, and AI summaries are stored in IndexedDB (and partially mirrored in `localStorage`). This data stays on the user’s machine unless they sync the browser profile elsewhere.
 * *Publisher feeds* — Fetching news retrieves public RSS/Atom documents from third-party sites. Those sites may log requests per their own policies.
-* *AI providers* — When you request a summary, the client sends the article URL, title, and any feed-provided description (and configured API keys if required) to the configured endpoint (e.g. local LM Studio or a remote OpenAI-compatible API). That provider’s privacy policy applies.
+* *AI providers* — When you request a summary, the client sends the article URL, title, and any feed-provided description (and configured API keys if required) to the configured endpoint (e.g. local LM Studio, a remote OpenAI-compatible API, or Anthropic Messages API). That provider’s privacy policy applies.
 * *Dev server helpers* — Bing News RSS, Reddit search, and URL checks are executed *server-side* by `dev_server.py` when you use those features; queries leave your machine to the respective services.
 * *No accounts* — This project does not ship a user database or telemetry.
 

@@ -18,7 +18,7 @@ The app is a *single-page* HTML application: `index.html` loads vanilla ES modul
 |IndexedDB (`NewsStorage`): settings mirror, enabled sources, favorite sources, per-source disabled categories, articles, summary cache, and schema helpers.
 
 |`js/ai-summarizer.js`
-|Builds prompts, calls LM Studio REST v1 or OpenAI-compatible chat completions, normalizes the LM Studio model list (including reasoning capability metadata when available), reads/writes summary cache, fetches *alternative links* via Bing News RSS through the dev server, validates URLs via `/api/check-url`.
+|Builds prompts, calls LM Studio REST v1, OpenAI-compatible chat completions, or Anthropic Messages API, normalizes provider model lists (including LM Studio reasoning capability metadata when available), reads/writes summary cache, fetches *alternative links* via Bing News RSS through the dev server, validates URLs via `/api/check-url`.
 
 |`js/heise-comments.js`
 |Loads comment statistics for supported sites via dev-server JSON endpoints.
