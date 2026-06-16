@@ -43,6 +43,14 @@ const IT_ADMINISTRATOR_BRAND_LOGO_URL = 'https://www.it-administrator.de/favicon
 
 /** Accent color themes (must match `data-color-theme` in index.html). */
 const COLOR_THEME_IDS = ['heise', 'ocean', 'forest', 'violet', 'amber', 'rose', 'slate', 'midnight'];
+const ARTICLE_READ_STATE_IDS = ['seen', 'read'];
+const ARTICLE_STATE_COLOR_IDS = ['new', 'seen', 'read'];
+const ARTICLE_STATE_COLOR_DEFAULTS = {
+    new: '#2d8a3e',
+    seen: '#d9a20b',
+    read: '#6b7280'
+};
+const ARTICLE_SEEN_HOVER_DELAY_MS = 3000;
 
 /** Default surface colors (must match `:root` / `[data-theme="dark"]` in index.html). */
 const THEME_DEFAULT_SURFACE = {
@@ -250,10 +258,10 @@ class App {
         this.favoriteNewsSources = [];
         this.selectedArticleIds = new Set();
         this.currentPage = 1;
-        // Many registry-backed feeds expose 10-14 current entries; keep the first page below that
-        // so older loaded articles stay reachable via "Mehr laden" / "Alles anzeigen".
-        const itemsPerPage = 9;
-        this.itemsPerPage = itemsPerPage;
+        // Minimum page size; wide grids raise this to the detected column count.
+        this.baseItemsPerPage = 9;
+        this.itemsPerPage = this.baseItemsPerPage;
+        this._newsGridResizeTimer = 0;
 
         /** Article IDs that appeared since the previous fetch (cleared after 3s hover or highlight removal). */
         this._newArticleIds = new Set();
@@ -273,7 +281,7 @@ class App {
 
         /** Background KI run for new articles after refresh (avoid overlap with „Alle Zusammenfassungen“). */
         this._autoSummarizeNewInProgress = false;
-        /** @type {Map<string, {isFavorite?: boolean, isHidden?: boolean}>} */
+        /** @type {Map<string, {isFavorite?: boolean, isHidden?: boolean, readState?: ''|'seen'|'read'}>} */
         this._articleFlags = new Map();
         /** Serializes MyMemory in-place translation passes. */
         this._articleInPlaceTranslationRunning = false;
@@ -379,6 +387,9 @@ class App {
             youtubeModal: document.getElementById('youtubeModal'),
             themeModeSelect: document.getElementById('themeModeSelect'),
             settingsColorThemeSelect: document.getElementById('settingsColorThemeSelect'),
+            articleStateNewColor: document.getElementById('articleStateNewColor'),
+            articleStateSeenColor: document.getElementById('articleStateSeenColor'),
+            articleStateReadColor: document.getElementById('articleStateReadColor'),
             themeBrightnessLight: document.getElementById('themeBrightnessLight'),
             themeBrightnessDark: document.getElementById('themeBrightnessDark'),
             themeResetDefaultsBtn: document.getElementById('themeResetDefaultsBtn'),
@@ -902,6 +913,7 @@ class App {
             await this.loadSettings();
             this.clearArticleTranslationCookieIfDisabled();
             await this.loadArticleFlags();
+            await this.purgeHiddenArticlesFromNewsCache();
 
             await this.applySortLabelsFromLocale();
 
@@ -915,6 +927,7 @@ class App {
             this.applyColorTheme();
             // Apply theme
             this.applyTheme();
+            this.applyArticleStateColorVariables();
 
             this.initHeaderBrand();
 
@@ -1016,6 +1029,9 @@ class App {
         this.elements.loadMoreBtn.addEventListener('click', () => this.loadMoreNews());
         if (this.elements.showAllNewsBtn) {
             this.elements.showAllNewsBtn.addEventListener('click', () => this.showAllNews());
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', () => this.scheduleNewsGridCapacitySync());
         }
 
         // Theme toggle
@@ -1205,6 +1221,15 @@ class App {
         // Note: newsGrid may not exist yet at init time, so we set listener dynamically after render
         this._newsCardClickHandler = (e) => {
             const target = e.target;
+            if (!target || typeof target.closest !== 'function') {
+                return;
+            }
+
+            const originalArticleLink = target.closest('a[data-original-article-link="1"]');
+            if (originalArticleLink) {
+                this.markArticleReadStateFromCard(originalArticleLink.closest('.news-card'), 'read');
+                return;
+            }
 
             // YouTube button
             const youtubeBtn = target.closest('.youtube-toggle');
@@ -2250,10 +2275,13 @@ class App {
     }
 
     filterNewsItemsForSelectedSourcesGenerationPeriod(items, periodRange) {
+        const visibleItems = (Array.isArray(items) ? items : []).filter(
+            (item) => !this.isArticleHiddenByUser(item)
+        );
         if (!periodRange || periodRange.period === 'all_loaded') {
-            return Array.isArray(items) ? items : [];
+            return visibleItems;
         }
-        return (Array.isArray(items) ? items : []).filter((item) =>
+        return visibleItems.filter((item) =>
             App.isNewsItemInGenerationPeriod(item, periodRange)
         );
     }
@@ -2804,6 +2832,7 @@ class App {
             const articleThumbnailsEnabled = App.normalizeArticleThumbnailsEnabled(
                 settings.articleThumbnailsEnabled
             );
+            const articleStateColors = App.normalizeArticleStateColors(settings.articleStateColors);
             const backgroundSelectedSourcesRefreshEnabled =
                 App.normalizeBackgroundSelectedSourcesRefreshEnabled(
                     settings.backgroundSelectedSourcesRefreshEnabled
@@ -2846,6 +2875,7 @@ class App {
                 forumEntriesDiscoveryMode,
                 alternativeLinksDomainBlacklist,
                 articleThumbnailsEnabled,
+                articleStateColors,
                 backgroundSelectedSourcesRefreshEnabled,
                 webSearchEngine,
                 articleTranslationEnabled,
@@ -2951,6 +2981,14 @@ class App {
                 const htj = localStorage.getItem('heise_theme_header_transparency');
                 if (htj) {
                     this.settings.themeHeaderTransparency = App.normalizeThemeHeaderTransparency(JSON.parse(htj));
+                }
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                const acj = localStorage.getItem('heise_article_state_colors');
+                if (acj) {
+                    this.settings.articleStateColors = App.normalizeArticleStateColors(JSON.parse(acj));
                 }
             } catch (_) {
                 /* ignore */
@@ -3305,6 +3343,25 @@ class App {
         return `#${m[1].toLowerCase()}`;
     }
 
+    /** @param {unknown} raw @returns {''|'seen'|'read'} */
+    static normalizeArticleReadState(raw) {
+        const s = String(raw || '').trim().toLowerCase();
+        return ARTICLE_READ_STATE_IDS.includes(s) ? s : '';
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {{ new: string, seen: string, read: string }}
+     */
+    static normalizeArticleStateColors(raw) {
+        const input = raw && typeof raw === 'object' ? raw : {};
+        return ARTICLE_STATE_COLOR_IDS.reduce((colors, key) => {
+            const normalized = App.normalizeHexColor(input[key]);
+            colors[key] = normalized || ARTICLE_STATE_COLOR_DEFAULTS[key];
+            return colors;
+        }, {});
+    }
+
     /** @param {string} hex */
     static hexToRgb(hex) {
         const h = App.normalizeHexColor(hex);
@@ -3313,6 +3370,28 @@ class App {
         }
         const n = parseInt(h.slice(1), 16);
         return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    }
+
+    /** @param {string} hex */
+    static relativeLuminance(hex) {
+        const rgb = App.hexToRgb(hex);
+        if (!rgb) {
+            return 0;
+        }
+        const channel = (value) => {
+            const s = value / 255;
+            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+    }
+
+    /** @param {string} backgroundHex */
+    static readableTextColorForBackground(backgroundHex) {
+        const bg = App.normalizeHexColor(backgroundHex) || '#000000';
+        const luminance = App.relativeLuminance(bg);
+        const contrastWithWhite = 1.05 / (luminance + 0.05);
+        const contrastWithBlack = (luminance + 0.05) / 0.05;
+        return contrastWithWhite >= contrastWithBlack ? '#ffffff' : '#111827';
     }
 
     /** @param {number} r @param {number} g @param {number} b */
@@ -3993,11 +4072,23 @@ class App {
                 if (newsLoc.new_badge) {
                     this._i18nNewsBadge = newsLoc.new_badge;
                 }
+                if (newsLoc.seen_badge) {
+                    this._i18nNewsSeenBadge = newsLoc.seen_badge;
+                }
+                if (newsLoc.read_badge) {
+                    this._i18nNewsReadBadge = newsLoc.read_badge;
+                }
                 if (newsLoc.status_new) {
                     this._i18nStatusNew = newsLoc.status_new;
                 }
                 if (newsLoc.aria_new) {
                     this._i18nNewsAria = newsLoc.aria_new;
+                }
+                if (newsLoc.aria_seen) {
+                    this._i18nNewsSeenAria = newsLoc.aria_seen;
+                }
+                if (newsLoc.aria_read) {
+                    this._i18nNewsReadAria = newsLoc.aria_read;
                 }
                 if (newsLoc.auto_summary_new_ok) {
                     this._i18nNewsAutoSummaryOk = newsLoc.auto_summary_new_ok;
@@ -4955,6 +5046,25 @@ class App {
                         }
                     });
                 }
+                const articleStateLegend = document.getElementById('articleStateColorsLegend');
+                if (articleStateLegend && ki.article_state_colors_title) {
+                    articleStateLegend.textContent = ki.article_state_colors_title;
+                }
+                const articleStateHint = document.getElementById('articleStateColorsHint');
+                if (articleStateHint && ki.article_state_colors_hint) {
+                    articleStateHint.textContent = ki.article_state_colors_hint;
+                }
+                const articleStateColorLabelPairs = [
+                    ['articleStateNewColorLabel', 'article_state_new_color'],
+                    ['articleStateSeenColorLabel', 'article_state_seen_color'],
+                    ['articleStateReadColorLabel', 'article_state_read_color']
+                ];
+                articleStateColorLabelPairs.forEach(([id, key]) => {
+                    const node = document.getElementById(id);
+                    if (node && ki[key]) {
+                        node.textContent = ki[key];
+                    }
+                });
                 const legL = document.getElementById('themeFieldsetLightLegend');
                 if (legL && ki.theme_fieldset_light) {
                     legL.textContent = ki.theme_fieldset_light;
@@ -5750,6 +5860,23 @@ class App {
         return App.canonicalArticleUrl(primary);
     }
 
+    /**
+     * Build a news-cache row without transient UI flags.
+     * @param {Record<string, unknown>} item
+     * @param {string} [sourceId]
+     * @returns {Record<string, unknown>}
+     */
+    static newsCacheRecordForItem(item, sourceId = '') {
+        const record = { ...(item || {}) };
+        delete record.isFavorite;
+        delete record.isHidden;
+        delete record.readState;
+        if (sourceId) {
+            record.newsSource = sourceId;
+        }
+        return record;
+    }
+
     async loadArticleFlags() {
         try {
             const rows = await this.storage.getAllArticleFlags();
@@ -5761,7 +5888,8 @@ class App {
                 }
                 this._articleFlags.set(key, {
                     isFavorite: row.isFavorite === true,
-                    isHidden: row.isHidden === true
+                    isHidden: row.isHidden === true,
+                    readState: App.normalizeArticleReadState(row.readState)
                 });
             }
         } catch (e) {
@@ -5777,9 +5905,74 @@ class App {
             return {
                 ...item,
                 isFavorite: Boolean(flags && flags.isFavorite === true),
-                isHidden: Boolean(flags && flags.isHidden === true)
+                isHidden: Boolean(flags && flags.isHidden === true),
+                readState: App.normalizeArticleReadState(flags ? flags.readState : item.readState)
             };
         });
+    }
+
+    getArticleReadStateForItem(item) {
+        const key = App.articleFlagKey(item);
+        if (key) {
+            const flags = this._articleFlags.get(key);
+            if (flags) {
+                return App.normalizeArticleReadState(flags.readState);
+            }
+        }
+        return App.normalizeArticleReadState(item && item.readState);
+    }
+
+    isArticleHiddenByUser(item) {
+        const key = App.articleFlagKey(item);
+        if (key) {
+            const flags = this._articleFlags.get(key);
+            if (flags) {
+                return flags.isHidden === true;
+            }
+        }
+        return Boolean(item && item.isHidden === true);
+    }
+
+    buildNewsCacheRecordsForSource(sourceId, items) {
+        const normalizedSource = this.normalizeNewsSource(sourceId);
+        return (Array.isArray(items) ? items : [])
+            .filter((item) => !this.isArticleHiddenByUser(item))
+            .map((item) => App.newsCacheRecordForItem(item, normalizedSource));
+    }
+
+    async purgeHiddenArticlesFromNewsCache() {
+        if (!this.storage) {
+            return 0;
+        }
+        try {
+            const rows = await this.storage.getAllNews();
+            const hiddenRows = (Array.isArray(rows) ? rows : []).filter((row) =>
+                this.isArticleHiddenByUser(row)
+            );
+            if (hiddenRows.length === 0) {
+                return 0;
+            }
+            await Promise.all(hiddenRows.map((row) => this.storage.deleteNewsArticle(row && row.id)));
+            return hiddenRows.length;
+        } catch (e) {
+            console.warn('purgeHiddenArticlesFromNewsCache:', e);
+            return 0;
+        }
+    }
+
+    async syncArticleNewsCacheForHiddenState(item, isHidden) {
+        if (!this.storage) {
+            return;
+        }
+        if (isHidden) {
+            await this.storage.deleteNewsArticle(item && item.id);
+            return;
+        }
+        const sourceId =
+            App.normalizeStoredNewsSourceId(item && item.newsSource) ||
+            this.normalizeNewsSource(this.settings?.newsSource);
+        const record = App.newsCacheRecordForItem(item, sourceId);
+        await this.storage.saveNewsArticle(record);
     }
 
     async saveArticleFlagsForItem(item, patch) {
@@ -5789,12 +5982,21 @@ class App {
         }
         try {
             const prev = this._articleFlags.get(key) || {};
+            const safePatch = patch || {};
+            const hasReadState = Object.hasOwn(safePatch, 'readState');
             const next = {
-                isFavorite: patch.isFavorite != null ? patch.isFavorite === true : prev.isFavorite === true,
-                isHidden: patch.isHidden != null ? patch.isHidden === true : prev.isHidden === true
+                isFavorite: safePatch.isFavorite != null ? safePatch.isFavorite === true : prev.isFavorite === true,
+                isHidden: safePatch.isHidden != null ? safePatch.isHidden === true : prev.isHidden === true,
+                readState: hasReadState
+                    ? App.normalizeArticleReadState(safePatch.readState)
+                    : App.normalizeArticleReadState(prev.readState)
             };
             this._articleFlags.set(key, next);
+            this._filterCache.clear();
             await this.storage.saveArticleFlag(key, next);
+            if (safePatch.isHidden != null) {
+                await this.syncArticleNewsCacheForHiddenState(item, next.isHidden);
+            }
         } catch (e) {
             console.error('saveArticleFlagsForItem:', e);
         }
@@ -6552,10 +6754,12 @@ class App {
     }
 
     syncLoadMoreAndCount() {
+        this.updateItemsPerPageForGrid();
         const n = this.filteredNewsItems.length;
         const tpl = this._i18nNewsCountLoaded || '{count} Nachrichten geladen';
         this.elements.newsCount.textContent = tpl.replace(/\{count\}/g, String(n));
-        const shown = Math.min(n, this.itemsPerPage * this.currentPage);
+        const rendered = this.getRenderedNewsCards().length;
+        const shown = Math.min(n, rendered > 0 ? rendered : this.itemsPerPage * this.currentPage);
         const hasMore = n > shown;
         const disp = hasMore ? 'inline-block' : 'none';
         this.elements.loadMoreBtn.style.display = disp;
@@ -6625,6 +6829,7 @@ class App {
         this.filteredNewsItems = this.applyManualCardOrder(this.sortItemList(list));
         this.currentPage = 1;
         if (render) {
+            this.updateItemsPerPageForGrid();
             await this.renderNews(this.filteredNewsItems.slice(0, this.itemsPerPage), false);
             this.syncLoadMoreAndCount();
             if (['comments', 'green', 'red'].includes(this.sortMode)) {
@@ -6911,6 +7116,9 @@ class App {
     mergePendingNewArticlesForSource(sourceId, items) {
         const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
         (Array.isArray(items) ? items : []).forEach((item) => {
+            if (this.getArticleReadStateForItem(item)) {
+                return;
+            }
             const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
             if (url) {
                 pending.add(url);
@@ -6925,13 +7133,25 @@ class App {
      */
     syncVisibleNewArticleIdsFromPending(sourceId, items) {
         const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
+        let pendingChanged = false;
         this._newArticleIds = new Set();
         (Array.isArray(items) ? items : []).forEach((item) => {
             const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
-            if (url && pending.has(url) && item && item.id) {
+            if (!url || !pending.has(url) || !item || !item.id) {
+                return;
+            }
+            if (this.getArticleReadStateForItem(item)) {
+                pending.delete(url);
+                pendingChanged = true;
+                return;
+            }
+            if (item && item.id) {
                 this._newArticleIds.add(item.id);
             }
         });
+        if (pendingChanged) {
+            this.setPendingNewArticleUrlsForSource(sourceId, pending);
+        }
     }
 
     async fetchNews(forceRefresh = false, options = {}) {
@@ -6978,8 +7198,9 @@ class App {
                 return;
             }
 
-            // Save to IndexedDB
-            await this.storage.replaceNewsForSource(fetchSource, newsItems);
+            // Save only non-hidden articles to IndexedDB; hidden rows stay available in memory for this session.
+            const newsItemsForCache = this.buildNewsCacheRecordsForSource(fetchSource, newsItems);
+            await this.storage.replaceNewsForSource(fetchSource, newsItemsForCache);
             if (
                 gen !== this._newsFetchGeneration ||
                 this.normalizeNewsSource(this.settings?.newsSource) !== fetchSource
@@ -7000,6 +7221,9 @@ class App {
             const newlyDetectedItems = [];
             if (hadPrevious) {
                 for (const item of newsItems) {
+                    if (this.isArticleHiddenByUser(item)) {
+                        continue;
+                    }
                     const u = App.canonicalArticleUrl(item.url || item.link || '');
                     if (u && !prevUrls.has(u)) {
                         newlyDetectedItems.push(item);
@@ -7009,7 +7233,7 @@ class App {
             if (newlyDetectedItems.length > 0) {
                 this.mergePendingNewArticlesForSource(fetchSource, newlyDetectedItems);
             } else if (!this.hasPendingNewArticleSourceEntry(fetchSource)) {
-                this.mergePendingNewArticlesForSource(fetchSource, this.newsItems);
+                this.mergePendingNewArticlesForSource(fetchSource, newsItemsForCache);
             }
             this.syncVisibleNewArticleIdsFromPending(fetchSource, this.newsItems);
 
@@ -7224,7 +7448,10 @@ class App {
         }
 
         let newsItems = await scraper.fetchNews();
-        newsItems = NewsScraper.filterOutAdvertorialItems(newsItems);
+        newsItems = NewsScraper.filterOutAdvertorialItems(newsItems).map((item) => ({
+            ...item,
+            newsSource: source
+        }));
 
         if (
             newsItems.length === 0 ||
@@ -7233,8 +7460,11 @@ class App {
             throw new Error(`offline-demo-or-empty:${source}`);
         }
 
-        await this.storage.replaceNewsForSource(source, newsItems);
-        return newsItems;
+        await this.storage.replaceNewsForSource(
+            source,
+            this.buildNewsCacheRecordsForSource(source, newsItems)
+        );
+        return this.applyArticleFlags(newsItems);
     }
 
     /**
@@ -7259,6 +7489,9 @@ class App {
 
         const seen = knownUrls instanceof Set ? knownUrls : new Set();
         const newItems = newsItems.filter((item) => {
+            if (this.isArticleHiddenByUser(item)) {
+                return false;
+            }
             const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
             return !!(url && !seen.has(url));
         });
@@ -7675,7 +7908,8 @@ class App {
     }
 
     loadMoreNews() {
-        const startIndex = this.itemsPerPage * this.currentPage;
+        this.updateItemsPerPageForGrid();
+        const startIndex = this.getRenderedNewsCards().length;
         const endIndex = startIndex + this.itemsPerPage;
         const newsToShow = this.filteredNewsItems.slice(startIndex, endIndex);
 
@@ -7685,14 +7919,15 @@ class App {
         }
 
         void this.renderNews(newsToShow, true);
-        this.currentPage++;
+        this.currentPage = Math.max(1, Math.ceil((startIndex + newsToShow.length) / this.itemsPerPage));
         this.syncLoadMoreAndCount();
     }
 
     /** Appends all remaining filtered articles in one step (same as repeated „Mehr laden“ until done). */
     showAllNews() {
         const n = this.filteredNewsItems.length;
-        const startIndex = this.itemsPerPage * this.currentPage;
+        this.updateItemsPerPageForGrid();
+        const startIndex = this.getRenderedNewsCards().length;
         if (startIndex >= n) {
             this.syncLoadMoreAndCount();
             return;
@@ -7788,6 +8023,47 @@ class App {
             .split(/\s+/)
             .filter(Boolean);
         return Math.max(1, cols.length);
+    }
+
+    /** @returns {number} */
+    updateItemsPerPageForGrid() {
+        const base = Math.max(1, Number(this.baseItemsPerPage) || 9);
+        const columns = this.getNewsGridColumnCount();
+        const next = Math.max(base, columns);
+        this.itemsPerPage = next;
+        return next;
+    }
+
+    scheduleNewsGridCapacitySync() {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        if (this._newsGridResizeTimer) {
+            clearTimeout(this._newsGridResizeTimer);
+        }
+        this._newsGridResizeTimer = setTimeout(() => {
+            this._newsGridResizeTimer = 0;
+            void this.syncRenderedNewsCapacity();
+        }, 120);
+    }
+
+    async syncRenderedNewsCapacity() {
+        if (!Array.isArray(this.filteredNewsItems) || this.filteredNewsItems.length === 0) {
+            this.updateItemsPerPageForGrid();
+            this.syncLoadMoreAndCount();
+            return;
+        }
+        this.updateItemsPerPageForGrid();
+        const renderedCount = this.getRenderedNewsCards().length;
+        const targetCount = Math.min(
+            this.filteredNewsItems.length,
+            Math.max(renderedCount, this.itemsPerPage * Math.max(1, this.currentPage))
+        );
+        if (targetCount > renderedCount) {
+            await this.renderNews(this.filteredNewsItems.slice(renderedCount, targetCount), true);
+        }
+        this.currentPage = Math.max(1, Math.ceil(targetCount / this.itemsPerPage));
+        this.syncLoadMoreAndCount();
     }
 
     /**
@@ -7998,51 +8274,88 @@ class App {
         });
     }
 
+    getArticleDisplayState(item) {
+        const readState = this.getArticleReadStateForItem(item);
+        if (readState) {
+            return readState;
+        }
+        return this._newArticleIds && item && item.id && this._newArticleIds.has(item.id) ? 'new' : '';
+    }
+
+    getArticleStateBadgeLabel(state) {
+        if (state === 'read') {
+            return this._i18nNewsReadBadge || 'Gelesen';
+        }
+        if (state === 'seen') {
+            return this._i18nNewsSeenBadge || 'Gesehen';
+        }
+        return this._i18nNewsBadge || 'Neu';
+    }
+
+    getArticleStateAriaLabel(state) {
+        if (state === 'read') {
+            return this._i18nNewsReadAria || 'Artikel gelesen';
+        }
+        if (state === 'seen') {
+            return this._i18nNewsSeenAria || 'Artikel gesehen';
+        }
+        return this._i18nNewsAria || 'Neuer Artikel seit der letzten Aktualisierung';
+    }
+
+    clearArticleSeenHoverTimer(card) {
+        if (card && card._newHoverTimer) {
+            clearTimeout(card._newHoverTimer);
+            card._newHoverTimer = null;
+        }
+    }
+
     /**
-     * After 3s hover on a "new" card, remove highlight (per UX spec).
+     * After 3s hover on a "new" card, persist it as "seen".
      */
     attachNewArticleHoverHandlers() {
         if (!this.elements.newsGrid) {
             return;
         }
-        this.elements.newsGrid.querySelectorAll('.news-card.news-card--new').forEach((card) => {
-            if (card.dataset.newHoverBound === '1') {
-                return;
-            }
-            card.dataset.newHoverBound = '1';
-            const onEnter = () => {
-                if (card._newHoverTimer) {
-                    clearTimeout(card._newHoverTimer);
+        this.elements.newsGrid
+            .querySelectorAll('.news-card.news-card--state-new, .news-card.news-card--new')
+            .forEach((card) => {
+                if (card.dataset.newHoverBound === '1') {
+                    return;
                 }
-                card._newHoverTimer = window.setTimeout(() => {
-                    this.clearNewArticleHighlight(card);
-                }, 3000);
-            };
-            const onLeave = () => {
-                if (card._newHoverTimer) {
-                    clearTimeout(card._newHoverTimer);
-                    card._newHoverTimer = null;
-                }
-            };
-            card.addEventListener('mouseenter', onEnter);
-            card.addEventListener('mouseleave', onLeave);
-        });
+                card.dataset.newHoverBound = '1';
+                const onEnter = () => {
+                    if (
+                        !card.classList.contains('news-card--state-new') &&
+                        !card.classList.contains('news-card--new')
+                    ) {
+                        return;
+                    }
+                    this.clearArticleSeenHoverTimer(card);
+                    card._newHoverTimer = window.setTimeout(() => {
+                        if (
+                            card.classList.contains('news-card--state-new') ||
+                            card.classList.contains('news-card--new')
+                        ) {
+                            this.markArticleReadStateFromCard(card, 'seen');
+                        }
+                    }, ARTICLE_SEEN_HOVER_DELAY_MS);
+                };
+                const onLeave = () => {
+                    this.clearArticleSeenHoverTimer(card);
+                };
+                card.addEventListener('mouseenter', onEnter);
+                card.addEventListener('mouseleave', onLeave);
+            });
     }
 
-    clearNewArticleHighlight(card) {
-        if (!card || !card.classList.contains('news-card--new')) {
-            return;
-        }
-        card.classList.remove('news-card--new');
-        card.removeAttribute('aria-label');
-        const id = card.dataset.id;
+    removePendingNewStateForItem(item) {
+        const id = item && item.id ? String(item.id) : '';
         if (id && this._newArticleIds) {
             this._newArticleIds.delete(id);
         }
-        const item = Array.isArray(this.newsItems)
-            ? this.newsItems.find((entry) => entry && entry.id === id)
-            : null;
-        const sourceId = this.normalizeNewsSource(this._loadedNewsSource || this.settings?.newsSource);
+        const sourceId =
+            App.normalizeStoredNewsSourceId(item && item.newsSource) ||
+            this.normalizeNewsSource(this._loadedNewsSource || this.settings?.newsSource);
         const url = App.canonicalArticleUrl(item && (item.url || item.link || ''));
         if (sourceId && url) {
             const pending = this.getPendingNewArticleUrlSetForSource(sourceId);
@@ -8050,14 +8363,105 @@ class App {
                 this.setPendingNewArticleUrlsForSource(sourceId, pending);
             }
         }
-        const badge = card.querySelector('.news-card-new-badge');
-        if (badge) {
-            badge.remove();
+    }
+
+    updateArticleReadStateInLists(articleId, readState) {
+        const id = String(articleId || '').trim();
+        if (!id) {
+            return null;
         }
-        if (card._newHoverTimer) {
-            clearTimeout(card._newHoverTimer);
-            card._newHoverTimer = null;
+        let updated = null;
+        [this.newsItems, this.filteredNewsItems].forEach((list) => {
+            (Array.isArray(list) ? list : []).forEach((entry) => {
+                if (entry && entry.id === id) {
+                    entry.readState = readState;
+                    updated = entry;
+                }
+            });
+        });
+        return updated;
+    }
+
+    applyArticleStateToCard(card, state) {
+        if (!card) {
+            return;
         }
+        const displayState = state === 'new' ? 'new' : App.normalizeArticleReadState(state);
+        card.classList.remove(
+            'news-card--new',
+            'news-card--state-new',
+            'news-card--state-seen',
+            'news-card--state-read'
+        );
+        if (displayState) {
+            card.classList.add(`news-card--state-${displayState}`);
+            if (displayState === 'new') {
+                card.classList.add('news-card--new');
+            }
+            card.dataset.articleState = displayState;
+            card.setAttribute('aria-label', this.getArticleStateAriaLabel(displayState));
+        } else {
+            delete card.dataset.articleState;
+            card.removeAttribute('aria-label');
+        }
+
+        const readState = App.normalizeArticleReadState(displayState);
+        if (readState) {
+            card.dataset.articleReadState = readState;
+        } else {
+            delete card.dataset.articleReadState;
+        }
+
+        let badge = card.querySelector('[data-article-state-badge]');
+        if (!displayState) {
+            if (badge) {
+                badge.remove();
+            }
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.setAttribute('data-article-state-badge', '');
+            const headerMain = card.querySelector('.news-header-main');
+            const selectWrap = headerMain ? headerMain.querySelector('.article-select-wrap') : null;
+            if (selectWrap) {
+                selectWrap.insertAdjacentElement('afterend', badge);
+            } else if (headerMain) {
+                headerMain.prepend(badge);
+            }
+        }
+        badge.className = `news-card-state-badge news-card-state-badge--${displayState}`;
+        badge.textContent = this.getArticleStateBadgeLabel(displayState);
+    }
+
+    markArticleReadStateFromCard(card, readState) {
+        const nextState = App.normalizeArticleReadState(readState);
+        if (!card || !nextState) {
+            return;
+        }
+        const currentCardState = App.normalizeArticleReadState(card.dataset.articleReadState);
+        if (currentCardState === 'read' && nextState === 'seen') {
+            return;
+        }
+        const articleId = card.dataset ? String(card.dataset.id || '').trim() : '';
+        if (!articleId) {
+            return;
+        }
+        const resolvedItem = this.resolveNewsItemForSummary(articleId, '') ||
+            this.updateArticleReadStateInLists(articleId, nextState);
+        if (!resolvedItem) {
+            return;
+        }
+        const currentItemState = this.getArticleReadStateForItem(resolvedItem);
+        if (currentItemState === 'read' && nextState === 'seen') {
+            return;
+        }
+        resolvedItem.readState = nextState;
+        this.updateArticleReadStateInLists(articleId, nextState);
+        this.removePendingNewStateForItem(resolvedItem);
+        this.clearArticleSeenHoverTimer(card);
+        this.applyArticleStateToCard(card, nextState);
+        void this.saveArticleFlagsForItem(resolvedItem, { readState: nextState });
     }
 
     async confirmAndSummarizeAllRegenerate() {
@@ -8418,7 +8822,7 @@ class App {
         }
         return `
             <div class="news-card-thumbnail-wrap">
-                <a class="news-card-thumbnail" href="${this.escapeHtml(articleHref)}" target="_blank" rel="noopener noreferrer">
+                <a class="news-card-thumbnail" href="${this.escapeHtml(articleHref)}" target="_blank" rel="noopener noreferrer" data-original-article-link="1" data-article-id="${this.escapeHtml(item.id || '')}">
                     <img
                         src="${this.escapeHtml(thumbnailUrl)}"
                         alt=""
@@ -8499,14 +8903,23 @@ class App {
 
     createNewsCardHTML(item) {
         const timeDisplay = item.timestamp || 'Aktuell';
-        const isNew = this._newArticleIds && this._newArticleIds.has(item.id);
+        const articleState = this.getArticleDisplayState(item);
+        const articleReadState = App.normalizeArticleReadState(item.readState);
         const isSelected = this.selectedArticleIds.has(item.id);
-        const newClass = isNew ? ' news-card--new' : '';
-        const badge = isNew
-            ? `<span class="news-card-new-badge">${this.escapeHtml(this._i18nNewsBadge || 'Neu')}</span>`
+        const stateClass = articleState
+            ? ` news-card--state-${articleState}${articleState === 'new' ? ' news-card--new' : ''}`
             : '';
-        const ariaNew = isNew
-            ? ` aria-label="${this.escapeHtml(this._i18nNewsAria || 'Neuer Artikel seit der letzten Aktualisierung')}"`
+        const badge = articleState
+            ? `<span class="news-card-state-badge news-card-state-badge--${articleState}" data-article-state-badge>${this.escapeHtml(this.getArticleStateBadgeLabel(articleState))}</span>`
+            : '';
+        const ariaState = articleState
+            ? ` aria-label="${this.escapeHtml(this.getArticleStateAriaLabel(articleState))}"`
+            : '';
+        const readStateAttr = articleReadState
+            ? ` data-article-read-state="${this.escapeHtml(articleReadState)}"`
+            : '';
+        const articleStateAttr = articleState
+            ? ` data-article-state="${this.escapeHtml(articleState)}"`
             : '';
         const favoriteLabel = item.isFavorite ? 'Favorit entfernen' : 'Als Favorit markieren';
         const hideLabel = item.isHidden ? 'Einblenden' : 'Ausblenden';
@@ -8536,7 +8949,7 @@ class App {
         );
 
         return `
-            <article class="news-card${newClass}" data-id="${item.id}" lang="${App.articleContentHtmlLang(item, this.settings && this.settings.newsSource)}"${ariaNew}>
+            <article class="news-card${stateClass}" data-id="${item.id}"${articleStateAttr}${readStateAttr} lang="${App.articleContentHtmlLang(item, this.settings && this.settings.newsSource)}"${ariaState}>
                 <div class="news-header">
                     <div class="news-header-main">
                         <span class="news-card-drag-handle notranslate" draggable="true" title="Artikel verschieben" aria-label="Artikel verschieben">⋮⋮</span>
@@ -8557,7 +8970,7 @@ class App {
                 ${thumbnailHtml}
 
                 <h3 class="news-title">
-                    <a href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(item.link))}" target="_blank" rel="noopener noreferrer">
+                    <a href="${this.escapeHtml(this.maybeWrapUrlForArticleTranslation(item.link))}" target="_blank" rel="noopener noreferrer" data-original-article-link="1" data-article-id="${this.escapeHtml(item.id || '')}">
                         ${titleFavoriteMarker}
                         <span class="news-title-translate" data-original-text="${this.escapeHtml(item.title)}">${this.escapeHtml(item.title)}</span>
                     </a>
@@ -10018,6 +10431,19 @@ class App {
         root.setProperty('--header-control-border-fill', hdrTransparency.controlBorderFill);
     }
 
+    applyArticleStateColorVariables(colors) {
+        const normalized = App.normalizeArticleStateColors(colors || this.settings?.articleStateColors);
+        const root = document.documentElement.style;
+        ARTICLE_STATE_COLOR_IDS.forEach((state) => {
+            const color = normalized[state];
+            root.setProperty(`--article-state-${state}-color`, color);
+            root.setProperty(
+                `--article-state-${state}-text`,
+                App.readableTextColorForBackground(color)
+            );
+        });
+    }
+
     /**
      * @returns {{ colorTheme: string, themeCustomColors: { light: Object, dark: Object }, themeCustomHeaderColors: { light: Object, dark: Object }, themeSurfaceBrightness: { light: number, dark: number }, themeHeaderTransparency: { light: number, dark: number } }}
      */
@@ -10086,6 +10512,17 @@ class App {
         const ct = App.normalizeColorTheme(this.settings?.colorTheme);
         if (el.settingsColorThemeSelect) {
             el.settingsColorThemeSelect.value = ct;
+        }
+
+        const articleStateColors = App.normalizeArticleStateColors(this.settings?.articleStateColors);
+        if (el.articleStateNewColor) {
+            el.articleStateNewColor.value = articleStateColors.new;
+        }
+        if (el.articleStateSeenColor) {
+            el.articleStateSeenColor.value = articleStateColors.seen;
+        }
+        if (el.articleStateReadColor) {
+            el.articleStateReadColor.value = articleStateColors.read;
         }
 
         const tc = App.normalizeThemeCustomColors(this.settings?.themeCustomColors);
@@ -10263,6 +10700,7 @@ class App {
         this.applyTheme();
         this.applyColorTheme();
         this.applyThemeSurfaceVariables();
+        this.applyArticleStateColorVariables();
     }
 
     gatherThemeCustomColorsFromModalForSave() {
@@ -10308,6 +10746,15 @@ class App {
         maybe('headerText', readHex(el.themeDarkHeaderText), dd.headerText, out.dark);
         maybe('headerBorder', readHex(el.themeDarkHeaderBorder), dd.headerBorder, out.dark);
         return App.normalizeThemeCustomHeaderColors(out);
+    }
+
+    gatherArticleStateColorsFromModalForSave() {
+        const el = this.elements;
+        return App.normalizeArticleStateColors({
+            new: el.articleStateNewColor?.value,
+            seen: el.articleStateSeenColor?.value,
+            read: el.articleStateReadColor?.value
+        });
     }
 
     wireThemeSettingsListeners() {
@@ -10366,6 +10813,13 @@ class App {
                 surf('dark');
             })
         );
+        [
+            el.articleStateNewColor,
+            el.articleStateSeenColor,
+            el.articleStateReadColor
+        ].forEach((inp) => on(inp, 'input', () => {
+            this.applyArticleStateColorVariables(this.gatherArticleStateColorsFromModalForSave());
+        }));
 
         on(el.themeResetDefaultsBtn, 'click', () => {
             const colorTheme = App.normalizeColorTheme(
@@ -10429,8 +10883,18 @@ class App {
             if (el.themeDarkHeaderTransparency) {
                 el.themeDarkHeaderTransparency.value = String(THEME_DEFAULT_HEADER_TRANSPARENCY.dark);
             }
+            if (el.articleStateNewColor) {
+                el.articleStateNewColor.value = ARTICLE_STATE_COLOR_DEFAULTS.new;
+            }
+            if (el.articleStateSeenColor) {
+                el.articleStateSeenColor.value = ARTICLE_STATE_COLOR_DEFAULTS.seen;
+            }
+            if (el.articleStateReadColor) {
+                el.articleStateReadColor.value = ARTICLE_STATE_COLOR_DEFAULTS.read;
+            }
             this.syncThemeModalBrightnessHints();
             this.applyThemeAppearancePreviewFromModal();
+            this.applyArticleStateColorVariables(this.gatherArticleStateColorsFromModalForSave());
         });
     }
 
@@ -12325,6 +12789,7 @@ class App {
             : App.normalizeColorTheme(this.settings?.colorTheme);
         const themeCustomColorsSaved = this.gatherThemeCustomColorsFromModalForSave();
         const themeCustomHeaderColorsSaved = this.gatherThemeCustomHeaderColorsFromModalForSave();
+        const articleStateColorsSaved = this.gatherArticleStateColorsFromModalForSave();
         const themeSurfaceBrightnessSaved =
             this.elements.themeBrightnessLight && this.elements.themeBrightnessDark
                 ? App.normalizeThemeSurfaceBrightness({
@@ -12360,6 +12825,7 @@ class App {
             localStorage.setItem('heise_theme_surface_brightness', JSON.stringify(themeSurfaceBrightnessSaved));
             localStorage.setItem('heise_theme_header_transparency', JSON.stringify(themeHeaderTransparencySaved));
             localStorage.setItem('heise_article_thumbnails_enabled', articleThumbnailsEnabledSaved ? '1' : '0');
+            localStorage.setItem('heise_article_state_colors', JSON.stringify(articleStateColorsSaved));
         } catch (_) {
             /* ignore */
         }
@@ -12371,6 +12837,7 @@ class App {
         this.settings.colorTheme = colorThemeSaved;
         this.settings.themeCustomColors = themeCustomColorsSaved;
         this.settings.themeCustomHeaderColors = themeCustomHeaderColorsSaved;
+        this.settings.articleStateColors = articleStateColorsSaved;
         this.settings.themeSurfaceBrightness = themeSurfaceBrightnessSaved;
         this.settings.themeHeaderTransparency = themeHeaderTransparencySaved;
         this.settings.articleThumbnailsEnabled = articleThumbnailsEnabledSaved;
@@ -12390,6 +12857,7 @@ class App {
                 colorTheme: colorThemeSaved,
                 themeCustomColors: themeCustomColorsSaved,
                 themeCustomHeaderColors: themeCustomHeaderColorsSaved,
+                articleStateColors: articleStateColorsSaved,
                 themeSurfaceBrightness: themeSurfaceBrightnessSaved,
                 themeHeaderTransparency: themeHeaderTransparencySaved,
                 articleThumbnailsEnabled: articleThumbnailsEnabledSaved,
@@ -12401,6 +12869,7 @@ class App {
         }
         this.applyTheme();
         this.applyColorTheme();
+        this.applyArticleStateColorVariables(articleStateColorsSaved);
         App.syncHeiseMagazineFeedMirror(nextMagazines);
 
         this.rebuildNewsSourceSelect();

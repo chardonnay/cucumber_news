@@ -177,8 +177,12 @@
   },
   "news": {
     "new_badge": "Neu",
+    "seen_badge": "Gesehen",
+    "read_badge": "Gelesen",
     "status_new": "Nachrichten aktualisiert — {count} neue Artikel.",
     "aria_new": "Neuer Artikel seit der letzten Aktualisierung",
+    "aria_seen": "Artikel gesehen",
+    "aria_read": "Artikel gelesen",
     "auto_summary_new_ok": "KI: {ok} Zusammenfassung(en) erstellt und angezeigt.",
     "auto_summary_new_mixed": "KI: {ok} ok, {failed} fehlgeschlagen.",
     "alt_links_count": "{count} alternative Quellen",
@@ -400,6 +404,11 @@
     "theme_header_label_bg": "Leisten-Hintergrund",
     "theme_header_label_text": "Text und Bedienelemente",
     "theme_header_label_border": "Unterkante / Rahmen",
+    "article_state_colors_title": "Artikel-Markierungen",
+    "article_state_colors_hint": "Farben für die Status-Badges und Kartenmarkierungen: Neu, Gesehen und Gelesen.",
+    "article_state_new_color": "Neu",
+    "article_state_seen_color": "Gesehen",
+    "article_state_read_color": "Gelesen",
     "theme_reset_defaults": "Standard wiederherstellen"
   },
   "ki_stats": {

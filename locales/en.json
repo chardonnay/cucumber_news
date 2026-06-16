@@ -177,8 +177,12 @@
   },
   "news": {
     "new_badge": "New",
+    "seen_badge": "Seen",
+    "read_badge": "Read",
     "status_new": "News updated — {count} new article(s).",
     "aria_new": "New article since the last update",
+    "aria_seen": "Article seen",
+    "aria_read": "Article read",
     "auto_summary_new_ok": "AI: created and displayed {ok} summary/summaries.",
     "auto_summary_new_mixed": "AI: {ok} ok, {failed} failed.",
     "alt_links_count": "{count} alternative sources",
@@ -400,6 +404,11 @@
     "theme_header_label_bg": "Bar background",
     "theme_header_label_text": "Text and controls",
     "theme_header_label_border": "Bottom border",
+    "article_state_colors_title": "Article markers",
+    "article_state_colors_hint": "Colors for status badges and card highlights: New, Seen, and Read.",
+    "article_state_new_color": "New",
+    "article_state_seen_color": "Seen",
+    "article_state_read_color": "Read",
     "theme_reset_defaults": "Restore default colors"
   },
   "ki_stats": {

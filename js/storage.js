@@ -47,7 +47,7 @@ class NewsStorage {
                     const youtubeStore = db.createObjectStore('youtubeRelated', { keyPath: 'articleKey' });
                 }
 
-                // Per-article UI flags (favorite/hidden)
+                // Per-article UI flags (favorite/hidden/read state)
                 if (!db.objectStoreNames.contains('articleFlags')) {
                     db.createObjectStore('articleFlags', { keyPath: 'articleKey' });
                 }
@@ -202,6 +202,44 @@ class NewsStorage {
             transaction.onerror = () => {
                 reject(transaction.error);
             };
+        });
+    }
+
+    /**
+     * Save or update one article in the persistent news cache without touching other source rows.
+     * @param {Record<string, unknown>} article
+     * @returns {Promise<boolean>}
+     */
+    async saveNewsArticle(article) {
+        if (!article || article.id == null || String(article.id).trim() === '') {
+            return false;
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['news'], 'readwrite');
+            const store = transaction.objectStore('news');
+            const request = store.put(article);
+
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Remove one article from the persistent news cache by its store key.
+     * @param {IDBValidKey|string|number|Date} articleId
+     * @returns {Promise<boolean>}
+     */
+    async deleteNewsArticle(articleId) {
+        if (articleId == null || String(articleId).trim() === '') {
+            return false;
+        }
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['news'], 'readwrite');
+            const store = transaction.objectStore('news');
+            const request = store.delete(articleId);
+
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
         });
     }
 
@@ -373,6 +411,8 @@ class NewsStorage {
             themeHeaderTransparency: { light: 0, dark: 0, version: 1 },
             /** Accent palette: heise | ocean | forest | violet | amber | rose | slate | midnight */
             colorTheme: 'slate',
+            /** Badge/highlight colors for article states: new, seen, read */
+            articleStateColors: { new: '#2d8a3e', seen: '#d9a20b', read: '#6b7280' },
             /** OpenAI-compatible API base including /v1, e.g. http://127.0.0.1:1234/v1 */
             apiBaseUrl: 'http://127.0.0.1:1234/v1',
             /** LM Studio 0.4+ native REST: server root only, e.g. http://127.0.0.1:1234 */
