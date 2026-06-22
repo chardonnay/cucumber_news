@@ -1882,6 +1882,101 @@ class AISummarizer {
     }
 
     /**
+     * Writing style / tone for the summary. `heise_summary_style` in localStorage.
+     * @param {unknown} raw
+     * @returns {'factual'|'professional'|'casual'}
+     */
+    static normalizeSummaryStyle(raw) {
+        const s = String(raw || 'factual').trim().toLowerCase();
+        return s === 'professional' || s === 'casual' || s === 'custom' || s === 'factual'
+            ? s
+            : 'factual';
+    }
+
+    /** @returns {'factual'|'professional'|'casual'} */
+    getSummaryStyle() {
+        try {
+            return AISummarizer.normalizeSummaryStyle(localStorage.getItem('heise_summary_style'));
+        } catch (_) {
+            return 'factual';
+        }
+    }
+
+    /**
+     * Optional free-text style wish (`heise_summary_style_custom`). Sanitized for safe prompt embedding:
+     * newlines flattened, fence/marker runs neutralized, length-capped.
+     * @returns {string}
+     */
+    getSummaryStyleCustom() {
+        let raw = '';
+        try {
+            raw = localStorage.getItem('heise_summary_style_custom') || '';
+        } catch (_) {
+            raw = '';
+        }
+        return AISummarizer.sanitizeStyleCustomText(raw);
+    }
+
+    /**
+     * @param {unknown} raw
+     * @returns {string}
+     */
+    static sanitizeStyleCustomText(raw) {
+        let s = String(raw == null ? '' : raw);
+        s = s.replace(/[\r\n]+/g, ' ');
+        s = s.replace(/-{3,}/g, '—'); // neutralize ---KI_SUMMARY--- / ---KI_LINKS--- style markers
+        // Neutralize every double-quote variant so a crafted custom text cannot close the
+        // quoted boundary it is embedded in (buildStyleInstruction wraps it in „…“ / “…”)
+        // and inject instructions after a premature closing quote.
+        s = s.replace(/["«»“”„‟″〝〞＂]/g, "'");
+        s = s.replace(/\s+/g, ' ').trim();
+        if (s.length > 300) {
+            s = s.slice(0, 300).trim();
+        }
+        return s;
+    }
+
+    /**
+     * Builds a localized style/tone instruction for the system prompt.
+     * Non-de/non-en languages reuse the English phrasing (the output language is enforced elsewhere).
+     * `custom` uses the user's free text as the sole style instruction (empty → neutral factual).
+     * @param {'factual'|'professional'|'casual'|'custom'} style
+     * @param {string} customText sanitized inside this method
+     * @param {string} lang ISO subtag (de/en/…)
+     * @returns {string} non-empty style instruction
+     */
+    static buildStyleInstruction(style, customText, lang) {
+        const normStyle = AISummarizer.normalizeSummaryStyle(style);
+        const custom = AISummarizer.sanitizeStyleCustomText(customText);
+        const isDe = String(lang || '').toLowerCase() === 'de';
+        const base = isDe
+            ? {
+                  factual: 'Schreibe sachlich, neutral und nüchtern, ohne wertende oder reißerische Sprache.',
+                  professional:
+                      'Schreibe in einem professionellen, seriösen Stil wie in einer Qualitätszeitung.',
+                  casual:
+                      'Schreibe locker, zugänglich und leicht verständlich in einem entspannten Ton (gern etwas umgangssprachlich), aber sachlich korrekt.'
+              }
+            : {
+                  factual:
+                      'Write in a factual, neutral and matter-of-fact tone, without sensational or opinionated language.',
+                  professional: 'Write in a professional, serious style like a quality newspaper.',
+                  casual:
+                      'Write in a relaxed, accessible and easy-to-read tone (a little colloquial is fine), but stay factually accurate.'
+              };
+        if (normStyle === 'custom') {
+            if (!custom) {
+                // „Eigener Stil“ ausgewählt, aber kein Text → neutral statt leerer Vorgabe.
+                return base.factual;
+            }
+            return isDe
+                ? `Schreibe im folgenden vom Nutzer gewünschten Stil: „${custom}“.`
+                : `Write in the following style requested by the user: “${custom}”.`;
+        }
+        return base[normStyle] || base.factual;
+    }
+
+    /**
      * Primary language subtag for prompts, e.g. `de`, `en`, `fr`.
      * @returns {string}
      */
@@ -1972,6 +2067,11 @@ class AISummarizer {
         const descLine = description ? `Beschreibung: ${description}` : '';
         const titleEsc = String(title || '');
         const descEsc = String(description || '');
+        const styleInstruction = AISummarizer.buildStyleInstruction(
+            this.getSummaryStyle(),
+            this.getSummaryStyleCustom(),
+            lang
+        );
         /* Alternative links are fetched by the app via Bing News RSS (GET /api/search-news), not by the model. */
 
         if (lang === 'de') {
@@ -1984,11 +2084,12 @@ URL: ${url}
 
 Wichtig für die Ausgabe:
 - Nur der fertige Zusammenfassungstext auf Deutsch.
+- Stil: ${styleInstruction}
 - Kein „Thinking Process“, keine Zwischenüberlegungen, keine nummerierten Arbeitsschritte, kein Englisch, keine Meta-Kommentare (z. B. „Attempt“, „Critique“, „Final Review“).
 - Keine Einleitung wie „Hier ist die Zusammenfassung:“ — beginne direkt mit dem ersten Satz der Meldung.`;
 
             const systemContent =
-                'Du bist ein professioneller Nachrichten-Zusammenfasser für ein deutsches Publikum. Liefere ausschließlich den lesbaren Zusammenfassungstext auf Deutsch — niemals interne Denkprozesse, Entwürfe oder zweisprachige Analysen.';
+                `Du bist ein professioneller Nachrichten-Zusammenfasser für ein deutsches Publikum. Liefere ausschließlich den lesbaren Zusammenfassungstext auf Deutsch — niemals interne Denkprozesse, Entwürfe oder zweisprachige Analysen. ${styleInstruction}`;
 
             return { prompt, systemContent };
         }
@@ -2003,11 +2104,12 @@ URL: ${url}
 
 Output rules:
 - Only the final summary text in English.
+- Style: ${styleInstruction}
 - No chain-of-thought, no numbered drafts, no meta-commentary (e.g. “Attempt”, “Critique”, “Final Review”).
 - Do not start with “Here is the summary:” — begin directly with the first sentence.`;
 
             const systemContent =
-                'You are a professional news summarizer for an English-speaking audience. Output only the readable summary in English — never internal reasoning, drafts, or bilingual commentary.';
+                `You are a professional news summarizer for an English-speaking audience. Output only the readable summary in English — never internal reasoning, drafts, or bilingual commentary. ${styleInstruction}`;
 
             return { prompt, systemContent };
         }
@@ -2022,10 +2124,11 @@ URL: ${url}
 
 Output rules:
 - The entire summary must be written only in ${langName} (language code: ${lang}).
+- Style: ${styleInstruction}
 - No chain-of-thought, no numbered drafts, no meta-commentary.
 - Do not preface with a label like “Summary:” — start with the first sentence of the summary.`;
 
-        const systemContent = `You are a professional news summarizer. Output only the final summary text entirely in ${langName} — never internal reasoning or mixed-language drafts.`;
+        const systemContent = `You are a professional news summarizer. Output only the final summary text entirely in ${langName} — never internal reasoning or mixed-language drafts. ${styleInstruction}`;
 
         return { prompt, systemContent };
     }

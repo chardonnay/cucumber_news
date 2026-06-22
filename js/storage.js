@@ -451,6 +451,10 @@ class NewsStorage {
             webSearchEngine: 'duckduckgo',
             /** KI summary language: site = match article site (de/en), browser = navigator language */
             summaryLangMode: 'site',
+            /** KI summary writing style / tone: factual | professional | casual */
+            summaryStyle: 'factual',
+            /** Optional free-text style wish appended on top of the chosen summaryStyle (empty = none) */
+            summaryStyleCustom: '',
             /** Machine-translate article area (titles, summaries, links text) via Google Translate widget */
             articleTranslationEnabled: false,
             /** BCP 47 / Google Translate target language (e.g. de, en, fr, zh-CN) */

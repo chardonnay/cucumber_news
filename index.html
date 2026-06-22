@@ -3326,6 +3326,34 @@
                 </select>
             </div>
 
+            <div class="setting-group">
+                <label for="summaryStyle" class="setting-label" id="summaryStyleLabel">Stil der KI-Zusammenfassung</label>
+                <p id="summaryStyleHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Tonfall und Schreibstil der Zusammenfassungen. Bei „Eigener Stil“ wird das Textfeld unten verwendet. Wirkt auf neu erzeugte Zusammenfassungen — bereits zwischengespeicherte ändern sich erst nach „Neu erstellen“.
+                </p>
+                <select id="summaryStyle" class="setting-input" aria-describedby="summaryStyleHint">
+                    <option value="factual">Sachlich</option>
+                    <option value="professional">Professionell</option>
+                    <option value="casual">Locker</option>
+                    <option value="custom">Eigener Stil</option>
+                </select>
+            </div>
+
+            <div class="setting-group" id="summaryStyleCustomWrap">
+                <label for="summaryStyleCustom" class="setting-label" id="summaryStyleCustomLabel">Eigener Stil – Beschreibung</label>
+                <p id="summaryStyleCustomHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Wird verwendet, wenn oben „Eigener Stil“ ausgewählt ist. Beschreibe den gewünschten Tonfall/Schreibstil für die KI.
+                </p>
+                <textarea
+                    id="summaryStyleCustom"
+                    class="setting-input"
+                    rows="3"
+                    maxlength="300"
+                    placeholder="z. B. „Mit einer Prise Humor, aber sachlich korrekt — keine Fachbegriffe ohne kurze Erklärung.“"
+                    aria-describedby="summaryStyleCustomHint"
+                ></textarea>
+            </div>
+
             <div class="setting-group" id="articleTranslationSettingsGroup">
                 <label class="setting-label" style="display: flex; align-items: flex-start; gap: 0.5rem; font-weight: normal; cursor: pointer;">
                     <input type="checkbox" id="articleTranslationEnabled" style="width: auto; margin-top: 0.2rem;">

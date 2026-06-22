@@ -327,6 +327,8 @@ class App {
             lmModel: document.getElementById('lmModel'),
             lmModelRefreshBtn: document.getElementById('lmModelRefreshBtn'),
             summaryLangMode: document.getElementById('summaryLangMode'),
+            summaryStyle: document.getElementById('summaryStyle'),
+            summaryStyleCustom: document.getElementById('summaryStyleCustom'),
             articleTranslationEnabled: document.getElementById('articleTranslationEnabled'),
             articleTranslationTargetLang: document.getElementById('articleTranslationTargetLang'),
             articleTranslationLinkProvider: document.getElementById('articleTranslationLinkProvider'),
@@ -1184,6 +1186,10 @@ class App {
 
         if (this.elements.articleTranslationEnabled) {
             this.elements.articleTranslationEnabled.addEventListener('change', () => this.syncArticleTranslationFormDisabled());
+        }
+
+        if (this.elements.summaryStyle) {
+            this.elements.summaryStyle.addEventListener('change', () => this.syncSummaryStyleCustomVisibility());
         }
 
         // Aktualisierungsintervall (Header)
@@ -2773,6 +2779,8 @@ class App {
                 settings.favoriteNewsSources
             );
             const summaryLangMode = settings.summaryLangMode === 'browser' ? 'browser' : 'site';
+            const summaryStyle = App.normalizeSummaryStyle(settings.summaryStyle);
+            const summaryStyleCustom = App.normalizeSummaryStyleCustom(settings.summaryStyleCustom);
 
             const reasoningStored = AISummarizer.normalizeLmReasoningParam(settings.reasoning);
             const reasoningEnabledStored = AISummarizer.normalizeLmReasoningEnabled(
@@ -2868,6 +2876,8 @@ class App {
                 enabledNewsSources: enabledOrdered,
                 newsSource,
                 summaryLangMode,
+                summaryStyle,
+                summaryStyleCustom,
                 reasoning: reasoningStored,
                 reasoningEnabled: reasoningEnabledStored,
                 alternativeLinksCount,
@@ -2893,6 +2903,8 @@ class App {
             try {
                 localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabledOrdered));
                 localStorage.setItem('heise_summary_lang_mode', summaryLangMode);
+                localStorage.setItem('heise_summary_style', summaryStyle);
+                localStorage.setItem('heise_summary_style_custom', summaryStyleCustom);
                 localStorage.setItem('heise_alternative_links_blacklist', alternativeLinksDomainBlacklist);
                 localStorage.setItem('heise_forum_entries_discovery_mode', forumEntriesDiscoveryMode);
                 localStorage.setItem('heise_article_thumbnails_enabled', articleThumbnailsEnabled ? '1' : '0');
@@ -3055,6 +3067,13 @@ class App {
             if (this.elements.summaryLangMode) {
                 this.elements.summaryLangMode.value = summaryLangMode;
             }
+            if (this.elements.summaryStyle) {
+                this.elements.summaryStyle.value = summaryStyle;
+            }
+            if (this.elements.summaryStyleCustom) {
+                this.elements.summaryStyleCustom.value = summaryStyleCustom;
+            }
+            this.syncSummaryStyleCustomVisibility();
 
             this.disabledCategoriesBySource = { ...disabledCategoriesBySource };
             this.favoriteNewsSources = [...favoriteNewsSources];
@@ -3568,6 +3587,33 @@ class App {
     static normalizeWebSearchEngine(raw) {
         const s = String(raw || 'duckduckgo').trim().toLowerCase();
         return s === 'google' || s === 'bing' || s === 'duckduckgo' ? s : 'duckduckgo';
+    }
+
+    /**
+     * KI summary writing style. Unknown values fall back to the neutral `factual` default.
+     * `custom` uses the free-text summaryStyleCustom as the sole style instruction.
+     * @param {unknown} raw
+     * @returns {'factual'|'professional'|'casual'|'custom'}
+     */
+    static normalizeSummaryStyle(raw) {
+        const s = String(raw || 'factual').trim().toLowerCase();
+        return s === 'professional' || s === 'casual' || s === 'custom' || s === 'factual'
+            ? s
+            : 'factual';
+    }
+
+    /**
+     * Optional free-text style wish: trimmed and capped (newlines kept for textarea redisplay).
+     * @param {unknown} raw
+     * @returns {string}
+     */
+    static normalizeSummaryStyleCustom(raw) {
+        let s = String(raw == null ? '' : raw).replace(/\r\n?/g, '\n');
+        s = s.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        if (s.length > 300) {
+            s = s.slice(0, 300).trim();
+        }
+        return s;
     }
 
     /** @param {unknown} raw */
@@ -4804,6 +4850,45 @@ class App {
                         oBr.textContent = ki.summary_lang_browser;
                     }
                 }
+                const styleLabel = document.getElementById('summaryStyleLabel');
+                if (styleLabel && ki.summary_style_label) {
+                    styleLabel.textContent = ki.summary_style_label;
+                }
+                const styleHint = document.getElementById('summaryStyleHint');
+                if (styleHint && ki.summary_style_hint) {
+                    styleHint.textContent = ki.summary_style_hint;
+                }
+                const styleSel = document.getElementById('summaryStyle');
+                if (styleSel) {
+                    const oFactual = styleSel.querySelector('option[value="factual"]');
+                    const oProf = styleSel.querySelector('option[value="professional"]');
+                    const oCasual = styleSel.querySelector('option[value="casual"]');
+                    const oCustom = styleSel.querySelector('option[value="custom"]');
+                    if (oFactual && ki.summary_style_factual) {
+                        oFactual.textContent = ki.summary_style_factual;
+                    }
+                    if (oProf && ki.summary_style_professional) {
+                        oProf.textContent = ki.summary_style_professional;
+                    }
+                    if (oCasual && ki.summary_style_casual) {
+                        oCasual.textContent = ki.summary_style_casual;
+                    }
+                    if (oCustom && ki.summary_style_custom_option) {
+                        oCustom.textContent = ki.summary_style_custom_option;
+                    }
+                }
+                const styleCustomLabel = document.getElementById('summaryStyleCustomLabel');
+                if (styleCustomLabel && ki.summary_style_custom_label) {
+                    styleCustomLabel.textContent = ki.summary_style_custom_label;
+                }
+                const styleCustomHint = document.getElementById('summaryStyleCustomHint');
+                if (styleCustomHint && ki.summary_style_custom_hint) {
+                    styleCustomHint.textContent = ki.summary_style_custom_hint;
+                }
+                const styleCustomEl = document.getElementById('summaryStyleCustom');
+                if (styleCustomEl && ki.summary_style_custom_placeholder) {
+                    styleCustomEl.setAttribute('placeholder', ki.summary_style_custom_placeholder);
+                }
                 const all = document.getElementById('alternativeLinksCountLabel');
                 if (all && ki.alternative_links_label) {
                     all.textContent = ki.alternative_links_label;
@@ -5496,6 +5581,20 @@ class App {
         }
         if (pw) {
             pw.style.opacity = on ? '' : '0.58';
+        }
+    }
+
+    /** Enable/dim the custom-style text field; it only applies when style === 'custom'. */
+    syncSummaryStyleCustomVisibility() {
+        const isCustom =
+            this.elements.summaryStyle && this.elements.summaryStyle.value === 'custom';
+        const ta = this.elements.summaryStyleCustom;
+        const wrap = document.getElementById('summaryStyleCustomWrap');
+        if (ta) {
+            ta.disabled = !isCustom;
+        }
+        if (wrap) {
+            wrap.style.opacity = isCustom ? '' : '0.58';
         }
     }
 
@@ -11305,6 +11404,33 @@ class App {
             this.elements.summaryLangMode.value = summaryLangModeUi;
         }
 
+        let summaryStyleUi = App.normalizeSummaryStyle(this.settings?.summaryStyle);
+        try {
+            const lsStyle = localStorage.getItem('heise_summary_style');
+            if (lsStyle) {
+                summaryStyleUi = App.normalizeSummaryStyle(lsStyle);
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        if (this.elements.summaryStyle) {
+            this.elements.summaryStyle.value = summaryStyleUi;
+        }
+
+        let summaryStyleCustomUi = App.normalizeSummaryStyleCustom(this.settings?.summaryStyleCustom);
+        try {
+            const lsStyleCustom = localStorage.getItem('heise_summary_style_custom');
+            if (lsStyleCustom != null) {
+                summaryStyleCustomUi = App.normalizeSummaryStyleCustom(lsStyleCustom);
+            }
+        } catch (_) {
+            /* ignore */
+        }
+        if (this.elements.summaryStyleCustom) {
+            this.elements.summaryStyleCustom.value = summaryStyleCustomUi;
+        }
+        this.syncSummaryStyleCustomVisibility();
+
         if (this.elements.articleTranslationEnabled) {
             this.elements.articleTranslationEnabled.checked = this.settings?.articleTranslationEnabled === true;
         }
@@ -12979,6 +13105,13 @@ class App {
             ? App.normalizeWebSearchEngine(this.elements.webSearchEngine.value)
             : App.normalizeWebSearchEngine(this.settings?.webSearchEngine);
 
+        const summaryStyleSaved = this.elements.summaryStyle
+            ? App.normalizeSummaryStyle(this.elements.summaryStyle.value)
+            : App.normalizeSummaryStyle(this.settings?.summaryStyle);
+        const summaryStyleCustomSaved = this.elements.summaryStyleCustom
+            ? App.normalizeSummaryStyleCustom(this.elements.summaryStyleCustom.value)
+            : App.normalizeSummaryStyleCustom(this.settings?.summaryStyleCustom);
+
         const articleTranslationEnabled =
             this.elements.articleTranslationEnabled &&
             this.elements.articleTranslationEnabled.checked === true;
@@ -13060,6 +13193,8 @@ class App {
                     ? 'browser'
                     : 'site';
             localStorage.setItem('heise_summary_lang_mode', summaryLangMode);
+            localStorage.setItem('heise_summary_style', summaryStyleSaved);
+            localStorage.setItem('heise_summary_style_custom', summaryStyleCustomSaved);
             localStorage.setItem('heise_rest_same_origin', restSameOrigin ? '1' : '0');
             try {
                 localStorage.setItem('heise_rest_same_origin_manual', '1');
@@ -13106,6 +13241,8 @@ class App {
                 this.elements.summaryLangMode && this.elements.summaryLangMode.value === 'browser'
                     ? 'browser'
                     : 'site',
+            summaryStyle: summaryStyleSaved,
+            summaryStyleCustom: summaryStyleCustomSaved,
             articleTranslationEnabled,
             articleTranslationTargetLang,
             articleTranslationLinkProvider,
