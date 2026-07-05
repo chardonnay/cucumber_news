@@ -306,6 +306,7 @@ class App {
             summarizeAllBtn: document.getElementById('summarizeAllBtn'),
             summarizeAllRefreshBtn: document.getElementById('summarizeAllRefreshBtn'),
             exportBtn: document.getElementById('exportBtn'),
+            manualLink: document.getElementById('manualLink'),
             settingsBtn: document.getElementById('settingsBtn'),
             dashboardSettingsBtn: document.getElementById('dashboardSettingsBtn'),
             dashboardSettingsModal: document.getElementById('dashboardSettingsModal'),
@@ -4347,6 +4348,15 @@ class App {
                     if (headerLoc.export_btn_title) {
                         this.elements.exportBtn.setAttribute('title', headerLoc.export_btn_title);
                         this.elements.exportBtn.setAttribute('aria-label', headerLoc.export_btn_title);
+                    }
+                }
+                if (this.elements.manualLink) {
+                    if (headerLoc.manual_btn) {
+                        this.elements.manualLink.textContent = headerLoc.manual_btn;
+                    }
+                    if (headerLoc.manual_btn_title) {
+                        this.elements.manualLink.setAttribute('title', headerLoc.manual_btn_title);
+                        this.elements.manualLink.setAttribute('aria-label', headerLoc.manual_btn_title);
                     }
                 }
                 if (this.elements.generateSelectedSourcesBtn) {

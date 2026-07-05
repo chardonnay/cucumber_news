@@ -60,6 +60,8 @@
     "youtube_regenerate_title": "Zwischengespeicherte Vorschläge verwerfen und KI erneut ausführen",
     "export_btn": "⤓ Export",
     "export_btn_title": "Artikel exportieren",
+    "manual_btn": "📖 Handbuch",
+    "manual_btn_title": "Handbuch / Anleitung öffnen",
     "generate_selected_sources_btn": "⚡ Alle Artikel aus allen Quellen erneuern",
     "generate_selected_sources_title": "Alle unter Einstellungen aktivierten Quellen vollständig laden und Inhalte im Hintergrund erneuern",
     "settings_dashboard_btn": "Einstellungen",
