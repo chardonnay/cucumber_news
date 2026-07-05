@@ -1,0 +1,21 @@
+== Interactive HTML manual
+
+Besides this AsciiDoc documentation, the app ships a self-contained, browser-based *user manual* at `manual.html`, served same-origin by `scripts/dev_server.py`.
+
+Open it at `http://127.0.0.1:8080/manual.html` or via the *Handbuch* link in the app header.
+
+It consolidates and expands the docs for end users: installation from scratch (Windows, macOS, Linux — including PATH, `venv`, PowerShell execution policy, and ports), the AI/KI modes, a full settings reference, troubleshooting, privacy, and curated external help links (Python, pip/venv, LM Studio, Anthropic Console).
+
+=== Search and "Ask the AI"
+
+* *Search* — a dependency-free, client-side full-text search that lists the matching chapters and sections with highlighted snippets and jump links. No AI and no network involved.
+* *Ask the AI* — type a question in plain language; the page retrieves the most relevant manual sections client-side and sends them together with the question to the *same KI backend the app already uses*. It answers from the manual first and flags when it falls back to general knowledge (for example basic Python/Windows steps). It reuses your existing *KI-Server* settings through `AISummarizer.completePrompt`, so there is no separate AI configuration. A deterministic "related sections" list and a friendly fallback message are shown even when no backend is reachable.
+
+The manual carries its own Content-Security-Policy so LM Studio (same origin or local) and the Anthropic Messages API both work; a *remote* OpenAI-compatible host cannot be pre-allowlisted in a static page CSP.
+
+=== Implementation
+
+* `manual.html` — content and styles; reuses the app's design tokens (accent color, cucumber banner, `Plus Jakarta Sans`, light/dark).
+* `js/manual.js` — builds the search index from the DOM, powers search and retrieval, and handles theming. It initializes from your saved theme (`theme`, `heise_color_theme`) but its light/dark toggle is *page-local* and never changes the app's own setting.
+
+No server change is required: `scripts/dev_server.py` already serves static files from the project root.

@@ -22,6 +22,8 @@ python3 scripts/dev_server.py
 
 The bundled server serves static files and proxies LM Studio (`POST /api/v1/chat`, native `GET /api/v1/models`, fallback `GET /v1/models`) plus feed and helper routes (see link:docs/dev-server-api.adoc[Dev server API]). Many of the new international sources are fetched through the shared `/api/source-feed` route, which builds source-specific RSS streams from Bing News search results or proxies Google News RSS.
 
+TIP: A full, browser-based user manual — installation, configuration reference, client-side search, and an "Ask the AI" panel — is available at `manual.html`. Open `http://127.0.0.1:8080/manual.html` or use the *Handbuch* link in the app header. Details: <<_interactive_html_manual,Interactive HTML manual>>.
+
 === Current UI highlights
 
 * The source selector in the header is sorted alphabetically by the visible source label.
@@ -61,6 +63,7 @@ Without `dev_server`, many `/api/*` routes and same-origin KI proxying are unava
 ----
 news_reader_web/
 ├── index.html              # SPA shell, CSP, styles
+├── manual.html             # Interactive HTML user manual (search + Ask-the-AI)
 ├── images/
 │   └── cucumber-news-banner-v2.png
 ├── js/
@@ -71,7 +74,9 @@ news_reader_web/
 │   ├── heise-comments.js
 │   ├── youtube-related.js
 │   ├── ki-stats.js
-│   └── news-sources-registry.js
+│   ├── news-sources-registry.js
+│   └── manual.js
+
 ├── locales/
 │   ├── de.json
 │   └── en.json
@@ -83,6 +88,8 @@ news_reader_web/
 ----
 
 include::docs/overview.adoc[]
+
+include::docs/manual.adoc[]
 
 include::docs/architecture.adoc[]
 

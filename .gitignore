@@ -8,8 +8,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# KI
+# KI / agent tooling
 .cursor
+.claude/
 
 # Playwright / browser tooling artefacts
 .playwright-cli/
