@@ -3095,6 +3095,23 @@
                         </span>
                     </span>
                 </label>
+                <div class="setting-group" style="margin-top: 0.65rem;">
+                    <label
+                        id="backgroundSelectedSourcesRefreshScopeLabel"
+                        class="setting-label"
+                        for="backgroundSelectedSourcesRefreshScopeSelect"
+                    >
+                        Quellen
+                    </label>
+                    <select id="backgroundSelectedSourcesRefreshScopeSelect" class="setting-input">
+                        <option id="backgroundSelectedSourcesRefreshScopeFavoritesOption" value="favorites" selected>
+                            Nur Favoriten
+                        </option>
+                        <option id="backgroundSelectedSourcesRefreshScopeEnabledOption" value="enabled">
+                            Alle aktivierten Quellen
+                        </option>
+                    </select>
+                </div>
             </div>
             <div class="modal-actions modal-actions--sources-footer">
                 <button type="button" class="btn-secondary" id="dashboardOpenKiLangBtn" title="KI-Server: Sprache der Zusammenfassung">
@@ -3468,6 +3485,17 @@
             </div>
 
             <div class="setting-group">
+                <label for="youtubeSuggestionsDiscoveryMode" id="youtubeSuggestionsDiscoveryModeLabel" class="setting-label">YouTube-Vorschläge erstellen</label>
+                <p id="youtubeSuggestionsDiscoveryModeHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    Steuert, ob die KI-YouTube-Vorschläge erst nach Klick auf „YouTube“ erzeugt werden oder automatisch zusammen mit den KI-Zusammenfassungen vorab erstellt und gecacht werden.
+                </p>
+                <select id="youtubeSuggestionsDiscoveryMode" class="setting-input" aria-describedby="youtubeSuggestionsDiscoveryModeHint">
+                    <option value="click">Erst nach Klick auf „YouTube“</option>
+                    <option value="always">Immer mit den KI-Zusammenfassungen</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
                 <label for="alternativeLinksBlacklist" id="alternativeLinksBlacklistLabel" class="setting-label">Blacklist Domains für alternative Links</label>
                 <p id="alternativeLinksBlacklistHint" class="modal-hint" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
                     Pro Zeile eine Domain (z. B. example.com). Diese Domains werden in alternativen Links ausgeschlossen, inkl. Subdomains. URLs sind ebenfalls erlaubt.
@@ -3782,7 +3810,7 @@
         } catch (e) { /* ignore */ }
     </script>
     <!-- Application Scripts -->
-    <script src="js/storage.js?v=articlestate20260616a"></script>
+    <script src="js/storage.js?v=favoritesbgrefresh20260623a"></script>
     <script src="js/news-sources-registry.js?v=usatodaysections20260428a"></script>
     <script src="js/news-scraper.js?v=usatodaysections20260428b"></script>
     <script src="js/ki-stats.js?v=kimodelhover20260426a"></script>
@@ -3791,7 +3819,7 @@
     <script src="js/youtube-related.js"></script>
     <script src="js/article-translation.js?v=titletranslate20260417b"></script>
     <script src="js/article-exporter.js?v=thumbpdf20260415c"></script>
-    <script src="js/app.js?v=articlestate20260616a"></script>
+    <script src="js/app.js?v=favoritesbgrefresh20260623a"></script>
     
 </body>
 </html>

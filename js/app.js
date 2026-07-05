@@ -340,6 +340,7 @@ class App {
             alternativeLinksCount: document.getElementById('alternativeLinksCount'),
             alternativeLinksDisplayMode: document.getElementById('alternativeLinksDisplayMode'),
             forumEntriesDiscoveryMode: document.getElementById('forumEntriesDiscoveryMode'),
+            youtubeSuggestionsDiscoveryMode: document.getElementById('youtubeSuggestionsDiscoveryMode'),
             alternativeLinksBlacklist: document.getElementById('alternativeLinksBlacklist'),
             webSearchEngine: document.getElementById('webSearchEngine'),
             cancelSettings: document.getElementById('cancelSettings'),
@@ -447,6 +448,9 @@ class App {
             ),
             backgroundSelectedSourcesRefreshEnabled: document.getElementById(
                 'backgroundSelectedSourcesRefreshEnabled'
+            ),
+            backgroundSelectedSourcesRefreshScopeSelect: document.getElementById(
+                'backgroundSelectedSourcesRefreshScopeSelect'
             )
         };
 
@@ -941,6 +945,8 @@ class App {
 
             // Start auto-update timer
             this.startAutoUpdateTimer();
+            // Prewarm favorite sources shortly after start instead of waiting a full interval.
+            this.scheduleImmediateBackgroundRefresh();
 
             // Initial KI-Verbindungstest (GET /v1/models oder Test-Anfrage)
             await this.testKiConnection();
@@ -1127,6 +1133,14 @@ class App {
             this.elements.saveDashboardSettings.addEventListener('click', () =>
                 void this.saveDashboardSettings()
             );
+        }
+        if (this.elements.backgroundSelectedSourcesRefreshEnabled) {
+            this.elements.backgroundSelectedSourcesRefreshEnabled.addEventListener('change', () => {
+                if (this.elements.backgroundSelectedSourcesRefreshScopeSelect) {
+                    this.elements.backgroundSelectedSourcesRefreshScopeSelect.disabled =
+                        !this.elements.backgroundSelectedSourcesRefreshEnabled.checked;
+                }
+            });
         }
         if (this.elements.dashboardOpenKiLangBtn) {
             this.elements.dashboardOpenKiLangBtn.addEventListener('click', () =>
@@ -1929,6 +1943,21 @@ class App {
         return App.normalizeBackgroundSelectedSourcesRefreshEnabled(
             this.settings?.backgroundSelectedSourcesRefreshEnabled
         );
+    }
+
+    /** @returns {'favorites'|'enabled'} */
+    getBackgroundSelectedSourcesRefreshScope() {
+        return App.normalizeBackgroundSelectedSourcesRefreshScope(
+            this.settings?.backgroundSelectedSourcesRefreshScope
+        );
+    }
+
+    /** @returns {string[]} Source ids the background refresh loop should cover, per the configured scope. */
+    getBackgroundRefreshSourceIds() {
+        if (this.getBackgroundSelectedSourcesRefreshScope() === 'favorites') {
+            return this.getEnabledFavoriteNewsSourceIdsSorted();
+        }
+        return this.getEnabledNewsSourceIds();
     }
 
     /**
@@ -2834,6 +2863,9 @@ class App {
             const forumEntriesDiscoveryMode = App.normalizeForumEntriesDiscoveryMode(
                 settings.forumEntriesDiscoveryMode
             );
+            const youtubeSuggestionsDiscoveryMode = App.normalizeYoutubeSuggestionsDiscoveryMode(
+                settings.youtubeSuggestionsDiscoveryMode
+            );
             const alternativeLinksDomainBlacklist = App.normalizeAlternativeLinksDomainBlacklist(
                 settings.alternativeLinksDomainBlacklist
             );
@@ -2844,6 +2876,10 @@ class App {
             const backgroundSelectedSourcesRefreshEnabled =
                 App.normalizeBackgroundSelectedSourcesRefreshEnabled(
                     settings.backgroundSelectedSourcesRefreshEnabled
+                );
+            const backgroundSelectedSourcesRefreshScope =
+                App.normalizeBackgroundSelectedSourcesRefreshScope(
+                    settings.backgroundSelectedSourcesRefreshScope
                 );
 
             const summaryConcurrency = App.normalizeSummaryConcurrency(settings.summaryConcurrency);
@@ -2883,10 +2919,12 @@ class App {
                 alternativeLinksCount,
                 alternativeLinksDisplayMode,
                 forumEntriesDiscoveryMode,
+                youtubeSuggestionsDiscoveryMode,
                 alternativeLinksDomainBlacklist,
                 articleThumbnailsEnabled,
                 articleStateColors,
                 backgroundSelectedSourcesRefreshEnabled,
+                backgroundSelectedSourcesRefreshScope,
                 webSearchEngine,
                 articleTranslationEnabled,
                 articleTranslationTargetLang,
@@ -3628,6 +3666,11 @@ class App {
         return s === 'always' ? 'always' : 'click';
     }
 
+    static normalizeYoutubeSuggestionsDiscoveryMode(raw) {
+        const s = String(raw || 'click').trim().toLowerCase();
+        return s === 'always' ? 'always' : 'click';
+    }
+
     /** @param {unknown} raw */
     static normalizeArticleThumbnailsEnabled(raw) {
         if (raw === false || raw === 0) {
@@ -3648,6 +3691,17 @@ class App {
         }
         const s = String(raw == null ? 'false' : raw).trim().toLowerCase();
         return s === 'true' || s === '1' || s === 'on' || s === 'yes';
+    }
+
+    /**
+     * Scope for the background selected-sources refresh: 'favorites' (only starred) or 'enabled'.
+     * Defaults to 'favorites' (inverted vs. the generation scope normalizer, which defaults to 'enabled').
+     * @param {unknown} raw
+     * @returns {'favorites'|'enabled'}
+     */
+    static normalizeBackgroundSelectedSourcesRefreshScope(raw) {
+        const value = String(raw || '').trim();
+        return value === 'enabled' ? 'enabled' : 'favorites';
     }
 
     /**
@@ -4546,6 +4600,24 @@ class App {
                 if (bgHint && dash && dash.background_selected_sources_refresh_hint) {
                     bgHint.textContent = dash.background_selected_sources_refresh_hint;
                 }
+                const bgScopeLabel = document.getElementById(
+                    'backgroundSelectedSourcesRefreshScopeLabel'
+                );
+                if (bgScopeLabel && dash && dash.background_selected_sources_refresh_scope_label) {
+                    bgScopeLabel.textContent = dash.background_selected_sources_refresh_scope_label;
+                }
+                const bgScopeFav = document.getElementById(
+                    'backgroundSelectedSourcesRefreshScopeFavoritesOption'
+                );
+                if (bgScopeFav && dash && dash.background_selected_sources_refresh_scope_favorites) {
+                    bgScopeFav.textContent = dash.background_selected_sources_refresh_scope_favorites;
+                }
+                const bgScopeEnabled = document.getElementById(
+                    'backgroundSelectedSourcesRefreshScopeEnabledOption'
+                );
+                if (bgScopeEnabled && dash && dash.background_selected_sources_refresh_scope_enabled) {
+                    bgScopeEnabled.textContent = dash.background_selected_sources_refresh_scope_enabled;
+                }
                 if (dash && dash.heise_magazines_heading) {
                     this._i18nHeiseMagazineHeading = dash.heise_magazines_heading;
                 }
@@ -5017,6 +5089,29 @@ class App {
                     }
                     if (oAlways) {
                         oAlways.textContent = ki.forum_entries_discovery_always;
+                    }
+                }
+                const ydl = document.getElementById('youtubeSuggestionsDiscoveryModeLabel');
+                if (ydl && ki.youtube_suggestions_discovery_label) {
+                    ydl.textContent = ki.youtube_suggestions_discovery_label;
+                }
+                const ydh = document.getElementById('youtubeSuggestionsDiscoveryModeHint');
+                if (ydh && ki.youtube_suggestions_discovery_hint) {
+                    ydh.textContent = ki.youtube_suggestions_discovery_hint;
+                }
+                const ydSel = document.getElementById('youtubeSuggestionsDiscoveryMode');
+                if (
+                    ydSel &&
+                    ki.youtube_suggestions_discovery_click &&
+                    ki.youtube_suggestions_discovery_always
+                ) {
+                    const oyClick = ydSel.querySelector('option[value="click"]');
+                    const oyAlways = ydSel.querySelector('option[value="always"]');
+                    if (oyClick) {
+                        oyClick.textContent = ki.youtube_suggestions_discovery_click;
+                    }
+                    if (oyAlways) {
+                        oyAlways.textContent = ki.youtube_suggestions_discovery_always;
                     }
                 }
                 const rll = document.querySelector('label[for="reasoningSelect"]');
@@ -7678,6 +7773,17 @@ class App {
                 console.warn('background reddit prewarm:', url, e);
             }
 
+            if (shouldCancel()) {
+                canceled = true;
+                return;
+            }
+
+            try {
+                await this.prefetchYoutubeRelatedForItem(item);
+            } catch (e) {
+                console.warn('background youtube prewarm:', url, e);
+            }
+
             done += 1;
             if (onProgress) {
                 onProgress(done, queue.length);
@@ -7693,6 +7799,13 @@ class App {
      * @returns {Promise<void>}
      */
     async prefetchRedditThreadsForItem(item) {
+        // Reddit aggressively blocks automated background fetches (HTTP 403), so only
+        // prewarm forum entries when the user opted into automatic discovery. In the
+        // default "click" mode the Reddit search stays strictly manual — triggered by
+        // the card's Reddit button (searchRedditForArticle).
+        if (!this.shouldAutoGenerateForumEntries()) {
+            return;
+        }
         const title = item && item.title ? String(item.title).trim() : '';
         const articleKey = App.articleFlagKey(item);
         if (!title || !articleKey) {
@@ -7704,6 +7817,27 @@ class App {
         const origin = window.location.origin;
         if (origin === 'null' || String(origin).startsWith('file')) {
             return;
+        }
+
+        // Cache-first: in "always" mode the cache is populated once and then reused, so
+        // we do not re-query Reddit on every background refresh (Reddit blocks repeated
+        // automated fetches with HTTP 403). A fresh cached entry skips the live query
+        // entirely — the user can still force a fresh search via the card's Reddit button.
+        if (this.storage && this.storage.db) {
+            try {
+                const cached = await this.storage.getRedditThreadsWithMeta(articleKey);
+                if (cached && Array.isArray(cached.threads) && cached.threads.length > 0) {
+                    const maxAgeMs = this.summarizer
+                        ? this.summarizer.getSummaryCacheMaxAgeMs()
+                        : Infinity;
+                    const cachedAtMs = new Date(cached.cachedAt || 0).getTime();
+                    if (maxAgeMs === Infinity || Date.now() - cachedAtMs <= maxAgeMs) {
+                        return;
+                    }
+                }
+            } catch (_) {
+                /* fall through to a live fetch if the cache read fails */
+            }
         }
 
         const query = await this.resolveRedditQuery(item, null);
@@ -7739,10 +7873,117 @@ class App {
     }
 
     /**
-     * Runs on the header refresh interval. Optionally refreshes all enabled sources in the background.
+     * Generate and cache KI YouTube search suggestions for one article without requiring
+     * a visible card — the background equivalent of opening the YouTube modal. Only runs
+     * when the user enabled automatic YouTube discovery ("always"); otherwise suggestions
+     * stay on-demand (generated when the user opens the modal). Cache-first: a fresh cached
+     * entry is reused so the KI is not queried again unnecessarily.
+     * @param {Record<string, unknown>} item
      * @returns {Promise<void>}
      */
-    async runScheduledAutoUpdate() {
+    async prefetchYoutubeRelatedForItem(item) {
+        if (!this.shouldAutoGenerateYoutubeSuggestions()) {
+            return;
+        }
+        if (!this.youtubeRelated || !this.summarizer) {
+            return;
+        }
+        const url = item && (item.url || item.link) ? String(item.url || item.link).trim() : '';
+        const title = item && item.title ? String(item.title).trim() : '';
+        if (!url || !title) {
+            return;
+        }
+        const ctx = {
+            url,
+            title,
+            description: item && item.description ? String(item.description) : ''
+        };
+
+        // Cache-first: reuse a fresh cached entry (getCached already applies the
+        // summary-cache TTL) instead of re-running the KI on every background refresh.
+        try {
+            const cached = await this.youtubeRelated.getCached(ctx);
+            if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
+                return;
+            }
+        } catch (_) {
+            /* fall through to generate fresh suggestions */
+        }
+
+        const result = await this.youtubeRelated.fetchAndSummarize(ctx);
+        const items = result && Array.isArray(result.items) ? result.items : [];
+        if (items.length > 0) {
+            await this.youtubeRelated.save(ctx, items, result.searchQueryUsed || null);
+        }
+    }
+
+    /**
+     * Auto-discovery ("always" mode) for a visible card: render cached Reddit threads if a
+     * fresh entry exists (the card hydrates from cache, no network), otherwise run a single
+     * live search. This keeps automatic discovery cache-first — only the card's Reddit button
+     * (searchRedditForArticle) forces a fresh re-query.
+     * @param {Record<string, unknown>} item
+     * @returns {Promise<void>}
+     */
+    async maybeAutoSearchRedditForVisibleCard(item) {
+        try {
+            const articleKey = App.articleFlagKey(item);
+            if (articleKey && this.storage && this.storage.db) {
+                const cached = await this.storage.getRedditThreadsWithMeta(articleKey);
+                if (cached && Array.isArray(cached.threads) && cached.threads.length > 0) {
+                    const maxAgeMs = this.summarizer
+                        ? this.summarizer.getSummaryCacheMaxAgeMs()
+                        : Infinity;
+                    const cachedAtMs = new Date(cached.cachedAt || 0).getTime();
+                    if (maxAgeMs === Infinity || Date.now() - cachedAtMs <= maxAgeMs) {
+                        return;
+                    }
+                }
+            }
+        } catch (_) {
+            /* fall through to a live search */
+        }
+        await this.searchRedditForArticle(item.id);
+    }
+
+    /**
+     * Run a background-refresh task under a browser-wide lock so only one tab executes it at a time.
+     * Falls back to running directly when the Web Locks API is unavailable (e.g. file: protocol).
+     * @param {() => Promise<void>} fn
+     * @returns {Promise<boolean>} true if the task ran in this tab, false if another tab held the lock.
+     */
+    async runWithBackgroundRefreshLock(fn) {
+        if (
+            typeof navigator !== 'undefined' &&
+            navigator.locks &&
+            typeof navigator.locks.request === 'function'
+        ) {
+            return navigator.locks.request(
+                'cucumber-bg-refresh',
+                { ifAvailable: true },
+                async (lock) => {
+                    if (!lock) {
+                        console.info('Background refresh skipped: another tab holds the lock.');
+                        return false;
+                    }
+                    await fn();
+                    return true;
+                }
+            );
+        }
+        await fn();
+        return true;
+    }
+
+    /**
+     * Runs on the header refresh interval. Optionally refreshes all enabled sources in the background.
+     * @param {{ skipCurrentSourceRefresh?: boolean }} [options] Pass skipCurrentSourceRefresh for the
+     *   immediate on-start / on-enable kick, where the visible source is already loaded and only the
+     *   background favorites need prewarming.
+     * @returns {Promise<void>}
+     */
+    async runScheduledAutoUpdate(options = {}) {
+        const skipCurrentSourceRefresh = options && options.skipCurrentSourceRefresh === true;
         if (this._selectedSourcesGenerationInProgress) {
             console.info('Scheduled auto-update skipped because selected-source generation is active.');
             return;
@@ -7755,30 +7996,40 @@ class App {
 
         try {
             if (!this.isBackgroundSelectedSourcesRefreshEnabled()) {
-                await this.fetchNews(true);
+                if (!skipCurrentSourceRefresh) {
+                    await this.fetchNews(true);
+                }
                 return;
             }
 
             const currentSource = this.normalizeNewsSource(this.settings?.newsSource);
-            await this.fetchNews(true);
+            if (!skipCurrentSourceRefresh) {
+                await this.fetchNews(true);
+            }
             await this.waitForVisibleAutoSummariesToSettle();
 
-            const cachedNews = await this.storage.getAllNews();
-            const knownUrlsBySource = this.buildKnownArticleUrlSetsBySource(cachedNews);
-            const backgroundSources = this.getEnabledNewsSourceIds().filter((id) => id !== currentSource);
+            // The expensive multi-source prewarm runs in only one tab per browser (Web Locks);
+            // the current-source refresh above stays per-tab so every tab keeps its visible list fresh.
+            await this.runWithBackgroundRefreshLock(async () => {
+                const cachedNews = await this.storage.getAllNews();
+                const knownUrlsBySource = this.buildKnownArticleUrlSetsBySource(cachedNews);
+                const backgroundSources = this.getBackgroundRefreshSourceIds().filter(
+                    (id) => id !== currentSource
+                );
 
-            for (const sourceId of backgroundSources) {
-                try {
-                    const newItems = await this.refreshBackgroundSource(
-                        sourceId,
-                        knownUrlsBySource.get(sourceId) || new Set()
-                    );
-                    this.mergePendingNewArticlesForSource(sourceId, newItems);
-                    await this.prewarmBackgroundArtifactsForArticles(newItems);
-                } catch (e) {
-                    console.warn(`Background refresh failed for source ${sourceId}:`, e);
+                for (const sourceId of backgroundSources) {
+                    try {
+                        const newItems = await this.refreshBackgroundSource(
+                            sourceId,
+                            knownUrlsBySource.get(sourceId) || new Set()
+                        );
+                        this.mergePendingNewArticlesForSource(sourceId, newItems);
+                        await this.prewarmBackgroundArtifactsForArticles(newItems);
+                    } catch (e) {
+                        console.warn(`Background refresh failed for source ${sourceId}:`, e);
+                    }
                 }
-            }
+            });
         } finally {
             this._scheduledAutoUpdateInProgress = false;
         }
@@ -9444,6 +9695,18 @@ class App {
     }
 
     /**
+     * Whether KI YouTube search suggestions should be generated and cached in the
+     * background together with the AI summaries (vs. only when the user opens the modal).
+     * @returns {boolean}
+     */
+    shouldAutoGenerateYoutubeSuggestions() {
+        const mode = App.normalizeYoutubeSuggestionsDiscoveryMode(
+            this.settings?.youtubeSuggestionsDiscoveryMode
+        );
+        return mode === 'always';
+    }
+
+    /**
      * Parse keep-indices JSON from KI text, supports fenced code blocks.
      * @param {string} raw
      * @returns {number[]}
@@ -10272,7 +10535,19 @@ class App {
                             this._newArticleIds.has(item.id)
                         ) {
                             // Fire-and-forget: only cards currently in DOM get immediate forum entries.
-                            void this.searchRedditForArticle(item.id);
+                            // Cache-first — skip the live Reddit query when fresh threads are already
+                            // cached (the card hydrates them on render). The Reddit button still forces.
+                            void this.maybeAutoSearchRedditForVisibleCard(item);
+                        }
+                        if (
+                            this.shouldAutoGenerateYoutubeSuggestions() &&
+                            this._newArticleIds &&
+                            this._newArticleIds.has(item.id)
+                        ) {
+                            // Fire-and-forget: warm the YouTube suggestion cache so the modal opens instantly.
+                            void this.prefetchYoutubeRelatedForItem(item).catch((e) =>
+                                console.warn('autoSummarizeAfterRefresh youtube:', item.url, e)
+                            );
                         }
                     }
                 } catch (error) {
@@ -11545,6 +11820,20 @@ class App {
                 App.normalizeForumEntriesDiscoveryMode(forumDiscoveryUi);
         }
 
+        let youtubeDiscoveryUi = 'click';
+        try {
+            youtubeDiscoveryUi =
+                localStorage.getItem('heise_youtube_suggestions_discovery_mode') ||
+                this.settings?.youtubeSuggestionsDiscoveryMode ||
+                'click';
+        } catch (_) {
+            youtubeDiscoveryUi = this.settings?.youtubeSuggestionsDiscoveryMode || 'click';
+        }
+        if (this.elements.youtubeSuggestionsDiscoveryMode) {
+            this.elements.youtubeSuggestionsDiscoveryMode.value =
+                App.normalizeYoutubeSuggestionsDiscoveryMode(youtubeDiscoveryUi);
+        }
+
         let altBlacklistUi = '';
         try {
             altBlacklistUi =
@@ -12788,6 +13077,10 @@ class App {
         if (this.elements.backgroundSelectedSourcesRefreshEnabled) {
             this.elements.backgroundSelectedSourcesRefreshEnabled.disabled = sourceSettingsDisabled;
         }
+        if (this.elements.backgroundSelectedSourcesRefreshScopeSelect) {
+            this.elements.backgroundSelectedSourcesRefreshScopeSelect.disabled =
+                sourceSettingsDisabled || !this.isBackgroundSelectedSourcesRefreshEnabled();
+        }
         const ul = this.elements.newsSourcesSettingsList;
         if (ul) {
             ul.querySelectorAll(
@@ -12825,6 +13118,12 @@ class App {
         if (this.elements.backgroundSelectedSourcesRefreshEnabled) {
             this.elements.backgroundSelectedSourcesRefreshEnabled.checked =
                 this.isBackgroundSelectedSourcesRefreshEnabled();
+        }
+        if (this.elements.backgroundSelectedSourcesRefreshScopeSelect) {
+            this.elements.backgroundSelectedSourcesRefreshScopeSelect.value =
+                this.getBackgroundSelectedSourcesRefreshScope();
+            this.elements.backgroundSelectedSourcesRefreshScopeSelect.disabled =
+                !this.isBackgroundSelectedSourcesRefreshEnabled();
         }
         if (this.elements.dashboardSettingsModal) {
             this.elements.dashboardSettingsModal.classList.add('active');
@@ -12942,6 +13241,12 @@ class App {
                       this.elements.backgroundSelectedSourcesRefreshEnabled.checked
                   )
                 : this.isBackgroundSelectedSourcesRefreshEnabled();
+        const backgroundSelectedSourcesRefreshScopeSaved =
+            this.elements.backgroundSelectedSourcesRefreshScopeSelect
+                ? App.normalizeBackgroundSelectedSourcesRefreshScope(
+                      this.elements.backgroundSelectedSourcesRefreshScopeSelect.value
+                  )
+                : this.getBackgroundSelectedSourcesRefreshScope();
 
         try {
             localStorage.setItem('theme', themePrefSaved);
@@ -12969,6 +13274,8 @@ class App {
         this.settings.articleThumbnailsEnabled = articleThumbnailsEnabledSaved;
         this.settings.backgroundSelectedSourcesRefreshEnabled =
             backgroundSelectedSourcesRefreshEnabledSaved;
+        this.settings.backgroundSelectedSourcesRefreshScope =
+            backgroundSelectedSourcesRefreshScopeSaved;
         try {
             localStorage.setItem('heise_enabled_news_sources', JSON.stringify(enabled));
             localStorage.setItem('heise_enabled_magazine_feeds', JSON.stringify(nextMagazines));
@@ -12988,7 +13295,9 @@ class App {
                 themeHeaderTransparency: themeHeaderTransparencySaved,
                 articleThumbnailsEnabled: articleThumbnailsEnabledSaved,
                 backgroundSelectedSourcesRefreshEnabled:
-                    backgroundSelectedSourcesRefreshEnabledSaved
+                    backgroundSelectedSourcesRefreshEnabledSaved,
+                backgroundSelectedSourcesRefreshScope:
+                    backgroundSelectedSourcesRefreshScopeSaved
             });
         } catch (e) {
             console.warn('saveDashboardSettings:', e);
@@ -13017,6 +13326,8 @@ class App {
         } else {
             this.showStatus(this._i18nDashboardSaved || 'Einstellungen gespeichert.');
         }
+        // Enabling the background refresh should prewarm favorites promptly, not only on the next interval.
+        this.scheduleImmediateBackgroundRefresh(2000);
         this.closeDashboardSettingsModal();
     }
 
@@ -13134,6 +13445,9 @@ class App {
         const forumEntriesDiscoveryModeSaved = this.elements.forumEntriesDiscoveryMode
             ? App.normalizeForumEntriesDiscoveryMode(this.elements.forumEntriesDiscoveryMode.value)
             : App.normalizeForumEntriesDiscoveryMode(this.settings?.forumEntriesDiscoveryMode);
+        const youtubeSuggestionsDiscoveryModeSaved = this.elements.youtubeSuggestionsDiscoveryMode
+            ? App.normalizeYoutubeSuggestionsDiscoveryMode(this.elements.youtubeSuggestionsDiscoveryMode.value)
+            : App.normalizeYoutubeSuggestionsDiscoveryMode(this.settings?.youtubeSuggestionsDiscoveryMode);
         const alternativeLinksDomainBlacklistSaved = this.elements.alternativeLinksBlacklist
             ? App.normalizeAlternativeLinksDomainBlacklist(this.elements.alternativeLinksBlacklist.value)
             : App.normalizeAlternativeLinksDomainBlacklist(this.settings?.alternativeLinksDomainBlacklist);
@@ -13178,6 +13492,14 @@ class App {
                 localStorage.setItem(
                     'heise_forum_entries_discovery_mode',
                     forumEntriesDiscoveryModeSaved
+                );
+            } catch (_) {
+                /* ignore */
+            }
+            try {
+                localStorage.setItem(
+                    'heise_youtube_suggestions_discovery_mode',
+                    youtubeSuggestionsDiscoveryModeSaved
                 );
             } catch (_) {
                 /* ignore */
@@ -13235,6 +13557,7 @@ class App {
             alternativeLinksCount,
             alternativeLinksDisplayMode: alternativeLinksDisplayModeSaved,
             forumEntriesDiscoveryMode: forumEntriesDiscoveryModeSaved,
+            youtubeSuggestionsDiscoveryMode: youtubeSuggestionsDiscoveryModeSaved,
             alternativeLinksDomainBlacklist: alternativeLinksDomainBlacklistSaved,
             webSearchEngine: webSearchEngineSaved,
             summaryLangMode:
@@ -13331,6 +13654,26 @@ class App {
     }
 
     /**
+     * Kick one background refresh soon after start / after enabling the setting, so favorite sources
+     * get prewarmed without waiting for the full header interval. The visible source is already loaded,
+     * so this skips the current-source refresh and only prewarms the background (favorite) sources.
+     * @param {number} [delayMs]
+     */
+    scheduleImmediateBackgroundRefresh(delayMs = 8000) {
+        if (this._immediateBackgroundRefreshTimer) {
+            clearTimeout(this._immediateBackgroundRefreshTimer);
+            this._immediateBackgroundRefreshTimer = null;
+        }
+        if (!this.isBackgroundSelectedSourcesRefreshEnabled()) {
+            return;
+        }
+        this._immediateBackgroundRefreshTimer = setTimeout(() => {
+            this._immediateBackgroundRefreshTimer = null;
+            void this.runScheduledAutoUpdate({ skipCurrentSourceRefresh: true });
+        }, Math.max(0, delayMs));
+    }
+
+    /**
  * Escape HTML for simple string insertions into textContent or attributes.
  * For complex HTML generation, use DOMPurify.sanitize() instead.
  */
@@ -13385,6 +13728,10 @@ sanitizeHtml(html) {
         }
         if (this.updateTimer) {
             clearInterval(this.updateTimer);
+        }
+        if (this._immediateBackgroundRefreshTimer) {
+            clearTimeout(this._immediateBackgroundRefreshTimer);
+            this._immediateBackgroundRefreshTimer = null;
         }
         if (this._headerBrandResizeObserver && this.elements.headerBrandToggle) {
             try {

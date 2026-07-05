@@ -479,6 +479,8 @@ class NewsStorage {
             enabledNewsSources: [],
             /** Refresh all enabled article sources on the header timer and prewarm KI/links/Reddit in the background. */
             backgroundSelectedSourcesRefreshEnabled: false,
+            /** Which sources the background refresh covers: 'favorites' (only starred) or 'enabled' (all enabled). */
+            backgroundSelectedSourcesRefreshScope: 'favorites',
             /** Bumped when catalog migrations run (see App.loadSettings); v2 Telepolis, v3 IT-Administrator. */
             newsSourcesCatalogMigrationVersion: 0
         };
