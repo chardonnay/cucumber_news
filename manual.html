@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en" data-color-theme="heise">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* http://localhost:* https://api.anthropic.com https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <title>Cucumber NewsScraper — User Manual</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* ---- App design tokens (mirrors index.html:14-173) ---- */
+        :root {
+            --primary-color: #ff6b1a;
+            --primary-hover: #ff8746;
+            --header-surface: #ffffff;
+            --header-text: #171411;
+            --header-border: #eadfd3;
+            --text-primary: #171411;
+            --text-secondary: #6f655c;
+            --bg-primary: #f7f1ea;
+            --bg-secondary: #f1e8de;
+            --bg-card: #ffffff;
+            --border-color: #eadfd3;
+            --favorite-gold: #f5b301;
+            --favorite-gold-strong: #d97706;
+            --shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+            --shadow-card-hover: 0 28px 72px rgba(15, 23, 42, 0.1);
+            --radius-sm: 14px;
+            --radius-md: 20px;
+            --radius-lg: 28px;
+            --transition-speed: 0.25s;
+            /* Cucumber teal panels (from the app header selects) */
+            --cuke-panel-bg: #2f5a4a;
+            --cuke-panel-border: #41705e;
+            --cuke-control-bg: #24473a;
+            --cuke-control-border: #4d7d69;
+            --cuke-text: #f5fbf7;
+            --cuke-muted: #d9ebdf;
+            --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+        [data-theme="dark"] {
+            --primary-color: #ff9458;
+            --primary-hover: #ffab78;
+            --header-surface: #1f1a16;
+            --header-text: #fcfaf8;
+            --header-border: #3b342e;
+            --text-primary: #fcfaf8;
+            --text-secondary: #b9aea3;
+            --bg-primary: #151210;
+            --bg-secondary: #1d1916;
+            --bg-card: #221d1a;
+            --border-color: #3b342e;
+            --favorite-gold: #fbbf24;
+            --favorite-gold-strong: #f59e0b;
+            --shadow: 0 18px 52px rgba(0, 0, 0, 0.34);
+            --shadow-card-hover: 0 28px 76px rgba(0, 0, 0, 0.44);
+            --cuke-panel-bg: #26483a;
+            --cuke-panel-border: #3b6958;
+            --cuke-control-bg: #1c362c;
+            --cuke-control-border: #4b7867;
+            --cuke-text: #f1faf4;
+            --cuke-muted: #cfe4d8;
+        }
+        html[data-color-theme="heise"]  { --primary-color:#ff6b1a; --primary-hover:#ff8746; }
+        html[data-color-theme="ocean"]  { --primary-color:#0284c7; --primary-hover:#0ea5e9; }
+        html[data-color-theme="forest"] { --primary-color:#16a34a; --primary-hover:#22c55e; }
+        html[data-color-theme="violet"] { --primary-color:#7c3aed; --primary-hover:#8b5cf6; }
+        html[data-color-theme="amber"]  { --primary-color:#d97706; --primary-hover:#f59e0b; }
+        html[data-color-theme="rose"]   { --primary-color:#e11d48; --primary-hover:#f43f5e; }
+        html[data-color-theme="slate"]  { --primary-color:#475569; --primary-hover:#64748b; }
+        html[data-color-theme="midnight"]{ --primary-color:#6366f1; --primary-hover:#818cf8; }
+        [data-theme="dark"][data-color-theme="heise"]  { --primary-color:#ff9458; --primary-hover:#ffab78; }
+        [data-theme="dark"][data-color-theme="ocean"]  { --primary-color:#38bdf8; --primary-hover:#7dd3fc; }
+        [data-theme="dark"][data-color-theme="forest"] { --primary-color:#4ade80; --primary-hover:#86efac; }
+        [data-theme="dark"][data-color-theme="violet"] { --primary-color:#a78bfa; --primary-hover:#c4b5fd; }
+        [data-theme="dark"][data-color-theme="amber"]  { --primary-color:#fbbf24; --primary-hover:#fcd34d; }
+        [data-theme="dark"][data-color-theme="rose"]   { --primary-color:#fb7185; --primary-hover:#fda4af; }
+        [data-theme="dark"][data-color-theme="slate"]  { --primary-color:#94a3b8; --primary-hover:#cbd5e1; }
+        [data-theme="dark"][data-color-theme="midnight"]{ --primary-color:#a5b4fc; --primary-hover:#c7d2fe; }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; scroll-padding-top: 92px; }
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+        }
+        a { color: var(--primary-color); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        ::selection { background: color-mix(in srgb, var(--primary-color) 30%, transparent); }
+
+        .skip-link {
+            position: absolute; left: -999px; top: 0; z-index: 1000;
+            background: var(--primary-color); color: #fff; padding: 10px 16px; border-radius: 0 0 12px 0;
+        }
+        .skip-link:focus { left: 0; }
+
+        /* ---- App bar ---- */
+        .appbar {
+            position: sticky; top: 0; z-index: 200;
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+            padding: 12px clamp(16px, 4vw, 40px);
+            background: color-mix(in srgb, var(--header-surface) 92%, transparent);
+            backdrop-filter: saturate(1.4) blur(10px);
+            border-bottom: 1px solid var(--header-border);
+        }
+        .appbar__brand { display: flex; align-items: center; gap: 10px; color: var(--header-text); font-weight: 800; font-size: 1.05rem; letter-spacing: -0.01em; }
+        .appbar__brand:hover { text-decoration: none; }
+        .appbar__logo { width: 34px; height: 34px; border-radius: 10px; object-fit: cover; box-shadow: var(--shadow); }
+        .appbar__sub {
+            display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+            background: var(--cuke-panel-bg); color: var(--cuke-text);
+        }
+        .appbar__search { position: relative; flex: 1 1 320px; min-width: 200px; }
+        .appbar__search input {
+            width: 100%; padding: 11px 14px 11px 40px; font: inherit; font-size: 0.95rem;
+            color: var(--text-primary); background: var(--bg-card);
+            border: 1px solid var(--border-color); border-radius: 999px; outline: none;
+            transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+        }
+        .appbar__search input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 18%, transparent); }
+        .appbar__search::before {
+            content: "🔍"; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            font-size: 0.9rem; opacity: 0.7; pointer-events: none;
+        }
+        .appbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+        .btn {
+            font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+            padding: 9px 16px; border-radius: 999px; border: 1px solid transparent;
+            display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+            transition: transform var(--transition-speed), background var(--transition-speed), border-color var(--transition-speed), color var(--transition-speed);
+        }
+        .btn:hover { text-decoration: none; transform: translateY(-1px); }
+        .btn--primary { background: var(--primary-color); color: #fff; }
+        .btn--primary:hover { background: var(--primary-hover); }
+        .btn--ghost { background: var(--bg-card); color: var(--text-primary); border-color: var(--border-color); }
+        .btn--ghost:hover { border-color: var(--primary-color); }
+        .btn--cuke { background: var(--cuke-control-bg); color: var(--cuke-text); border-color: var(--cuke-control-border); }
+        .btn--cuke:hover { background: var(--cuke-panel-bg); }
+
+        /* ---- Search results panel ---- */
+        .search-results {
+            position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 210;
+            background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+            box-shadow: var(--shadow-card-hover); max-height: min(70vh, 520px); overflow-y: auto; padding: 8px;
+        }
+        .search-results[hidden] { display: none; }
+        .search-results__meta { padding: 8px 12px; font-size: 0.8rem; color: var(--text-secondary); }
+        .search-hit { display: block; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-primary); }
+        .search-hit:hover, .search-hit:focus { background: var(--bg-secondary); text-decoration: none; outline: none; }
+        .search-hit__crumb { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary-color); font-weight: 700; }
+        .search-hit__title { font-weight: 600; margin: 2px 0; }
+        .search-hit__snippet { font-size: 0.85rem; color: var(--text-secondary); }
+        .search-hit__snippet mark, .content mark { background: color-mix(in srgb, var(--favorite-gold) 55%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
+        .search-empty { padding: 16px 12px; color: var(--text-secondary); font-size: 0.9rem; }
+
+        /* ---- Hero ---- */
+        .hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--header-border); }
+        .hero__art {
+            position: absolute; inset: 0;
+            background: url('images/cucumber-news-banner-v2.png') center center / cover no-repeat;
+            opacity: 0.42; filter: brightness(1.35) saturate(1.1) contrast(0.96);
+        }
+        [data-theme="dark"] .hero__art { opacity: 0.5; filter: brightness(1.2) saturate(1.08); }
+        .hero__scrim { position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 30%, transparent), var(--bg-primary) 96%); }
+        .hero__inner { position: relative; max-width: 1180px; margin: 0 auto; padding: clamp(40px, 8vw, 88px) clamp(16px, 4vw, 40px) clamp(32px, 5vw, 56px); }
+        .hero h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.08; max-width: 18ch; }
+        .hero__lead { font-size: clamp(1.05rem, 2.2vw, 1.3rem); color: var(--text-secondary); margin-top: 16px; max-width: 60ch; }
+        .hero__cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+
+        /* ---- Layout ---- */
+        .layout { max-width: 1180px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 40px) 80px; display: grid; grid-template-columns: 250px 1fr; gap: 40px; align-items: start; }
+        .toc { position: sticky; top: 88px; align-self: start; max-height: calc(100vh - 110px); overflow-y: auto; padding-right: 8px; }
+        .toc__title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-secondary); font-weight: 700; margin: 4px 0 12px 12px; }
+        .toc a { display: block; padding: 7px 12px; border-radius: 10px; color: var(--text-secondary); font-size: 0.9rem; font-weight: 500; border-left: 2px solid transparent; }
+        .toc a:hover { background: var(--bg-secondary); color: var(--text-primary); text-decoration: none; }
+        .toc a.is-active { color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 10%, transparent); border-left-color: var(--primary-color); font-weight: 700; }
+        .content { min-width: 0; }
+
+        /* ---- Chapters & sections ---- */
+        .manual-chapter { margin-bottom: 56px; }
+        .manual-chapter > h2 {
+            font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -0.01em; line-height: 1.15;
+            padding-bottom: 12px; margin-bottom: 8px; border-bottom: 2px solid var(--border-color);
+            display: flex; align-items: center; gap: 12px; scroll-margin-top: 88px;
+        }
+        .manual-chapter > h2 .chapter-num {
+            flex: none; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+            font-size: 0.95rem; font-weight: 800; background: var(--cuke-panel-bg); color: var(--cuke-text);
+        }
+        .manual-section { scroll-margin-top: 88px; padding: 22px 0; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent); }
+        .manual-section:last-child { border-bottom: none; }
+        .manual-section > h3 { font-size: 1.2rem; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; }
+        .manual-section > h4 { font-size: 1rem; font-weight: 700; margin: 18px 0 8px; }
+        .manual-section p { margin: 10px 0; }
+        .manual-section ul, .manual-section ol { margin: 10px 0 10px 22px; }
+        .manual-section li { margin: 6px 0; }
+        .manual-section :target { animation: flash 1.6s ease; }
+        .section-flash { animation: flash 1.6s ease; }
+        @keyframes flash {
+            0%, 20% { background: color-mix(in srgb, var(--favorite-gold) 32%, transparent); box-shadow: 0 0 0 8px color-mix(in srgb, var(--favorite-gold) 18%, transparent); border-radius: 12px; }
+            100% { background: transparent; box-shadow: none; }
+        }
+
+        code { font-family: var(--mono); font-size: 0.86em; background: var(--bg-secondary); padding: 2px 6px; border-radius: 6px; }
+        pre { position: relative; background: #0f1a16; color: #e7f4ec; border: 1px solid var(--cuke-control-border); border-radius: var(--radius-sm); padding: 16px 18px; overflow-x: auto; margin: 14px 0; }
+        pre code { background: none; padding: 0; color: inherit; font-size: 0.85rem; line-height: 1.55; }
+        pre .cmt { color: #8fb9a4; }
+        .copy-btn { position: absolute; top: 8px; right: 8px; font: inherit; font-size: 0.72rem; font-weight: 600; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--cuke-control-border); background: var(--cuke-control-bg); color: var(--cuke-text); cursor: pointer; opacity: 0; transition: opacity .2s; }
+        pre:hover .copy-btn { opacity: 1; }
+        .copy-btn.copied { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+
+        .callout { border-radius: var(--radius-sm); padding: 14px 16px 14px 46px; margin: 16px 0; position: relative; border: 1px solid var(--border-color); background: var(--bg-card); }
+        .callout::before { position: absolute; left: 14px; top: 14px; font-size: 1.1rem; }
+        .callout p:first-child { margin-top: 0; }
+        .callout p:last-child { margin-bottom: 0; }
+        .callout--tip { border-left: 4px solid #2d8a3e; } .callout--tip::before { content: "💡"; }
+        .callout--warn { border-left: 4px solid #d9a20b; } .callout--warn::before { content: "⚠️"; }
+        .callout--note { border-left: 4px solid var(--primary-color); } .callout--note::before { content: "ℹ️"; }
+        .callout--win { border-left: 4px solid #0284c7; } .callout--win::before { content: "🪟"; }
+
+        .platform-pill { display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; background: var(--cuke-panel-bg); color: var(--cuke-text); margin-right: 8px; vertical-align: middle; }
+
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin: 16px 0; }
+        table.ref { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.88rem; }
+        table.ref th, table.ref td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+        table.ref thead th { background: var(--bg-secondary); font-weight: 700; position: sticky; top: 0; }
+        table.ref tbody tr:hover { background: var(--bg-secondary); }
+        table.ref code { white-space: nowrap; }
+
+        .linklist { list-style: none; margin-left: 0 !important; display: grid; gap: 10px; }
+        .linklist li { margin: 0; }
+        .linklist a { display: block; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); }
+        .linklist a:hover { border-color: var(--primary-color); text-decoration: none; box-shadow: var(--shadow); }
+        .linklist .ll-title { font-weight: 700; color: var(--text-primary); }
+        .linklist .ll-desc { font-size: 0.85rem; color: var(--text-secondary); }
+        .linklist .ll-url { font-size: 0.78rem; color: var(--primary-color); font-family: var(--mono); word-break: break-all; }
+
+        kbd { font-family: var(--mono); font-size: 0.8em; background: var(--bg-card); border: 1px solid var(--border-color); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; }
+
+        /* ---- AI modal ---- */
+        .modal[hidden] { display: none; }
+        .modal { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 16px; }
+        .modal__backdrop { position: absolute; inset: 0; background: rgba(10, 14, 12, 0.5); backdrop-filter: blur(3px); }
+        .modal__dialog {
+            position: relative; width: min(680px, 100%); max-height: min(88vh, 760px); overflow-y: auto;
+            background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-card-hover); padding: 22px clamp(18px, 3vw, 28px);
+        }
+        .modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .modal__head h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; }
+        .modal__close { font-size: 1.4rem; line-height: 1; background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+        .modal__close:hover { background: var(--bg-secondary); color: var(--text-primary); }
+        .modal__hint { font-size: 0.85rem; color: var(--text-secondary); margin: 8px 0 16px; }
+        #aiForm { display: flex; flex-direction: column; gap: 12px; }
+        #aiQuestion {
+            width: 100%; min-height: 92px; resize: vertical; font: inherit; font-size: 0.98rem; line-height: 1.5;
+            padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); outline: none;
+        }
+        #aiQuestion:focus { border-color: var(--primary-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 16%, transparent); }
+        .ai-form-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .ai-examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+        .ai-example { font: inherit; font-size: 0.8rem; cursor: pointer; padding: 6px 11px; border-radius: 999px; border: 1px dashed var(--border-color); background: transparent; color: var(--text-secondary); }
+        .ai-example:hover { border-color: var(--primary-color); color: var(--primary-color); border-style: solid; }
+        .ai-status { margin-top: 16px; font-size: 0.9rem; color: var(--text-secondary); display: none; }
+        .ai-status.is-visible { display: flex; align-items: center; gap: 10px; }
+        .ai-status.is-error { color: #d14343; }
+        .spinner { width: 16px; height: 16px; border: 2px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; flex: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ai-answer { margin-top: 16px; line-height: 1.7; }
+        .ai-answer[hidden] { display: none; }
+        .ai-answer p { margin: 10px 0; }
+        .ai-answer pre { margin: 12px 0; }
+        .ai-answer ol, .ai-answer ul { margin: 10px 0 10px 22px; }
+        .ai-answer .genknow { font-size: 0.82rem; color: var(--text-secondary); border-left: 3px solid var(--favorite-gold-strong); padding-left: 10px; }
+        .ai-sources { margin-top: 18px; }
+        .ai-sources[hidden] { display: none; }
+        .ai-sources__title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; }
+        .ai-sources a { display: inline-flex; align-items: center; gap: 6px; margin: 0 8px 8px 0; padding: 6px 12px; border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.83rem; font-weight: 600; }
+        .ai-sources a:hover { background: color-mix(in srgb, var(--primary-color) 16%, transparent); text-decoration: none; }
+
+        .footer { border-top: 1px solid var(--header-border); padding: 28px clamp(16px,4vw,40px); text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .toc { position: static; max-height: none; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; background: var(--bg-card); }
+            .toc__list { display: flex; flex-wrap: wrap; gap: 4px; }
+            .toc a { border-left: none; }
+            .toc a.is-active { border-left: none; }
+        }
+        @media (max-width: 620px) {
+            .appbar { gap: 10px; }
+            .appbar__actions .btn span.label-full { display: none; }
+        }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .section-flash, .manual-section :target { animation: none; } }
+    </style>
+</head>
+<body>
+    <a href="#chapter-intro" class="skip-link">Skip to content</a>
+
+    <header class="appbar">
+        <a class="appbar__brand" href="#top">
+            <img class="appbar__logo" src="images/cucumber-news-banner-v2.png" alt="">
+            <span>Cucumber NewsScraper<span class="appbar__sub">Manual</span></span>
+        </a>
+        <div class="appbar__search">
+            <input id="searchInput" type="search" role="combobox" aria-expanded="false" aria-controls="searchResults"
+                   autocomplete="off" placeholder="Search the manual — e.g. install python, reasoning, cache…" aria-label="Search the manual">
+            <div id="searchResults" class="search-results" role="listbox" hidden></div>
+        </div>
+        <div class="appbar__actions">
+            <button id="askAiBtn" class="btn btn--primary" type="button">✨ <span class="label-full">Ask the AI</span></button>
+            <button id="themeToggle" class="btn btn--ghost" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme">🌓</button>
+            <a class="btn btn--ghost" href="index.html">↩ <span class="label-full">Open App</span></a>
+        </div>
+    </header>
+
+    <section class="hero" id="top">
+        <div class="hero__art" aria-hidden="true"></div>
+        <div class="hero__scrim" aria-hidden="true"></div>
+        <div class="hero__inner">
+            <h1>Cucumber NewsScraper — User Manual</h1>
+            <p class="hero__lead">Everything you need to install it, run the local server, connect an AI backend, and configure every feature. Search any topic, or ask the built-in AI — it answers from this manual first.</p>
+            <div class="hero__cta">
+                <a class="btn btn--primary" href="#chapter-install">🚀 Install &amp; run</a>
+                <a class="btn btn--cuke" href="#chapter-ai">🤖 Set up AI</a>
+                <button class="btn btn--ghost" type="button" data-open-ai>✨ Ask the AI</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="layout">
+        <nav class="toc" aria-label="Table of contents">
+            <div class="toc__title">Contents</div>
+            <div class="toc__list" id="tocList"><!-- built by manual.js --></div>
+        </nav>
+
+        <main class="content" id="content">
+
+            <!-- 1. INTRODUCTION -->
+            <section class="manual-chapter" data-chapter="Introduction" id="chapter-intro">
+                <h2><span class="chapter-num">1</span> Introduction</h2>
+
+                <section class="manual-section" id="intro-what" data-title="What is Cucumber NewsScraper" data-keywords="overview about intro cucumber news reader dashboard aggregator client-side local">
+                    <h3>What is Cucumber NewsScraper?</h3>
+                    <p>Cucumber NewsScraper is a responsive, <strong>client-side news dashboard</strong> that aggregates articles from many publishers into one clean interface. It can generate optional <strong>AI summaries</strong> for each article, find related discussions and videos, translate content, and sort by recency, dates, comment activity, or reader ratings.</p>
+                    <p>It runs in your browser. A small bundled <strong>Python server</strong> (called the <em>dev server</em>) serves the page and proxies news feeds and AI requests so the browser never hits cross-origin (CORS) problems. Everything you configure — sources, summaries, settings — is stored locally in your browser (IndexedDB and <code>localStorage</code>). There are no accounts and no telemetry.</p>
+                </section>
+
+                <section class="manual-section" id="intro-highlights" data-title="Key features at a glance" data-keywords="features highlights summaries sources categories sorting themes translation export reddit youtube background refresh">
+                    <h3>Key features at a glance</h3>
+                    <ul>
+                        <li><strong>Many sources</strong> — dedicated integrations (heise.de, Telepolis, Golem, ComputerBase, t3n, IT-Administrator, BILD, The Verge) plus a large international registry (Reuters, AP, BBC, CNN, NYT, Guardian, Bloomberg, Der Spiegel, Le Monde, Al Jazeera and many more).</li>
+                        <li><strong>Optional AI summaries</strong> via LM Studio (local), any OpenAI-compatible server, or the Anthropic Messages API.</li>
+                        <li><strong>Dynamic category filters</strong>, and sorting by recency, date range, comment counts, or green/red ratings.</li>
+                        <li><strong>Alternative article links</strong>, related <strong>Reddit</strong> threads, and <strong>YouTube</strong> suggestions per article.</li>
+                        <li><strong>Machine translation</strong> of the article area, <strong>PDF/CSV/JSON export</strong>, and an <strong>AI usage statistics</strong> panel.</li>
+                        <li><strong>Deep theming</strong> — light/dark, eight accent colors, brightness and transparency sliders, and custom colors.</li>
+                        <li><strong>Bilingual UI</strong> (German / English).</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="intro-how-to-use-manual" data-title="How to use this manual" data-keywords="how to use manual search ask ai navigation table of contents">
+                    <h3>How to use this manual</h3>
+                    <ul>
+                        <li><strong>Search</strong> — type in the search box (top). Results show the chapter and section that match, with a snippet; click to jump straight there.</li>
+                        <li><strong>Ask the AI</strong> — click <em>Ask the AI</em> to ask a question in plain language. The assistant answers from this manual first (and tells you when it falls back to general knowledge). It reuses whatever AI backend you already configured in the app.</li>
+                        <li><strong>Browse</strong> — use the Contents list on the left.</li>
+                    </ul>
+                    <div class="callout callout--tip"><p>New here? Go straight to <a href="#chapter-install">Installation</a>, then <a href="#chapter-ai">AI / KI Setup</a>.</p></div>
+                </section>
+            </section>
+
+            <!-- 2. QUICK START -->
+            <section class="manual-chapter" data-chapter="Quick Start" id="chapter-quickstart">
+                <h2><span class="chapter-num">2</span> Quick Start</h2>
+                <section class="manual-section" id="quickstart-run" data-title="Run it in three commands" data-keywords="quick start run dev server python3 8080 index.html fastest">
+                    <h3>Run it in three commands</h3>
+                    <p>If Python 3 is already installed, this is the whole thing:</p>
+                    <pre><code><span class="cmt"># 1) go to the project folder</span>
+cd news_reader_web
+
+<span class="cmt"># 2) install the one dependency</span>
+pip install requests
+
+<span class="cmt"># 3) start the bundled server</span>
+python3 scripts/dev_server.py</code></pre>
+                    <p>Then open <a href="http://127.0.0.1:8080/index.html" target="_blank" rel="noopener"><code>http://127.0.0.1:8080/index.html</code></a> in your browser. That's it — you'll see news right away.</p>
+                    <div class="callout callout--note"><p>Want AI summaries too? After the app loads, open <strong>KI-Server</strong> in the header and pick a mode. See <a href="#chapter-ai">AI / KI Setup</a>.</p></div>
+                    <div class="callout callout--win"><p><span class="platform-pill">Windows</span>On Windows the command is usually <code>python scripts\dev_server.py</code> (with a backslash). Full step-by-step in <a href="#install-windows">Installation → Windows</a>.</p></div>
+                </section>
+            </section>
+
+            <!-- 3. INSTALLATION -->
+            <section class="manual-chapter" data-chapter="Installation" id="chapter-install">
+                <h2><span class="chapter-num">3</span> Installation</h2>
+
+                <section class="manual-section" id="install-prereqs" data-title="Prerequisites" data-keywords="requirements prerequisites python 3 browser pip version">
+                    <h3>Prerequisites</h3>
+                    <ul>
+                        <li><strong>Python 3.8 or newer</strong> — the only thing you must install. Check with <code>python3 --version</code> (macOS/Linux) or <code>python --version</code> (Windows).</li>
+                        <li><strong>pip</strong> — Python's package installer, bundled with modern Python. Used once to install <code>requests</code>.</li>
+                        <li><strong>A modern browser</strong> — Chrome, Edge, Firefox, or Safari.</li>
+                        <li><em>Optional:</em> <strong>LM Studio</strong> for local AI, or an <strong>Anthropic API key</strong> for cloud AI.</li>
+                    </ul>
+                    <p>No Node.js, no build step, no npm — the frontend is plain HTML + vanilla JavaScript served as-is.</p>
+                </section>
+
+                <section class="manual-section" id="install-windows" data-title="Install on Windows (step by step)" data-keywords="windows install python path powershell execution policy venv pip requests dev server backslash py launcher terminal cmd">
+                    <h3><span class="platform-pill">Windows</span>Install on Windows (step by step)</h3>
+                    <ol>
+                        <li><strong>Install Python.</strong> Download the latest installer from <a href="https://www.python.org/downloads/windows/" target="_blank" rel="noopener">python.org/downloads/windows</a>. In the installer, <strong>check “Add python.exe to PATH”</strong> on the first screen, then click <em>Install Now</em>.
+                            <div class="callout callout--win"><p>If you forget “Add to PATH”, re-run the installer, choose <em>Modify</em>, and enable it — or use the <code>py</code> launcher (e.g. <code>py scripts\dev_server.py</code>), which is installed regardless.</p></div>
+                        </li>
+                        <li><strong>Open a terminal.</strong> Press <kbd>Win</kbd> + <kbd>R</kbd>, type <code>powershell</code>, press Enter. (Or search “PowerShell” / “Terminal” in the Start menu.)</li>
+                        <li><strong>Verify Python:</strong>
+                            <pre><code>python --version
+<span class="cmt"># if that fails, try:</span>
+py --version</code></pre>
+                        </li>
+                        <li><strong>Go to the project folder</strong> (adjust the path to where you unzipped it):
+                            <pre><code>cd C:\Users\YourName\Downloads\news_reader_web</code></pre>
+                        </li>
+                        <li><strong>(Recommended) Create a virtual environment</strong> so <code>requests</code> stays isolated:
+                            <pre><code>python -m venv venv
+.\venv\Scripts\Activate.ps1</code></pre>
+                            <div class="callout callout--warn"><p>If PowerShell says <em>“running scripts is disabled on this system”</em>, allow local scripts for your user once:</p>
+                            <pre><code>Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned</code></pre>
+                            <p>Then run the <code>Activate.ps1</code> line again. (In classic <em>Command Prompt</em> the activate command is <code>venv\Scripts\activate.bat</code> instead.)</p></div>
+                        </li>
+                        <li><strong>Install the dependency:</strong>
+                            <pre><code>pip install requests</code></pre>
+                        </li>
+                        <li><strong>Start the server:</strong>
+                            <pre><code>python scripts\dev_server.py</code></pre>
+                        </li>
+                        <li><strong>Open the app:</strong> go to <a href="http://127.0.0.1:8080/index.html" target="_blank" rel="noopener"><code>http://127.0.0.1:8080/index.html</code></a>.</li>
+                    </ol>
+                    <div class="callout callout--win"><p><strong>Port already in use?</strong> Find the process and either stop it or pick another port:</p>
+                    <pre><code>netstat -ano | findstr ":8080"
+python scripts\dev_server.py --port 9000</code></pre>
+                    <p>Then open <code>http://127.0.0.1:9000/index.html</code>.</p></div>
+                    <p>Stuck on a Windows step? See the curated <a href="#chapter-links">External Resources</a> — they link straight to the official Python, PATH, venv, and PowerShell help pages.</p>
+                </section>
+
+                <section class="manual-section" id="install-macos" data-title="Install on macOS" data-keywords="macos mac homebrew brew python3 pip3 venv install">
+                    <h3><span class="platform-pill">macOS</span>Install on macOS</h3>
+                    <pre><code><span class="cmt"># Python 3 (skip if you already have it — check: python3 --version)</span>
+brew install python3        <span class="cmt"># or download from python.org</span>
+
+cd news_reader_web
+python3 -m venv venv &amp;&amp; source venv/bin/activate   <span class="cmt"># optional but recommended</span>
+pip install requests
+python3 scripts/dev_server.py</code></pre>
+                    <p>Open <a href="http://127.0.0.1:8080/index.html" target="_blank" rel="noopener"><code>http://127.0.0.1:8080/index.html</code></a>. If <code>brew</code> isn't installed, get it from <a href="https://brew.sh/" target="_blank" rel="noopener">brew.sh</a> or use the python.org installer.</p>
+                </section>
+
+                <section class="manual-section" id="install-linux" data-title="Install on Linux" data-keywords="linux ubuntu debian apt python3 pip venv install">
+                    <h3><span class="platform-pill">Linux</span>Install on Linux</h3>
+                    <pre><code><span class="cmt"># Debian / Ubuntu</span>
+sudo apt-get install python3 python3-pip python3-venv
+
+cd news_reader_web
+python3 -m venv venv &amp;&amp; source venv/bin/activate   <span class="cmt"># optional</span>
+pip install requests
+python3 scripts/dev_server.py</code></pre>
+                    <p>Open <a href="http://127.0.0.1:8080/index.html" target="_blank" rel="noopener"><code>http://127.0.0.1:8080/index.html</code></a>.</p>
+                </section>
+
+                <section class="manual-section" id="install-dependency" data-title="The one dependency: requests" data-keywords="requests dependency pip install requirements module not found">
+                    <h3>The one dependency: <code>requests</code></h3>
+                    <p>The dev server relies on stdlib for almost everything; the only external package is <a href="https://requests.readthedocs.io/" target="_blank" rel="noopener"><code>requests</code></a> (used for robust feed fetching). Install it with <code>pip install requests</code> (or <code>pip3</code>).</p>
+                    <div class="callout callout--warn"><p>Seeing <code>ModuleNotFoundError: No module named 'requests'</code>? You installed it for a different Python than the one running the server. If you use a virtual environment, make sure it's <em>activated</em> before both the <code>pip install</code> and the <code>python</code> command.</p></div>
+                </section>
+
+                <section class="manual-section" id="install-server-options" data-title="Starting the dev server (options)" data-keywords="dev server start port listen target arguments argparse 8080 lm studio 1234 command line flags">
+                    <h3>Starting the dev server (options)</h3>
+                    <p>The default just works:</p>
+                    <pre><code>python3 scripts/dev_server.py</code></pre>
+                    <p>You can override the defaults with command-line flags:</p>
+                    <div class="table-wrap"><table class="ref">
+                        <thead><tr><th>Flag</th><th>Default</th><th>Purpose</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>--port</code></td><td><code>8080</code></td><td>Port the app is served on.</td></tr>
+                            <tr><td><code>--listen</code></td><td><code>127.0.0.1</code></td><td>Bind address. Use <code>0.0.0.0</code> to reach it from another device on your LAN.</td></tr>
+                            <tr><td><code>--target</code></td><td><code>http://127.0.0.1:1234</code></td><td>Where LM Studio is running (the server proxies <code>/api/v1/chat</code> to it).</td></tr>
+                        </tbody>
+                    </table></div>
+                    <pre><code>python3 scripts/dev_server.py --port 9000 --listen 0.0.0.0 --target http://192.168.1.50:1234</code></pre>
+                </section>
+
+                <section class="manual-section" id="install-static" data-title="Plain static server (limited)" data-keywords="python -m http.server static limited no api cors why dev server proxy source-feed">
+                    <h3>Plain static server (limited — usually not what you want)</h3>
+                    <p>You <em>can</em> serve the files with Python's built-in server:</p>
+                    <pre><code>python3 -m http.server 8080</code></pre>
+                    <p>…but this skips all the <code>/api/*</code> routes. Without the dev server you lose feed proxying (many feeds fail in the browser due to CORS), same-origin AI proxying, comment counts, alternative links, and the whole international source catalog (which depends on <code>/api/source-feed</code>). <strong>Prefer <code>scripts/dev_server.py</code>.</strong></p>
+                </section>
+
+                <section class="manual-section" id="install-verify" data-title="Verify it works" data-keywords="verify test working console f12 feeds loading troubleshoot check">
+                    <h3>Verify it works</h3>
+                    <ul>
+                        <li>The terminal prints something like <code>Open: http://127.0.0.1:8080/index.html</code> when the server starts.</li>
+                        <li>Open that URL — articles from Heise (and other enabled sources) should appear within a few seconds.</li>
+                        <li>If the grid is empty or shows only a demo item, open the browser console (<kbd>F12</kbd>) and check <a href="#chapter-trouble">Troubleshooting</a>.</li>
+                    </ul>
+                </section>
+            </section>
+
+            <!-- 4. AI / KI SETUP -->
+            <section class="manual-chapter" data-chapter="AI / KI Setup" id="chapter-ai">
+                <h2><span class="chapter-num">4</span> AI / KI Setup</h2>
+
+                <section class="manual-section" id="ai-modes" data-title="The three AI modes" data-keywords="ki ai modes lm studio openai anthropic api mode which backend choose provider">
+                    <h3>The three AI modes</h3>
+                    <p>Open <strong>KI-Server</strong> in the app header and choose an <em>API mode</em>. All AI features (summaries, Reddit query optimization, YouTube suggestions — and this manual's <em>Ask the AI</em>) use whichever mode you pick.</p>
+                    <div class="table-wrap"><table class="ref">
+                        <thead><tr><th>Mode</th><th>Best for</th><th>Endpoint</th><th>Needs a key?</th></tr></thead>
+                        <tbody>
+                            <tr><td><strong>LM Studio REST v1</strong> (default)</td><td>Free, private, local models</td><td><code>POST /api/v1/chat</code></td><td>No (local)</td></tr>
+                            <tr><td><strong>OpenAI-compatible</strong></td><td>Ollama, vLLM, LocalAI, OpenAI, etc.</td><td><code>POST /v1/chat/completions</code></td><td>Depends on server</td></tr>
+                            <tr><td><strong>Anthropic Messages API</strong></td><td>Cloud Claude models</td><td><code>POST /v1/messages</code></td><td>Yes</td></tr>
+                        </tbody>
+                    </table></div>
+                </section>
+
+                <section class="manual-section" id="ai-lmstudio" data-title="LM Studio (recommended local)" data-keywords="lm studio local model rest v1 same origin port 1234 base url reasoning automatic loaded model">
+                    <h3>LM Studio (recommended local setup)</h3>
+                    <ol>
+                        <li>Install <a href="https://lmstudio.ai/" target="_blank" rel="noopener">LM Studio</a>, download a model, and start its local server (usually port <code>1234</code>).</li>
+                        <li>In the app open <strong>KI-Server</strong> → API mode <strong>LM Studio REST v1</strong>.</li>
+                        <li>Set <strong>Server URL</strong> to <code>http://127.0.0.1:1234</code> (server root only — no path).</li>
+                        <li>Leave <strong>Model</strong> on <em>Automatic</em> to use whatever model is currently loaded in LM Studio, or pick a specific one from the list.</li>
+                        <li>Enable <strong>“REST via same page origin”</strong>, then <em>Save</em> and reload.</li>
+                    </ol>
+                    <div class="callout callout--tip"><p><strong>Why “REST via same page origin”?</strong> It routes AI calls through the dev server (<code>/api/v1/chat</code>) instead of the browser calling LM Studio directly. This avoids the <code>OPTIONS</code> preflight that many LM Studio builds reject — the usual cause of “Failed to fetch”. It requires <code>scripts/dev_server.py</code> to be the page you opened.</p></div>
+                </section>
+
+                <section class="manual-section" id="ai-anthropic" data-title="Anthropic Messages API (cloud)" data-keywords="anthropic claude api key x-api-key messages base url console cloud 401 403">
+                    <h3>Anthropic Messages API (cloud Claude)</h3>
+                    <ol>
+                        <li>Create an API key in the <a href="https://console.anthropic.com/" target="_blank" rel="noopener">Anthropic Console</a>.</li>
+                        <li>Open <strong>KI-Server</strong> → API mode <strong>Anthropic Messages API</strong>.</li>
+                        <li>Set <strong>Server URL</strong> to <code>https://api.anthropic.com/v1</code> (the client appends <code>/messages</code> and <code>/models</code>).</li>
+                        <li>Paste your <strong>API key</strong> (required — sent as the <code>x-api-key</code> header).</li>
+                        <li>Leave <strong>Model</strong> on <em>Automatic</em> (uses the first model the API returns) or select one.</li>
+                    </ol>
+                    <div class="callout callout--note"><p>Your key is stored only in your browser's <code>localStorage</code> and sent directly to Anthropic. Reasoning controls are hidden in this mode because the app sends only the standard Messages fields (<code>model, system, messages, temperature, max_tokens, stream</code>).</p></div>
+                </section>
+
+                <section class="manual-section" id="ai-openai" data-title="OpenAI-compatible servers" data-keywords="openai compatible ollama vllm localai base url /v1 chat completions token model gpt">
+                    <h3>OpenAI-compatible servers</h3>
+                    <p>For Ollama, vLLM, LocalAI, or the real OpenAI API, choose mode <strong>OpenAI-compatible</strong>. The <strong>Server URL</strong> must end in <code>/v1</code> (e.g. <code>http://127.0.0.1:1234/v1</code>) — <em>not</em> <code>…/v1/chat/completions</code>; the client appends the path itself. Provide an <strong>API token</strong> only if your server requires one.</p>
+                    <div class="callout callout--warn"><p>A <em>remote</em> OpenAI-compatible host (anything other than <code>127.0.0.1</code>/<code>localhost</code>) can't be reached from this manual page's <em>Ask the AI</em> due to its Content-Security-Policy. Article summaries in the app are unaffected — only the manual's AVE box is constrained. See <a href="#trouble-csp">Troubleshooting → CSP</a>.</p></div>
+                </section>
+
+                <section class="manual-section" id="ai-model-reasoning" data-title="Model selection & reasoning" data-keywords="model selection automatic manual reasoning level off low medium high capabilities loaded refresh list">
+                    <h3>Model selection &amp; reasoning</h3>
+                    <p><strong>Automatic vs. manual:</strong> with <em>Automatic</em>, the app resolves the currently loaded model before each request (great when you swap models in LM Studio). Pick a model to pin it. Use the ↻ button to reload the list.</p>
+                    <p><strong>Reasoning</strong> (LM Studio mode only): the app reads each model's <code>capabilities.reasoning.allowed_options</code> from the native model list and only shows the levels that model actually supports. Models without reasoning support show only <em>Off</em>. If the app can reach only the older OpenAI-style model list (no capability metadata), it conservatively offers <em>Off</em>. Reasoning controls are hidden entirely in OpenAI-compatible and Anthropic modes.</p>
+                </section>
+
+                <section class="manual-section" id="ai-summary-behavior" data-title="Summary language, style & performance" data-keywords="summary language site browser style factual professional casual custom cache days concurrency timeout ttl">
+                    <h3>Summary language, style &amp; performance</h3>
+                    <ul>
+                        <li><strong>Language</strong> — <em>Site</em> matches the article's source language (German for <code>.de</code>, English for The Verge); <em>Browser</em> uses your browser language.</li>
+                        <li><strong>Style</strong> — <em>Factual</em>, <em>Professional</em>, <em>Casual</em>, or <em>Custom</em> (your own free-text instruction, up to 300 characters).</li>
+                        <li><strong>Summary cache (days)</strong> — how long summaries are reused from IndexedDB. <code>0</code> = never expire.</li>
+                        <li><strong>Concurrency</strong> — how many summaries are generated in parallel during batch/auto runs (1–16, default 4). Higher = faster but heavier on your model.</li>
+                        <li><strong>Request timeout (seconds)</strong> — abort an AI call after this long (default 120).</li>
+                    </ul>
+                    <p>See the full list of knobs in the <a href="#chapter-reference">Configuration Reference</a>.</p>
+                </section>
+            </section>
+
+            <!-- 5. USING THE APP -->
+            <section class="manual-chapter" data-chapter="Using the App" id="chapter-usage">
+                <h2><span class="chapter-num">5</span> Using the App</h2>
+
+                <section class="manual-section" id="use-sources" data-title="Sources: select, favorite, enable" data-keywords="sources source selector quelle favorites star enable disable dashboard settings registry international publishers header dropdown">
+                    <h3>Sources: select, favorite, enable</h3>
+                    <ul>
+                        <li><strong>Switch source</strong> with the <em>Quelle</em> (Source) dropdown in the header. Enabled sources are listed alphabetically; use the ◄ ► buttons to step through them.</li>
+                        <li><strong>Favorite</strong> the active source with the star next to its logo. A separate favorites-jump button cycles only your favorites.</li>
+                        <li><strong>Choose which sources appear</strong> in <em>Einstellungen</em> (Settings) → sources list. Filter by name, bulk enable/disable, and keep at least one enabled. The huge international catalog (Reuters, BBC, etc.) lives here too.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="use-heise-magazines" data-title="Heise magazines / sub-feeds" data-keywords="heise magazines ix ct c't foto mac make autos extra sections sub-feeds categories">
+                    <h3>Heise magazines / sub-feeds</h3>
+                    <p>Under <em>Einstellungen → Extra heise.de-Bereiche</em> you can enable additional Heise magazine feeds (<em>iX, c't, c't Fotografie, Mac &amp; i, Make, heise autos</em>). Each loads its own RSS, merges into the <em>heise.de</em> source, and appears as an extra category in the filter panel.</p>
+                </section>
+
+                <section class="manual-section" id="use-categories" data-title="Categories & filters" data-keywords="categories filters chips select all deselect per source dynamic topics sidebar">
+                    <h3>Categories &amp; filters</h3>
+                    <p>Category chips are generated dynamically from the articles currently loaded for the active source. New sources start with <em>all</em> visible categories enabled; only categories you explicitly turn off are remembered, per source. Use <em>Select all</em> / <em>Deselect all</em> for quick bulk changes.</p>
+                    <div class="callout callout--note"><p>No chips showing? The source fetch probably returned no items — chips only exist for loaded articles. See <a href="#trouble-categories">Troubleshooting → categories</a>.</p></div>
+                </section>
+
+                <section class="manual-section" id="use-sorting" data-title="Sorting articles" data-keywords="sort sorting recency date range day comments green red ratings favorites hidden order">
+                    <h3>Sorting articles</h3>
+                    <p>The <em>Sortierung</em> panel offers: newest first (default), favorites first / only, hidden/read only, a single calendar day, a date range, most comments, most green (positive) or most red (negative) ratings.</p>
+                    <div class="callout callout--warn"><p>Comment- and rating-based sorts need the dev server to fetch forum metadata, and only some sites expose it (mainly Heise and Golem). Those requests are rate-limited by the source.</p></div>
+                </section>
+
+                <section class="manual-section" id="use-cards" data-title="Article cards: badges, thumbnails, reordering" data-keywords="article state badges new seen read thumbnails images drag drop reorder cards highlight">
+                    <h3>Article cards: badges, thumbnails, reordering</h3>
+                    <ul>
+                        <li><strong>State badges</strong> — <em>New</em> (added since last refresh), <em>Seen</em> (opened), <em>Read</em> (marked read). Their colors are customizable (see <a href="#appearance-badges">Appearance</a>).</li>
+                        <li><strong>Thumbnails</strong> — feed-provided images, toggleable in settings.</li>
+                        <li><strong>Drag &amp; drop</strong> — reorder cards within the current view; the manual order persists for that view.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="use-related" data-title="Alternative links, Reddit & YouTube" data-keywords="alternative links bing news reddit threads youtube suggestions discovery mode click always blacklist domains web search engine">
+                    <h3>Alternative links, Reddit &amp; YouTube</h3>
+                    <ul>
+                        <li><strong>Alternative article links</strong> — real third-party URLs for the same story, fetched from Bing News via the dev server (0–15, with an optional domain blacklist and expanded/collapsed display). These are <em>not</em> AI-invented links.</li>
+                        <li><strong>Reddit threads</strong> — related discussions; when LM Studio is running the server can AI-optimize the search queries. Discovery is on-click or always.</li>
+                        <li><strong>YouTube suggestions</strong> — the AI proposes searches and the app opens YouTube result pages; no YouTube API key required for that path.</li>
+                        <li><strong>Web search engine</strong> — pick DuckDuckGo, Google, or Bing for the card's “More articles” button.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="use-translation" data-title="Article translation" data-keywords="translation translate mymemory target language google bing provider machine translation quota">
+                    <h3>Article translation</h3>
+                    <p>Enable <em>machine translation of the article area</em> to translate titles, categories, AI summaries, alternative links, and Reddit text via the MyMemory API into your chosen target language. Article links can be wrapped through Google or Microsoft translation. The free MyMemory tier has a daily quota.</p>
+                </section>
+
+                <section class="manual-section" id="use-background" data-title="Background refresh & selected-sources generation" data-keywords="background refresh interval selected sources generation prewarm favorites all enabled progress eta cancel batch summarize all">
+                    <h3>Background refresh &amp; bulk generation</h3>
+                    <ul>
+                        <li><strong>Update interval</strong> — auto-refresh the current source every 5–480 minutes (default 60).</li>
+                        <li><strong>Background refresh</strong> — optionally prewarm all enabled (or just favorite) sources on that interval, including summaries, alternative links, and Reddit results.</li>
+                        <li><strong>Selected-sources generation</strong> (“Alle Artikel aus allen Quellen erneuern”) — a manual run with its own modal: choose scope and time period, watch progress/ETA, and cancel anytime.</li>
+                        <li><strong>Summarize all</strong> — generate AI summaries for every article matching the current filter (respecting cache and concurrency).</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="use-export-stats" data-title="Export & AI statistics" data-keywords="export csv json xlsx pdf articles time range summary metadata ki stats tokens usage chart model">
+                    <h3>Export &amp; AI statistics</h3>
+                    <p><strong>Export</strong> (header ⤓) writes CSV, JSON, or XLSX for selected articles or a time range, optionally including AI summaries, alternative links, Reddit threads, and AI metadata. Articles can also be exported to PDF with thumbnails.</p>
+                    <p><strong>KI statistics</strong> (in KI-Server settings → <em>Statistik…</em>) shows summary count, total and average tokens, average processing time, a usage chart, and your most-used model, with a clear-stats button.</p>
+                </section>
+            </section>
+
+            <!-- 6. APPEARANCE -->
+            <section class="manual-chapter" data-chapter="Appearance & Themes" id="chapter-appearance">
+                <h2><span class="chapter-num">6</span> Appearance &amp; Themes</h2>
+
+                <section class="manual-section" id="appearance-mode-accent" data-title="Light/dark mode & accent colors" data-keywords="theme mode system light dark accent color heise ocean forest violet amber rose slate midnight">
+                    <h3>Light/dark mode &amp; accent colors</h3>
+                    <p>Under <em>Darstellung &amp; Farben</em> pick a <strong>theme mode</strong> (System, Light, Dark) and one of eight <strong>accent colors</strong>: heise (orange), ocean, forest, violet, amber, rose, slate, midnight. The accent recolors buttons, links, and highlights throughout the UI. <em>(This manual follows the same accent and mode you set in the app.)</em></p>
+                </section>
+
+                <section class="manual-section" id="appearance-brightness" data-title="Brightness & transparency sliders" data-keywords="surface brightness light dark sliders header transparency perceptually balanced curve contrast">
+                    <h3>Brightness &amp; transparency sliders</h3>
+                    <ul>
+                        <li><strong>Surface brightness (light / dark)</strong> — 50 is neutral; below darkens surfaces, above lightens them. A perceptually balanced curve keeps text contrast readable automatically.</li>
+                        <li><strong>Header transparency (light / dark)</strong> — 0 is opaque, 100 fully transparent, controlling how much of the banner art shows through.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="appearance-custom-colors" data-title="Custom surface & header colors" data-keywords="custom colors surface header background card border pickers light dark override">
+                    <h3>Custom surface &amp; header colors</h3>
+                    <p>Color pickers let you override the primary/secondary/card backgrounds and borders for both light and dark modes, and separately the header bar's surface, text, and border. The brightness sliders apply on top of your custom colors.</p>
+                </section>
+
+                <section class="manual-section" id="appearance-badges" data-title="Article-state badge colors & reset" data-keywords="article state colors new seen read badge color reset restore defaults">
+                    <h3>Article-state badge colors &amp; reset</h3>
+                    <p>Set the colors for the <em>New</em>, <em>Seen</em>, and <em>Read</em> badges (defaults: green <code>#2d8a3e</code>, amber <code>#d9a20b</code>, gray <code>#6b7280</code>). A <strong>“Restore defaults”</strong> button resets all theme and color settings at once.</p>
+                </section>
+            </section>
+
+            <!-- 7. CONFIGURATION REFERENCE -->
+            <section class="manual-chapter" data-chapter="Configuration Reference" id="chapter-reference">
+                <h2><span class="chapter-num">7</span> Configuration Reference</h2>
+                <section class="manual-section" id="reference-table" data-title="Every setting at a glance" data-keywords="reference settings defaults storage keys localstorage values table lookup all options">
+                    <h3>Every setting at a glance</h3>
+                    <p>Defaults and where each setting is stored. Most AI settings mirror to <code>localStorage</code> keys prefixed <code>heise_</code>; app state also lives in IndexedDB (<code>HeiseNewsDashboard</code>).</p>
+                    <div class="table-wrap"><table class="ref">
+                        <thead><tr><th>Setting</th><th>Where</th><th>Default</th><th>Values</th><th>Storage key</th></tr></thead>
+                        <tbody>
+                            <tr><td>API mode</td><td>KI-Server</td><td>LM Studio REST v1</td><td>lm_rest_v1 / openai / anthropic</td><td><code>heise_ki_api_mode</code></td></tr>
+                            <tr><td>LM Studio server URL</td><td>KI-Server</td><td><code>http://127.0.0.1:1234</code></td><td>root URL, no path</td><td><code>heise_lm_rest_root</code></td></tr>
+                            <tr><td>OpenAI base URL</td><td>KI-Server</td><td><code>http://127.0.0.1:1234/v1</code></td><td>must end in <code>/v1</code></td><td><code>heise_api_base</code></td></tr>
+                            <tr><td>Anthropic base URL</td><td>KI-Server</td><td><code>https://api.anthropic.com/v1</code></td><td>must end in <code>/v1</code></td><td><code>heise_anthropic_api_base</code></td></tr>
+                            <tr><td>API token / key</td><td>KI-Server</td><td>(empty)</td><td>required for Anthropic</td><td><code>heise_lm_api_token</code></td></tr>
+                            <tr><td>REST via same origin</td><td>KI-Server</td><td>off</td><td>on / off</td><td><code>heise_rest_same_origin</code></td></tr>
+                            <tr><td>Model</td><td>KI-Server</td><td>Automatic</td><td>auto or a model id</td><td><code>heise_lm_model</code></td></tr>
+                            <tr><td>Reasoning level</td><td>KI-Server (LM)</td><td>off</td><td>off/low/medium/high/on*</td><td><code>heise_reasoning</code></td></tr>
+                            <tr><td>Summary language</td><td>KI-Server</td><td>site</td><td>site / browser</td><td><code>heise_summary_lang_mode</code></td></tr>
+                            <tr><td>Summary style</td><td>KI-Server</td><td>factual</td><td>factual/professional/casual/custom</td><td><code>heise_summary_style</code></td></tr>
+                            <tr><td>Custom style text</td><td>KI-Server</td><td>(empty)</td><td>≤ 300 chars</td><td><code>heise_summary_style_custom</code></td></tr>
+                            <tr><td>Summary cache (days)</td><td>KI-Server</td><td>14</td><td>0 = never expire</td><td><code>heise_summary_cache_days</code></td></tr>
+                            <tr><td>Summary concurrency</td><td>KI-Server</td><td>4</td><td>1–16</td><td><code>heise_summary_concurrency</code></td></tr>
+                            <tr><td>Request timeout (s)</td><td>KI-Server</td><td>120</td><td>15–3600</td><td><code>heise_ki_request_timeout_sec</code></td></tr>
+                            <tr><td>Alternative links count</td><td>KI-Server</td><td>5</td><td>0–15 (0 = off)</td><td><code>heise_alternative_links_count</code></td></tr>
+                            <tr><td>Alt-links blacklist</td><td>KI-Server</td><td>(empty)</td><td>domains, one per line</td><td><code>heise_alternative_links_blacklist</code></td></tr>
+                            <tr><td>Web search engine</td><td>KI-Server</td><td>duckduckgo</td><td>duckduckgo/google/bing</td><td><code>heise_web_search_engine</code></td></tr>
+                            <tr><td>Theme mode</td><td>Appearance</td><td>system</td><td>system/light/dark</td><td><code>theme</code></td></tr>
+                            <tr><td>Accent color</td><td>Appearance</td><td>heise</td><td>8 presets</td><td><code>heise_color_theme</code></td></tr>
+                            <tr><td>Update interval (min)</td><td>Header</td><td>60</td><td>5–480</td><td>IndexedDB <code>updateInterval</code></td></tr>
+                            <tr><td>Enabled sources</td><td>Settings</td><td>defaults</td><td>≥ 1 enabled</td><td><code>heise_enabled_news_sources</code></td></tr>
+                            <tr><td>Article thumbnails</td><td>Settings</td><td>on</td><td>on / off</td><td><code>heise_article_thumbnails_enabled</code></td></tr>
+                        </tbody>
+                    </table></div>
+                    <p style="font-size:0.82rem;color:var(--text-secondary)">* Reasoning levels are filtered to what the selected LM Studio model reports.</p>
+                </section>
+            </section>
+
+            <!-- 8. TROUBLESHOOTING -->
+            <section class="manual-chapter" data-chapter="Troubleshooting" id="chapter-trouble">
+                <h2><span class="chapter-num">8</span> Troubleshooting</h2>
+
+                <section class="manual-section" id="trouble-feeds" data-title="Feeds empty or showing demo articles" data-keywords="feeds empty demo fallback cors access-control-allow-origin source-feed dev server not loading">
+                    <h3>Feeds empty or showing demo articles</h3>
+                    <ul>
+                        <li>Make sure you opened the app <em>from the dev server</em> (<code>http://127.0.0.1:8080/…</code>), not by double-clicking <code>index.html</code>.</li>
+                        <li>Many publisher RSS feeds don't send CORS headers, so they need the dev server proxy. International sources depend on <code>/api/source-feed</code>.</li>
+                        <li>Open the console (<kbd>F12</kbd>) to see the exact network error.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="trouble-categories" data-title="Categories missing or unexpected" data-keywords="categories missing chips disabled hard reload cache source fetch failed">
+                    <h3>Categories missing or unexpected</h3>
+                    <p>Chips are built from loaded articles — if the fetch returned nothing, no chips appear. New categories start enabled; only your explicit deactivations persist. After a code update, hard-reload the page so the latest scripts load.</p>
+                </section>
+
+                <section class="manual-section" id="trouble-ai-fetch" data-title="AI: “Failed to fetch” / OPTIONS preflight" data-keywords="failed to fetch options preflight cors lm studio same origin proxy 400 reasoning error">
+                    <h3>AI: “Failed to fetch” or LM Studio logs <code>OPTIONS /api/v1/chat</code></h3>
+                    <ul>
+                        <li>Use <code>python3 scripts/dev_server.py</code> and enable <strong>REST via same page origin</strong> in KI settings, then reload.</li>
+                        <li>Alternatively enable CORS in LM Studio, or use <code>scripts/lm_studio_cors_proxy.py</code>.</li>
+                        <li><strong>HTTP 400</strong> usually means a wrong model id or an unsupported <code>reasoning</code> value — the client retries without reasoning when it can.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="trouble-csp" data-title="Content-Security-Policy & remote AI hosts" data-keywords="csp content security policy connect-src remote openai host blocked anthropic mixed content https http localhost">
+                    <h3>Content-Security-Policy &amp; remote AI hosts</h3>
+                    <ul>
+                        <li>This manual's <em>Ask the AI</em> can reach the same-origin dev-server proxy, local LM Studio (<code>127.0.0.1</code>/<code>localhost</code>), and <code>api.anthropic.com</code>. A <em>custom remote</em> OpenAI-compatible host is blocked by the page's static CSP — use LM Studio same-origin or Anthropic for the manual's AI box.</li>
+                        <li><strong>Mixed content:</strong> serve the app over <code>http://localhost</code>/<code>127.0.0.1</code> when talking to a local HTTP model API, or terminate TLS in front of both.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="trouble-openai-anthropic" data-title="OpenAI/Anthropic base-URL & auth errors" data-keywords="openai messages field required base url v1 chat completions anthropic 401 403 model automatic key">
+                    <h3>OpenAI / Anthropic base-URL &amp; auth errors</h3>
+                    <ul>
+                        <li><code>'messages' field is required</code> → your OpenAI base URL includes the path. Use <code>http://host:port/v1</code>, not <code>…/v1/chat/completions</code>.</li>
+                        <li>Anthropic base URL must be <code>https://api.anthropic.com/v1</code> (client appends <code>/messages</code>). A missing/invalid key gives 401/403; reload the model list if <em>Automatic</em> can't resolve a model.</li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="trouble-reset" data-title="Reset the cache / start fresh" data-keywords="reset cache indexeddb localstorage clear delete database hard reset destructive summaries comment counts">
+                    <h3>Reset the cache / start fresh</h3>
+                    <p>Summaries and settings live in IndexedDB + <code>localStorage</code>. Clearing <em>site data</em> removes them. To hard-reset from the console (<strong>destructive</strong>):</p>
+                    <pre><code>localStorage.clear();
+indexedDB.deleteDatabase('HeiseNewsDashboard');
+caches.keys().then((n) =&gt; n.forEach((x) =&gt; caches.delete(x)));
+location.reload();</code></pre>
+                    <p><strong>Comment counts missing?</strong> They come from dev-server routes; a plain <code>python -m http.server</code> won't provide them.</p>
+                </section>
+            </section>
+
+            <!-- 9. PRIVACY -->
+            <section class="manual-chapter" data-chapter="Privacy & Data" id="chapter-privacy">
+                <h2><span class="chapter-num">9</span> Privacy &amp; Data Flows</h2>
+                <section class="manual-section" id="privacy-flows" data-title="Where your data goes" data-keywords="privacy data local indexeddb localstorage publisher feeds ai provider dev server helpers no accounts telemetry api key">
+                    <h3>Where your data goes</h3>
+                    <ul>
+                        <li><strong>Local storage</strong> — articles, settings, and AI summaries stay in your browser (IndexedDB + <code>localStorage</code>).</li>
+                        <li><strong>Publisher feeds</strong> — fetching news requests public RSS/Atom from third-party sites, which may log requests per their policies.</li>
+                        <li><strong>AI providers</strong> — a summary request sends the article URL, title, and feed description (and your API key if required) to the endpoint you configured (local LM Studio, an OpenAI-compatible API, or Anthropic). Their privacy policy applies.</li>
+                        <li><strong>Dev-server helpers</strong> — Bing News, Reddit search, and URL checks run server-side; those queries leave your machine to the respective services.</li>
+                        <li><strong>No accounts, no telemetry</strong> — the project ships no user database or tracking.</li>
+                    </ul>
+                </section>
+            </section>
+
+            <!-- 10. ADDING A SOURCE -->
+            <section class="manual-chapter" data-chapter="Adding a Source" id="chapter-addsource">
+                <h2><span class="chapter-num">10</span> Adding a News Source (advanced)</h2>
+                <section class="manual-section" id="addsource-steps" data-title="Register and wire a new publisher" data-keywords="add source registry news-sources-registry feedStrategy bing_news direct_rss google_news configureSource dev server proxy csp i18n developer">
+                    <h3>Register and wire a new publisher</h3>
+                    <p>This is a developer task. In short:</p>
+                    <ol>
+                        <li><strong>Register</strong> the source in <code>js/news-sources-registry.js</code> with at least <code>id</code>, <code>siteUrl</code>, <code>displayName</code>, <code>language</code>, and a <code>feedStrategy</code> (<code>bing_news</code>, <code>direct_rss</code>, or <code>google_news</code>).</li>
+                        <li><strong>Scraping:</strong> registry-driven sources map to <code>/api/source-feed</code> automatically; add a <code>configureSource</code> branch in <code>js/news-scraper.js</code> only for bespoke handling.</li>
+                        <li><strong>Dev server:</strong> prefer the shared <code>/api/source-feed</code>; add a dedicated route only if needed, and document it.</li>
+                        <li><strong>CSP:</strong> if the browser should fetch the publisher directly, add its host to <code>connect-src</code> in <code>index.html</code>.</li>
+                        <li><strong>UI / i18n:</strong> add a brand logo URL in <code>getBrandLogoUrl</code> and <code>header.news_source_*</code> keys in both locale files.</li>
+                        <li><strong>AI metadata:</strong> extend the id/host/label maps in <code>js/ai-summarizer.js</code> so prompts and alternative-link filtering use the right domain.</li>
+                    </ol>
+                    <p>The repository's <code>docs/adding-sources.adoc</code> has the full checklist.</p>
+                </section>
+            </section>
+
+            <!-- 11. FAQ -->
+            <section class="manual-chapter" data-chapter="FAQ" id="chapter-faq">
+                <h2><span class="chapter-num">11</span> FAQ</h2>
+                <section class="manual-section" id="faq-general" data-title="Frequently asked questions" data-keywords="faq questions do i need dev server api key offline which mode free cost windows mac">
+                    <h3>Frequently asked questions</h3>
+                    <h4>Do I have to run the Python dev server?</h4>
+                    <p>Practically, yes. Without it most feeds fail (CORS), the international catalog and helper routes don't work, and same-origin AI proxying is unavailable.</p>
+                    <h4>Do I need an API key?</h4>
+                    <p>No — with <strong>LM Studio</strong> (local) everything is free and offline. A key is only needed for the Anthropic (or a keyed OpenAI-compatible) mode.</p>
+                    <h4>Which AI mode should I choose?</h4>
+                    <p>Private &amp; free → LM Studio. Best cloud quality → Anthropic Claude. Already running Ollama/vLLM → OpenAI-compatible.</p>
+                    <h4>Does it work fully offline?</h4>
+                    <p>The app and local AI work offline, but fetching news and helper data (feeds, Bing News, Reddit) needs internet.</p>
+                    <h4>Why does “Ask the AI” in this manual say it can't reach my model?</h4>
+                    <p>You have no AI backend configured, or it's unreachable. Configure <strong>KI-Server</strong> in the app first — the manual reuses those exact settings. See <a href="#chapter-ai">AI / KI Setup</a>.</p>
+                </section>
+            </section>
+
+            <!-- 12. GLOSSARY -->
+            <section class="manual-chapter" data-chapter="Glossary" id="chapter-glossary">
+                <h2><span class="chapter-num">12</span> Glossary</h2>
+                <section class="manual-section" id="glossary-terms" data-title="Terms used in this manual" data-keywords="glossary definitions ki lm studio rss atom indexeddb reasoning csp venv cors preflight">
+                    <h3>Terms used in this manual</h3>
+                    <ul>
+                        <li><strong>KI</strong> — German for “AI” (Künstliche Intelligenz); the app's AI settings dialog is labelled <em>KI-Server</em>.</li>
+                        <li><strong>LM Studio</strong> — a desktop app that runs open-weight language models locally and exposes a REST server.</li>
+                        <li><strong>RSS / Atom</strong> — XML feed formats publishers use to syndicate articles.</li>
+                        <li><strong>IndexedDB</strong> — the browser database where the app stores articles, summaries, and settings.</li>
+                        <li><strong>Reasoning</strong> — a model's optional internal “thinking” mode; the app shows only the final answer, never the reasoning.</li>
+                        <li><strong>CSP</strong> — Content-Security-Policy, a browser rule set controlling which hosts a page may contact.</li>
+                        <li><strong>venv</strong> — a Python virtual environment that isolates installed packages from the system.</li>
+                        <li><strong>CORS / preflight</strong> — browser cross-origin rules; the dev server proxy sidesteps them.</li>
+                    </ul>
+                </section>
+            </section>
+
+            <!-- 13. EXTERNAL RESOURCES -->
+            <section class="manual-chapter" data-chapter="External Resources" id="chapter-links">
+                <h2><span class="chapter-num">13</span> External Resources</h2>
+
+                <section class="manual-section" id="links-windows" data-title="Windows help (Python, PATH, PowerShell)" data-keywords="windows help python install path py launcher powershell execution policy venv pip terminal external links official">
+                    <h3><span class="platform-pill">Windows</span>Windows help (most useful first)</h3>
+                    <ul class="linklist">
+                        <li><a href="https://www.python.org/downloads/windows/" target="_blank" rel="noopener"><span class="ll-title">Download Python for Windows</span><span class="ll-desc">Official installers. Remember to tick “Add python.exe to PATH”.</span><span class="ll-url">python.org/downloads/windows</span></a></li>
+                        <li><a href="https://docs.python.org/3/using/windows.html" target="_blank" rel="noopener"><span class="ll-title">Using Python on Windows &amp; the <code>py</code> launcher</span><span class="ll-desc">PATH, the <code>py</code> command, and Windows-specific notes.</span><span class="ll-url">docs.python.org/3/using/windows.html</span></a></li>
+                        <li><a href="https://learn.microsoft.com/powershell/module/microsoft.powershell.security/set-executionpolicy" target="_blank" rel="noopener"><span class="ll-title">PowerShell <code>Set-ExecutionPolicy</code></span><span class="ll-desc">Needed if activating a venv is blocked (“running scripts is disabled”).</span><span class="ll-url">learn.microsoft.com · Set-ExecutionPolicy</span></a></li>
+                        <li><a href="https://learn.microsoft.com/windows/terminal/" target="_blank" rel="noopener"><span class="ll-title">Windows Terminal / opening a shell</span><span class="ll-desc">How to open PowerShell or Command Prompt.</span><span class="ll-url">learn.microsoft.com/windows/terminal</span></a></li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="links-python" data-title="Python, pip & virtual environments" data-keywords="python pip venv virtual environment packaging install docs cross platform macos linux">
+                    <h3>Python, pip &amp; virtual environments (all platforms)</h3>
+                    <ul class="linklist">
+                        <li><a href="https://www.python.org/downloads/" target="_blank" rel="noopener"><span class="ll-title">Download Python (all platforms)</span><span class="ll-desc">macOS, Linux, and source downloads.</span><span class="ll-url">python.org/downloads</span></a></li>
+                        <li><a href="https://packaging.python.org/en/latest/tutorials/installing-packages/" target="_blank" rel="noopener"><span class="ll-title">Installing packages with pip</span><span class="ll-desc">Official guide, including venv usage.</span><span class="ll-url">packaging.python.org · installing-packages</span></a></li>
+                        <li><a href="https://docs.python.org/3/library/venv.html" target="_blank" rel="noopener"><span class="ll-title"><code>venv</code> — virtual environments</span><span class="ll-desc">Create and activate isolated environments.</span><span class="ll-url">docs.python.org/3/library/venv.html</span></a></li>
+                        <li><a href="https://requests.readthedocs.io/" target="_blank" rel="noopener"><span class="ll-title"><code>requests</code> documentation</span><span class="ll-desc">The one dependency the dev server needs.</span><span class="ll-url">requests.readthedocs.io</span></a></li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="links-ai" data-title="AI backends & API keys" data-keywords="lm studio anthropic console openai ollama api key download models backend">
+                    <h3>AI backends &amp; API keys</h3>
+                    <ul class="linklist">
+                        <li><a href="https://lmstudio.ai/" target="_blank" rel="noopener"><span class="ll-title">LM Studio</span><span class="ll-desc">Run models locally; start its REST server on port 1234.</span><span class="ll-url">lmstudio.ai</span></a></li>
+                        <li><a href="https://console.anthropic.com/" target="_blank" rel="noopener"><span class="ll-title">Anthropic Console</span><span class="ll-desc">Create an API key for the Anthropic Messages API.</span><span class="ll-url">console.anthropic.com</span></a></li>
+                        <li><a href="https://ollama.com/" target="_blank" rel="noopener"><span class="ll-title">Ollama</span><span class="ll-desc">A popular OpenAI-compatible local runtime.</span><span class="ll-url">ollama.com</span></a></li>
+                    </ul>
+                </section>
+
+                <section class="manual-section" id="links-misc" data-title="Other tools" data-keywords="git windows download optional clone tools browser">
+                    <h3>Other tools</h3>
+                    <ul class="linklist">
+                        <li><a href="https://git-scm.com/download/win" target="_blank" rel="noopener"><span class="ll-title">Git for Windows (optional)</span><span class="ll-desc">Only if you clone the project with git instead of downloading a zip.</span><span class="ll-url">git-scm.com/download/win</span></a></li>
+                    </ul>
+                </section>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- AI modal -->
+    <div class="modal" id="aiModal" hidden>
+        <div class="modal__backdrop" data-close></div>
+        <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
+            <div class="modal__head">
+                <h2 id="aiModalTitle">✨ Ask the AI about Cucumber NewsScraper</h2>
+                <button class="modal__close" type="button" data-close aria-label="Close">×</button>
+            </div>
+            <p class="modal__hint">Answers use <strong>this manual first</strong>; general knowledge (e.g. Python/Windows basics) is used only as a fallback and clearly flagged. This uses your existing <strong>KI-Server</strong> settings — nothing extra to configure.</p>
+            <form id="aiForm" autocomplete="off">
+                <textarea id="aiQuestion" placeholder="e.g. How do I install on Windows?  ·  What does the summary cache setting do?  ·  How do I connect LM Studio?"></textarea>
+                <div class="ai-examples" id="aiExamples">
+                    <button type="button" class="ai-example">How do I install on Windows?</button>
+                    <button type="button" class="ai-example">How do I set up LM Studio?</button>
+                    <button type="button" class="ai-example">What does the summary cache do?</button>
+                    <button type="button" class="ai-example">Why do my feeds fail to load?</button>
+                </div>
+                <div class="ai-form-row">
+                    <button class="btn btn--primary" type="submit" id="aiSubmit">Ask</button>
+                    <span style="font-size:0.8rem;color:var(--text-secondary)" id="aiModeLabel"></span>
+                </div>
+            </form>
+            <div class="ai-status" id="aiStatus" role="status" aria-live="polite"></div>
+            <div class="ai-answer" id="aiAnswer" hidden></div>
+            <div class="ai-sources" id="aiSources" hidden>
+                <div class="ai-sources__title">Related manual sections</div>
+                <div id="aiSourcesList"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        Cucumber NewsScraper — MIT License · © 2026 Daniel Mengel. Feed content and trademarks belong to their respective publishers.
+    </footer>
+
+    <script src="js/storage.js"></script>
+    <script src="js/ai-summarizer.js"></script>
+    <script src="js/manual.js"></script>
+</body>
+</html>
