@@ -13,3 +13,6 @@ __pycache__/
 
 # Playwright / browser tooling artefacts
 .playwright-cli/
+
+# JVM crash logs
+hs_err_pid*.log
