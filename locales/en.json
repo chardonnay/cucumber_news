@@ -60,6 +60,8 @@
     "youtube_regenerate_title": "Discard cached suggestions and run the AI again",
     "export_btn": "⤓ Export",
     "export_btn_title": "Export articles",
+    "manual_btn": "📖 Manual",
+    "manual_btn_title": "Open the user manual",
     "generate_selected_sources_btn": "⚡ Refresh all articles from all sources",
     "generate_selected_sources_title": "Fully load all sources enabled in settings and refresh their content in the background",
     "settings_dashboard_btn": "Settings",
