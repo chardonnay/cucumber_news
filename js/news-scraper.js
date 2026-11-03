@@ -235,7 +235,8 @@ class NewsScraper {
                 registryEntry.feedStrategy === 'bing_news' ||
                 registryEntry.feedStrategy === 'google_news' ||
                 registryEntry.feedStrategy === 'direct_rss' ||
-                registryEntry.feedStrategy === 'html_sections'
+                registryEntry.feedStrategy === 'html_sections' ||
+                registryEntry.feedStrategy === 'publisher'
             )
         ) {
             this.baseUrl = String(registryEntry.siteUrl || '');
@@ -420,6 +421,7 @@ class NewsScraper {
     }
 
     async fetchNews() {
+        let timeoutId;
         try {
             const cacheKey = this.feedCacheKey || this.feedUrl;
             if (cacheKey) {
@@ -427,8 +429,7 @@ class NewsScraper {
                 const hit = await cached.match(cacheKey);
                 if (hit) {
                     const xml = await hit.text();
-                    let parsed =
-                        this.feedType === 'rss' ? this.parseRss2Feed(xml) : this.parseAtomFeed(xml);
+                    let parsed = this.parseFeed(xml);
                     if (parsed.length > 0) {
                         if (this.source === 'heise') {
                             const extra = await this.fetchHeiseMagazineFeedArticles();
@@ -445,7 +446,7 @@ class NewsScraper {
                 Array.isArray(this.vergeSectionFeeds) &&
                 this.vergeSectionFeeds.length > 0;
             const timeoutMs = vergeMulti ? 45000 : 20000;
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
             let main;
             if (this.feedProxyPath) {
@@ -454,8 +455,7 @@ class NewsScraper {
                 main = await this.fetchAtomText(this.feedUrl, controller.signal);
             }
 
-            let articles =
-                this.feedType === 'rss' ? this.parseRss2Feed(main) : this.parseAtomFeed(main);
+            let articles = this.parseFeed(main);
 
             if (vergeMulti && this.feedProxyPath) {
                 for (const sectionUrl of this.vergeSectionFeeds) {
@@ -504,8 +504,19 @@ class NewsScraper {
             return this.dedupeAndSort(articles);
         } catch (error) {
             console.error('Error fetching news:', error);
-            return this.getFallbackNews();
+            // Let App retain real cached news and report the failed source.
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
+    }
+
+    /** Parse the actual feed format, including Atom feeds supplied by direct_rss sources. */
+    parseFeed(xml) {
+        const doc = new DOMParser().parseFromString(xml, 'text/xml');
+        return doc.documentElement?.localName === 'feed'
+            ? this.parseAtomFeed(xml)
+            : this.parseRss2Feed(xml);
     }
 
     /**
@@ -775,7 +786,14 @@ class NewsScraper {
         if (!Array.isArray(items)) {
             return [];
         }
-        return items.filter((item) => item && !NewsScraper.isAdvertorialItem(item));
+        return items.filter((item) => item && !NewsScraper.isOfflineDemoNewsItem(item)
+            && !NewsScraper.isAdvertorialItem(item));
+    }
+
+    /** Exclude placeholder rows left in IndexedDB by older releases. */
+    static isOfflineDemoNewsItem(item) {
+        const id = String(item?.id || '').trim().toLowerCase();
+        return id.includes('fallback-') || /\(offline[ -]demo\)/i.test(String(item?.title || ''));
     }
 
     /**
@@ -1056,7 +1074,8 @@ class NewsScraper {
                 entry.feedStrategy === 'bing_news' ||
                 entry.feedStrategy === 'google_news' ||
                 entry.feedStrategy === 'direct_rss' ||
-                entry.feedStrategy === 'html_sections'
+                entry.feedStrategy === 'html_sections' ||
+                entry.feedStrategy === 'publisher'
             )
         );
     }
@@ -1759,7 +1778,8 @@ class NewsScraper {
             }
             const thumbnailUrl = this.extractThumbnailUrl(entry, href, markupCandidates);
 
-            const pubDateEl = entry.getElementsByTagName('pubDate')[0];
+            const pubDateEl = entry.getElementsByTagName('pubDate')[0]
+                || entry.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'date')[0];
             const pubRaw = pubDateEl ? pubDateEl.textContent.trim() : '';
             const publishedMs = pubRaw ? Date.parse(pubRaw) : Date.now();
 
@@ -2387,135 +2407,6 @@ class NewsScraper {
             h2 = (Math.imul(h2, 33) ^ c) >>> 0;
         }
         return `n${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}${s.length.toString(16)}`;
-    }
-
-    getFallbackNews() {
-        console.warn('Nutze lokale Fallback-Artikel (Feed nicht erreichbar oder leer).');
-        const today = new Date();
-        const formatTime = (hoursAgo) => `vor ${hoursAgo} Stunden`;
-        const sourceDisplayName = this.sourceDisplayName || NewsScraper.getSourceDisplayName(this.source) || this.source;
-        const sourceSiteUrl = this.baseUrl || NewsScraper.getSourceSiteUrl(this.source) || 'https://www.heise.de/';
-
-        const demos = {
-            golem: {
-                id: 'golem-fallback-1',
-                title: 'Beispiel: Golem-News (Offline-Demo)',
-                link: 'https://www.golem.de/',
-                url: 'https://www.golem.de/',
-                newsSource: 'golem'
-            },
-            computerbase: {
-                id: 'cb-fallback-1',
-                title: 'Beispiel: ComputerBase (Offline-Demo)',
-                link: 'https://www.computerbase.de/',
-                url: 'https://www.computerbase.de/',
-                newsSource: 'computerbase'
-            },
-            t3n: {
-                id: 't3n-fallback-1',
-                title: 'Beispiel: t3n (Offline-Demo)',
-                link: 'https://t3n.de/',
-                url: 'https://t3n.de/',
-                newsSource: 't3n'
-            },
-            verge: {
-                id: 'verge-fallback-1',
-                title: 'Example: The Verge (offline demo)',
-                link: 'https://www.theverge.com/',
-                url: 'https://www.theverge.com',
-                newsSource: 'verge'
-            },
-            telepolis: {
-                id: 'telepolis-fallback-1',
-                title: 'Beispiel: Telepolis (Offline-Demo)',
-                link: 'https://www.telepolis.de/',
-                url: 'https://www.telepolis.de/',
-                newsSource: 'telepolis'
-            },
-            bild: {
-                id: 'bild-fallback-1',
-                title: 'Beispiel: BILD (Offline-Demo)',
-                link: 'https://www.bild.de/',
-                url: 'https://www.bild.de/',
-                newsSource: 'bild'
-            },
-            it_administrator: {
-                id: 'it-admin-fallback-1',
-                title: 'Beispiel: IT-Administrator (Offline-Demo)',
-                link: 'https://www.it-administrator.de/',
-                url: 'https://www.it-administrator.de/',
-                newsSource: 'it_administrator'
-            }
-        };
-
-        if (demos[this.source]) {
-            const d = demos[this.source];
-            const cat =
-                this.source === 'telepolis'
-                    ? 'telepolis'
-                    : this.source === 'bild'
-                      ? 'bild'
-                      : 'it';
-            const categoryName = this.categoryMap[cat] || 'IT & Tech';
-            return [
-                {
-                    ...d,
-                    category: cat,
-                    categoryName,
-                    timestamp: formatTime(1),
-                    description: 'Nur sichtbar, wenn der Feed nicht geladen werden kann.',
-                    publishedMs: today.getTime(),
-                    fetchedAt: new Date().toISOString()
-                }
-            ];
-        }
-
-        if (this.source !== 'heise') {
-            return [
-                {
-                    id: `${this.source}-fallback-1`,
-                    title: `Beispiel: ${sourceDisplayName} (Offline-Demo)`,
-                    link: sourceSiteUrl,
-                    category: this.source,
-                    categoryName: this.getCategoryDisplayName(this.source),
-                    timestamp: formatTime(1),
-                    description: 'Nur sichtbar, wenn der Feed nicht geladen werden kann.',
-                    url: sourceSiteUrl,
-                    publishedMs: today.getTime(),
-                    fetchedAt: new Date().toISOString(),
-                    newsSource: this.source
-                }
-            ];
-        }
-
-        return [
-            {
-                id: 'fallback-1',
-                title: 'Beispiel: Neue KI-Entwicklung (Offline-Demo)',
-                link: 'https://www.heise.de/',
-                category: 'ki',
-                categoryName: 'KI',
-                timestamp: formatTime(2),
-                description: 'Nur sichtbar, wenn der Heise-Feed nicht geladen werden kann.',
-                url: 'https://www.heise.de/',
-                publishedMs: today.getTime(),
-                fetchedAt: new Date().toISOString(),
-                newsSource: 'heise'
-            },
-            {
-                id: 'fallback-2',
-                title: 'Beispiel: iOS-Update (Offline-Demo)',
-                link: 'https://www.heise.de/',
-                category: 'mobiles',
-                categoryName: 'Mobiles',
-                timestamp: formatTime(3),
-                description: 'Prüfen Sie die Browser-Konsole bei Problemen.',
-                url: 'https://www.heise.de/',
-                publishedMs: today.getTime(),
-                fetchedAt: new Date().toISOString(),
-                newsSource: 'heise'
-            }
-        ];
     }
 
     async clearCache() {

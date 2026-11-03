@@ -1,0 +1,93 @@
+= Kostenlose Publisher-Abrufwege — Validierung vom 03.11.2026
+
+NOTE: Die 18 unten als offen dokumentierten Quellen wurden anschließend auf Nutzerwunsch aus dem auswählbaren Katalog und den Server-Profilen entfernt. Der aktuelle Katalog enthält 155 Quellen. Die folgenden Befunde dokumentieren den Stand vor dieser Entfernung.
+
+Letzter vollständiger Test (UTC): 2026-11-03T22:23:07.685104+00:00
+
+Nach Nutzervorgabe werden ausschließlich kostenlose Abrufwege verwendet. Es wurde keine Such-API angebunden, kein API-Schlüssel angefordert und kein kostenpflichtiger Zugang genutzt.
+
+== Ergebnis
+
+155/173 Quellen bestehen den vollständigen Feed-Test. Von den zuvor 27 offenen Quellen sind neun zusätzlich nutzbar; 18 bleiben offen. Alle neun zusätzlichen Quellen wurden außerdem mit dem tatsächlichen Browser-Scraper einschließlich der Artikeltexte geprüft.
+
+Die 18 Python-Regressionstests und sieben Browser-Parser-/Fehlerfalltests bestehen. Der tatsächliche Browser-Scraper bestätigt bei allen neun neuen Quellen Artikeltexte mit mindestens 300 Zeichen. Korea JoongAng Daily wurde zusätzlich in der Anwendung mit sichtbaren KI-Zusammenfassungen geprüft.
+
+Die neuen Abrufwege verwenden ausschließlich verifizierte Publisher-URLs: Start-/Rubrikseiten und in robots.txt oder Sitemap-Indizes veröffentlichte Sitemaps. Ein Sitemap-Eintrag wird zunächst nur als Kandidat verwendet. Für einen Feed-Eintrag wird zusätzlich die Artikelseite geladen und auf passenden Titel, kanonische Publisher-URL, explizites Publikationsdatum und mindestens 300 Zeichen Artikeltext geprüft. `lastmod` ersetzt niemals das Publikationsdatum. Veröffentlichungen älter als 30 Tage werden für diesen neuen Abrufweg verworfen. Bei bestehenden RSS-/Bing-Quellen bleibt die bisherige Anwendungslogik erhalten.
+
+Explizite Paywall-/Sperrmerkmale werden berücksichtigt; es werden nur öffentlich zugängliche Artikel übernommen. Die verfügbare Auswahl kann deshalb kleiner sein als auf der Startseite. Keine Zugriffssperren oder Browser-Schutzmechanismen werden umgangen. Titel oder Artikeltexte werden nicht aus URLs, Suchtreffern oder KI-Ausgaben erfunden.
+
+Korea JoongAng Daily hat einen nachgewiesenen neuen Host `www.koreajoongangdaily.com`. Quelle und Host-Allowlist wurden entsprechend angepasst; bisherige Hosts bleiben zur Zuordnung alter Artikel erhalten.
+
+== Neun wieder verfügbare Quellen
+
+[cols="2,1,1,1",options="header"]
+|===
+|Quelle |Server-Einträge |Browser-Einträge |Kürzester Artikeltext im Browser (Zeichen)
+|Toronto Star |2 |2 |2819
+|Nikkei |2 |2 |1124
+|Korea JoongAng Daily / JoongAng Ilbo |14 |14 |3417
+|Goal |6 |6 |1578
+|National Geographic |8 |8 |3551
+|InStyle |3 |3 |2174
+|Lonely Planet |5 |5 |8012
+|Rough Guides |1 |1 |11464
+|El Universal |5 |5 |838
+|===
+
+== Noch offene Quellen
+
+Ein Fehlschlag bedeutet: Mit den geprüften kostenlosen Abrufwegen konnte derzeit kein geeigneter öffentlicher Artikel bestätigt werden. Er beweist nicht, dass der Anbieter generell keine Artikel oder alternativen Zugänge besitzt.
+
+[cols="2,3",options="header"]
+|===
+|Quelle |Beobachteter Befund
+|MSN News |publisher_unavailable:publisher_document_too_large
+|USA Today |publisher_unavailable:publisher_http_402
+|The Washington Post |publisher_unavailable:publisher_fetch_failed
+|Reuters |publisher_unavailable:publisher_http_401
+|Associated Press |publisher_unavailable:publisher_http_403
+|Politico |publisher_unavailable:publisher_http_403
+|India.com |publisher_unavailable:publisher_http_403
+|Telegraph |publisher_unavailable:publisher_http_402
+|O Estado de S. Paulo |publisher_unavailable:no_current_readable_public_articles
+|News.com.au |publisher_unavailable:publisher_http_403
+|The Australian |publisher_unavailable:publisher_http_403
+|Arab News |publisher_unavailable:no_current_readable_public_articles
+|Sports Reference |publisher_unavailable:publisher_http_403
+|90min |publisher_unavailable:no_current_readable_public_articles
+|IMDb |publisher_unavailable:no_current_readable_public_articles
+|Fandom |publisher_unavailable:publisher_http_403
+|WebMD |publisher_unavailable:no_current_readable_public_articles
+|Food Network |publisher_unavailable:publisher_http_403
+|===
+
+Bei HTTP-Sperren ist ein erneut erlaubter öffentlicher Zugriff erforderlich. Bei fehlenden/alten Artikeln werden neue nachweislich aktuelle Publisher-Seiten oder veröffentlichte Sitemaps benötigt. Eine neue Domain wird erst nach Verifikation in die Allowlist aufgenommen. Insbesondere werden Links zu fremden Portalen nicht stillschweigend als Artikel der bisherigen Quelle übernommen.
+
+== Implementierung und Grenzen
+
+* `scripts/publisher_sources.json`: explizite Publisher-Hosts und beobachtete Discovery-URLs; keine geratenen Endpunkte.
+* `scripts/publisher_feeds.py`: Sitemap-/HTML-Verarbeitung, Artikelvalidierung, HTTPS mit TLS-Prüfung, Host-/Redirect-Prüfung und Ausschluss privater Zieladressen.
+* Abrufbudget: 16 Sekunden pro Quelle, vier parallele Artikelprüfungen, höchstens drei Sitemap-Dokumente und 16 Artikelkandidaten. Dokumente sind auf 4 MiB begrenzt, auch nach Gzip-Dekompression.
+* Der vorhandene lokale `/api/source-feed`-Proxy unterstützt dafür `engine=publisher`; `id` und `site_url` müssen zum fest konfigurierten Profil passen.
+* Bis zu 16.000 Zeichen extrahierter Text werden HTML-sicher im RSS-Feld `description` übertragen. So erhält die bestehende KI-Zusammenfassung tatsächlichen Artikeltext.
+* Die vorhandene Server-Cache-Dauer von fünf Minuten bleibt bestehen. Die Browser verwenden neue Feed-/Skriptversionen.
+* Website-Layout-Änderungen können Nacharbeit erfordern; die Prüfskripte liefern dafür reproduzierbare Befunde.
+
+== Reproduktion
+
+[source,bash]
+----
+.venv/bin/python scripts/dev_server.py
+# In einem zweiten Terminal:
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/check_source_feeds.py --output /tmp/source-feeds.json
+.venv/bin/python scripts/check_source_feeds.py --source joongang --source goal --source lonely_planet
+----
+
+Browser: `http://localhost:8080/tests/feed-regression.html?live=toronto_star,nikkei,joongang,goal,national_geographic,instyle,lonely_planet,rough_guides,el_universal_mx`. Erwartet: sieben Parser-/Fehlerfalltests und neun erfolgreiche Live-Anbieterprüfungen; diese führen keine KI-Aufrufe aus.
+
+In der Anwendung die gewünschte Quelle auswählen und aktualisieren; anschließend eine KI-Zusammenfassung anzeigen. Die Artikeltexte müssen im Feed vorhanden sein und die Zusammenfassung muss daraus belegbare Aussagen liefern. Ein vollständiger Feed-Test endet weiterhin mit Exit-Code 1, solange eine der 18 offenen Quellen ausfällt.
+
+== Referenzen
+
+https://developers.google.com/search/docs/crawling-indexing/sitemaps/news-sitemap[Google: News-Sitemaps]; https://developers.google.com/search/docs/appearance/structured-data/article[Google: Article-/NewsArticle-Metadaten]. Konkrete Discovery-URLs stehen in `scripts/publisher_sources.json`.

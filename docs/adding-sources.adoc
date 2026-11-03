@@ -13,6 +13,7 @@ Edit `js/news-sources-registry.js`:
 * For registry-driven sources, prefer `feedStrategy`:
 ** `bing_news` for the shared Bing News → synthetic RSS path
 ** `direct_rss` for an official RSS URL proxied by the dev server
+** `publisher` for verified public article pages discovered from publisher links and advertised sitemaps. Add the matching trusted host/discovery profile to `scripts/publisher_sources.json`; verify actual article text, publication dates and accessibility before enabling the source.
 ** `google_news` if you explicitly want the generic Google News RSS path
 * Add `searchSites` for `bing_news` if the publisher needs multiple host/path hints.
 * Add `feedUrl` for `direct_rss`, plus an optional `feedVersion` when you need a cache-busting revision marker.

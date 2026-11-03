@@ -68,7 +68,7 @@ Unless noted, routes are intended for *local development* on the same origin as 
 
 |`/api/source-feed`
 |GET
-|Registry-backed source feed proxy. Returns RSS built from Bing News search results or proxied official RSS, depending on `engine`. Main query params: `engine`, `label`, `site_url`, `lang`, `limit`; optional `site`, `feed_url`, `rev`, `mkt`.
+|Registry-backed source feed proxy. Returns RSS built from Bing News search results, verified publisher article pages, or proxied official RSS/Atom, depending on `engine`. Main query params: `engine`, `label`, `site_url`, `lang`, `limit`; optional `id`, `site`, `feed_url`, `rev`, `mkt`. `engine=publisher` requires a configured `id` and matching `site_url`.
 
 |`/api/check-url`
 |GET
@@ -100,3 +100,21 @@ Unless noted, routes are intended for *local development* on the same origin as 
 |===
 
 Also serves static files from the project root (e.g. `index.html`, `js/`, `locales/`).
+
+`/api/source-feed` validates RSS/Atom before caching it. Empty feeds, malformed XML,
+and HTML error pages return HTTP 502 (`source_feed_empty` or
+`source_feed_invalid_xml`) rather than a successful empty feed. The browser uses
+the actual XML format to select its RSS or Atom parser. Publisher requests remain
+server-side; these feed changes require no new browser CSP origins.
+
+`engine=publisher` reads explicit profiles from `scripts/publisher_sources.json`.
+It discovers candidate links on publisher pages and advertised sitemaps, then
+fetches each article to confirm its canonical publisher URL, title, publication
+timestamp, public accessibility and readable text. Up to 16,000 characters of
+verified plain article text are safely encoded into RSS `description` for the KI
+summarizer. Sitemap `lastmod` is never treated as a publication date.
+Only configured HTTPS hosts and public network addresses are accepted, including
+redirect targets. Requests are bounded to 16 seconds per source and 4 MiB per
+document, including decompressed sitemaps. A profile mismatch returns HTTP 400;
+unavailable or unverifiable public articles return HTTP 502 with a
+`publisher_unavailable:...` reason. No search API key or paid service is used.

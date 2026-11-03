@@ -1,0 +1,107 @@
+{
+  "toronto_star": {
+    "name": "Toronto Star",
+    "site_url": "https://www.thestar.com",
+    "hosts": [
+      "thestar.com"
+    ],
+    "sitemaps": [
+      "https://www.thestar.com/tncms/sitemap/news.xml"
+    ],
+    "evidence": "https://www.thestar.com/robots.txt"
+  },
+  "nikkei": {
+    "name": "Nikkei",
+    "site_url": "https://www.nikkei.com",
+    "hosts": [
+      "nikkei.com"
+    ],
+    "sitemaps": [],
+    "evidence": "https://www.nikkei.com/robots.txt"
+  },
+  "joongang": {
+    "name": "Korea JoongAng Daily / JoongAng Ilbo",
+    "site_url": "https://www.koreajoongangdaily.com/",
+    "hosts": [
+      "joins.com",
+      "koreajoongangdaily.joins.com",
+      "koreajoongangdaily.com"
+    ],
+    "sitemaps": [
+      "https://www.koreajoongangdaily.com/tag/korea/business/lifestyle/entertainment/sports/opinion/world/?lab_viewport=newssitemap"
+    ],
+    "evidence": "https://koreajoongangdaily.joins.com/robots.txt"
+  },
+  "goal": {
+    "name": "Goal",
+    "site_url": "https://www.goal.com",
+    "hosts": [
+      "goal.com"
+    ],
+    "sitemaps": [
+      "https://www.goal.com/en/sitemap"
+    ],
+    "evidence": "https://www.goal.com/robots.txt",
+    "article_prefixes": [
+      "/en/",
+      "/en-us/",
+      "/en-gb/"
+    ]
+  },
+  "national_geographic": {
+    "name": "National Geographic",
+    "site_url": "https://www.nationalgeographic.com",
+    "hosts": [
+      "nationalgeographic.com"
+    ],
+    "sitemaps": [
+      "https://www.nationalgeographic.com/sitemaps/sitemap.xml"
+    ],
+    "evidence": "https://www.nationalgeographic.com/robots.txt"
+  },
+  "instyle": {
+    "name": "InStyle",
+    "site_url": "https://www.instyle.com",
+    "hosts": [
+      "instyle.com"
+    ],
+    "sitemaps": [
+      "https://www.instyle.com/google-news-sitemap.xml"
+    ],
+    "evidence": "https://www.instyle.com/robots.txt"
+  },
+  "lonely_planet": {
+    "name": "Lonely Planet",
+    "site_url": "https://www.lonelyplanet.com",
+    "hosts": [
+      "lonelyplanet.com"
+    ],
+    "sitemaps": [
+      "https://www.lonelyplanet.com/sitemaps/articles/sitemap.xml"
+    ],
+    "evidence": "https://www.lonelyplanet.com/robots.txt",
+    "discovery_pages": [
+      "https://www.lonelyplanet.com/articles"
+    ]
+  },
+  "rough_guides": {
+    "name": "Rough Guides",
+    "site_url": "https://www.roughguides.com",
+    "hosts": [
+      "roughguides.com"
+    ],
+    "sitemaps": [
+      "https://www.roughguides.com/sitemap.xml"
+    ],
+    "evidence": "https://www.roughguides.com/robots.txt"
+  },
+  "el_universal_mx": {
+    "name": "El Universal",
+    "site_url": "https://www.eluniversal.com.mx",
+    "hosts": [
+      "eluniversal.com.mx"
+    ],
+    "sitemaps": [],
+    "evidence": "https://www.eluniversal.com.mx/robots.txt"
+  }
+}

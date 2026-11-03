@@ -1,0 +1,246 @@
+= Feed-Prüfung vom 03.11.2026
+
+NOTE: Nachfolgender Stand dokumentiert die erste Reparatur. Der neuere kostenlose Sitemap-/HTML-Nachtest erreicht 155/173 Quellen; siehe link:publisher-fallbacks-2026-11-03.adoc[aktuelle Ergebnisse und verbleibende 18 Quellen].
+
+Letzter Nachtest (UTC): 2026-11-03T22:02:28.078726+00:00
+
+Alle 173 konfigurierten Quellen wurden über ihre tatsächlichen Abrufpfade geprüft. 146 Quellen liefern verwertbare Einträge; 27 bleiben auffällig. HTTP 200 allein wurde nicht als Erfolg gewertet.
+
+111 weitere Anbieter-Konfigurationen wurden gegenüber dem n-tv-Fix korrigiert: 109 auf nachweislich erreichbare Verlagsfeeds umgestellt, CNN und Cricbuzz mit verifizierten Suchbereichen repariert. Die zuvor korrigierte n-tv-Konfiguration bleibt erhalten.
+
+Geprüft wurden XML-Parsing, nichtleere Einträge, Titel, Artikel-URLs passend zur Host-Allowlist und das jüngste auswertbare Publikationsdatum. Ein Alter über 30 Tagen ist im Prüfskript ein Fehler; diese Grenze ist kein neuer Filter in der Anwendung. Ohne auswertbares Datum ist die Aktualität nicht nachgewiesen. Angegeben werden Einträge vor den zusätzlichen Advertorial- und Dublettenfiltern der Oberfläche.
+
+Der echte Browser-Scraper hat alle Quellen durchlaufen: 147/173 waren zu diesem Zeitpunkt parsebar (darunter drei ausschließlich alte Suchfeeds). Forbes und UOL wurden danach zusätzlich repariert und einzeln nachgetestet. UOLs langsame Weiterleitung wurde durch deren verifiziertes Ziel ersetzt. Die sieben Browser-Regressionstests und zwei Python-Testmethoden bestehen. BBC-Nachrichten und KI-Zusammenfassungen wurden in der laufenden Anwendung sichtbar überprüft. Es wurde keine KI-Generierung für sämtliche 173 Anbieter gestartet.
+
+Leere oder fehlerhafte Feeds erzeugen keine Demo-Artikel mehr. Fehler werden an die Anwendung weitergegeben, sodass reale Cache-Inhalte erhalten bleiben können. Bereits gespeicherte Demo-Einträge werden ausgeschlossen. Atom wird anhand des Dokuments erkannt; RSS-1.0-Datumsangaben aus Dublin Core werden gelesen.
+
+== Reproduktion
+
+[source,bash]
+----
+.venv/bin/python scripts/dev_server.py
+# In einem zweiten Terminal:
+.venv/bin/python scripts/check_source_feeds.py --output /tmp/source-feeds.json
+.venv/bin/python scripts/check_source_feeds.py --source bbc_news --source cnet --source uol
+.venv/bin/python -m unittest discover -s tests -v
+----
+
+Browser: http://localhost:8080/tests/feed-regression.html für Parser- und Fehlerfalltests; `?live=1` für alle tatsächlichen Quellen oder `?live=uol,forbes` für ausgewählte Quellen. Die Browser-Prüfung nutzt eigene Test-Caches und ruft keine KI auf.
+
+In Cucumber: Quelle auswählen, aktualisieren, anschließend eine KI-Zusammenfassung anzeigen. Für Änderungen am Entwicklungsserver ist ein Neustart erforderlich; dieser wurde lokal durchgeführt.
+
+== Offene Quellen und konkrete Blocker
+
+Bei diesen Anbietern besteht weiterhin keine vollständige Lösung. Die registrierte Abrufmethode und die unten dokumentierten Alternativen wurden geprüft. Fehlende Feed-Unterstützung kann aus einem leeren Suchresultat allein nicht abgeleitet werden. Für eine weitere Korrektur wird ein aktuell erreichbarer Verlagsfeed oder eine verifizierbare Abrufmethode benötigt. Zugriffssperren wurden nicht umgangen.
+
+[cols="1,3",options="header"]
+|===
+|Quelle |Befund
+|MSN News |source_feed_empty
+|USA Today |HTTP Error 402: Payment Required; Ersatzfeed https://rssfeeds.usatoday.com/usatoday-NewsTopStories: HTTP Error 402: Payment Required
+|The Washington Post |source_feed_empty; Ersatzfeed https://feeds.washingtonpost.com/rss/politics: HTTP Error 502: Bad Gateway
+|Reuters |source_feed_empty; Ersatzfeed https://feeds.reuters.com/reuters/topNews: <urlopen error [Errno 8] nodename nor servname provided, or not known>
+|Associated Press |source_feed_empty
+|Politico |source_feed_empty; Ersatzfeed https://www.politico.com/rss/politicopicks.xml: HTTP Error 403: Forbidden
+|India.com |source_feed_empty
+|Telegraph |Newest dated entry is older than 30 days; Ersatzfeed https://www.telegraph.co.uk/rss.xml: HTTP Error 402: Payment Required
+|O Estado de S. Paulo |source_feed_empty
+|Toronto Star |source_feed_empty; Ersatzfeed https://www.thestar.com/content/thestar/feed.RSSManagerServlet.articles.topstories.rss: not well-formed (invalid token): line 427, column 26
+|Nikkei |source_feed_empty; Ersatzfeed https://www.nikkei.com/rss/top.rdf: HTTP Error 404: Not Found
+|Korea JoongAng Daily / JoongAng Ilbo |source_feed_empty
+|News.com.au |source_feed_empty
+|The Australian |source_feed_empty
+|Arab News |HTTP Error 403: Forbidden
+|Sports Reference |source_feed_empty; Ersatzfeed https://www.sports-reference.com/blog/feed/: HTTP Error 403: Forbidden
+|Goal |source_feed_empty
+|90min |Newest dated entry is older than 30 days
+|IMDb |source_feed_empty
+|Fandom |source_feed_empty
+|National Geographic |source_feed_empty; Ersatzfeed https://www.nationalgeographic.com/travel/rss: HTTP Error 404: Not Found
+|WebMD |Newest dated entry is older than 30 days; Ersatzfeed https://rssfeeds.webmd.com/rss/rss.aspx?RSSSource=RSS_PUBLIC: <urlopen error [Errno 8] nodename nor servname provided, or not known>
+|InStyle |source_feed_empty; Ersatzfeed https://feeds-api.people.inc/v1/rss/google/8e4da836-f458-4776-856b-0a481d6dc617: <urlopen error [Errno 8] nodename nor servname provided, or not known>
+|Food Network |source_feed_empty
+|Lonely Planet |source_feed_empty; Ersatzfeed https://www.lonelyplanet.com/news/feed/atom/: not well-formed (invalid token): line 1, column 327
+|Rough Guides |source_feed_empty
+|El Universal |source_feed_empty; Ersatzfeed https://www.eluniversal.com.mx/rss/universalmxm.xml: HTTP Error 404: Not Found
+|===
+
+== Ergebnisse aller Quellen
+
+[cols="2,1,1,2,3",options="header"]
+|===
+|Quelle |Status |Einträge |Jüngstes Datum (UTC) |Abruf / Feed
+|heise.de |OK |153 |2026-11-03T20:54:00+00:00 |https://www.heise.de/rss/heise-atom.xml
+|BILD |OK |100 |2026-11-03T22:54:07+00:00 |https://www.bild.de/feed/home.xml
+|Telepolis |OK |100 |2026-11-03T17:40:00+00:00 |https://www.telepolis.de/news-atom.xml
+|golem.de |OK |40 |2026-11-03T18:02:02+00:00 |https://rss.golem.de/rss.php?feed=RSS2.0
+|ComputerBase |OK |50 |2026-11-03T18:34:00+00:00 |https://www.computerbase.de/rss/news.xml
+|t3n.de |OK |20 |2026-11-03T21:08:36+00:00 |https://t3n.de/rss.xml
+|IT-Administrator |OK |10 |2026-11-03T12:00:00+00:00 |https://www.it-administrator.de/rss.xml
+|The Verge |OK |10 |2026-11-03T21:21:04+00:00 |https://www.theverge.com/rss/index.xml
+|The New York Times |OK |14 |2026-11-03T21:52:37+00:00 |https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
+|BBC News |OK |34 |2026-11-03T21:40:42+00:00 |https://feeds.bbci.co.uk/news/rss.xml
+|CNN |OK |13 |2026-10-30T09:40:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=cnn&label=CNN&site_url=https%3A%2F%2Fwww.cnn.com&lang=en&limit=30&rev=20261103b&site=edition.cnn.com
+|Yahoo News / Yahoo Finance |OK |5 |2026-11-03T21:37:16+00:00 |https://news.yahoo.com/rss/topstories
+|MSN News |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=msn_news&label=MSN+News&site_url=https%3A%2F%2Fwww.msn.com&lang=en&limit=30&rev=source-history-20260427a&site=msn.com
+|The Guardian |OK |120 |2026-11-03T21:48:02+00:00 |https://www.theguardian.com/europe/rss
+|Daily Mail / MailOnline |OK |150 |2026-11-03T21:53:08+00:00 |https://www.dailymail.co.uk/home/index.rss
+|Fox News |OK |25 |2026-11-03T20:36:01+00:00 |https://moxie.foxnews.com/google-publisher/latest.xml
+|USA Today |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=html_sections&id=usa_today&label=USA+Today&site_url=https%3A%2F%2Fwww.usatoday.com&lang=en&limit=30&rev=20260428a&section_url=https%3A%2F%2Fwww.usatoday.com%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Fnews%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Fsports%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Fmoney%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Fentertainment%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Flife%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Ftech%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Ftravel%2F&section_url=https%3A%2F%2Fwww.usatoday.com%2Fopinion%2F
+|The Washington Post |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=washington_post&label=The+Washington+Post&site_url=https%3A%2F%2Fwww.washingtonpost.com&lang=en&limit=30&rev=source-history-20260427a&site=washingtonpost.com
+|The Wall Street Journal |OK |72 |2026-11-03T21:45:00+00:00 |https://feeds.content.dowjones.io/public/rss/RSSWorldNews
+|Reuters |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=reuters&label=Reuters&site_url=https%3A%2F%2Fwww.reuters.com&lang=en&limit=30&rev=source-history-20260427a&site=reuters.com
+|Associated Press |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=ap_news&label=Associated+Press&site_url=https%3A%2F%2Fapnews.com&lang=en&limit=30&rev=source-history-20260427a&site=apnews.com
+|NBC News |OK |25 |2026-11-03T21:30:00+00:00 |https://feeds.nbcnews.com/nbcnews/public/news
+|CBS News |OK |30 |2026-11-03T21:51:44+00:00 |https://www.cbsnews.com/latest/rss/main
+|ABC News (US) |OK |24 |2026-11-03T21:53:24+00:00 |https://feeds.abcnews.com/abcnews/topstories
+|Bloomberg |OK |20 |2026-11-03T21:50:39+00:00 |https://feeds.bloomberg.com/markets/news.rss
+|Financial Times |OK |11 |2026-11-03T21:40:51+00:00 |https://www.ft.com/?format=rss
+|Politico |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=politico&label=Politico&site_url=https%3A%2F%2Fwww.politico.com&lang=en&limit=30&rev=source-history-20260427a&site=politico.com
+|Newsweek |OK |20 |2026-11-03T21:46:02+00:00 |https://www.newsweek.com/rss
+|Business Insider |OK |20 |2026-11-03T20:45:10+00:00 |https://www.businessinsider.com/rss
+|Forbes |OK |25 |2026-11-03T21:07:20+00:00 |https://www.forbes.com/business/feed/
+|The Economist |OK |11 |2026-11-02T09:43:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=economist&label=The+Economist&site_url=https%3A%2F%2Fwww.economist.com&lang=en&limit=30&rev=source-history-20260427a&site=economist.com
+|Los Angeles Times |OK |145 |2026-11-03T21:11:43+00:00 |https://www.latimes.com/index.rss
+|The Times of India |OK |9 |2026-11-02T22:43:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=times_of_india&label=The+Times+of+India&site_url=https%3A%2F%2Ftimesofindia.indiatimes.com&lang=en&limit=30&rev=source-history-20260427a&site=timesofindia.com
+|Hindustan Times |OK |100 |2026-11-03T20:40:34+00:00 |https://www.hindustantimes.com/feeds/rss/latest/rssfeed.xml
+|India Today |OK |127 |2026-11-03T21:50:05+00:00 |https://www.indiatoday.in/rss/home
+|India.com |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=india_com&label=India.com&site_url=https%3A%2F%2Fwww.india.com&lang=en&limit=30&rev=source-history-20260427a&site=india.com
+|NDTV |OK |20 |2026-11-03T20:21:35+00:00 |https://feeds.feedburner.com/ndtvnews-top-stories
+|News18 |OK |1 |2026-10-27T08:00:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=news18&label=News18&site_url=https%3A%2F%2Fwww.news18.com&lang=en&limit=30&rev=source-history-20260427a&site=news18.com
+|Indian Express |OK |8 |2026-11-01T02:47:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=indian_express&label=Indian+Express&site_url=https%3A%2F%2Findianexpress.com&lang=en&limit=30&rev=source-history-20260427a&site=indianexpress.com
+|The Hindu |OK |60 |2026-11-03T21:18:44+00:00 |https://www.thehindu.com/feeder/default.rss
+|Al Jazeera |OK |25 |2026-11-03T21:43:19+00:00 |https://www.aljazeera.com/xml/rss/all.xml
+|Deutsche Welle |OK |126 |2026-11-03T20:41:00+00:00 |https://rss.dw.com/rdf/rss-en-all
+|Der Spiegel |OK |1 |2026-11-03T11:07:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=spiegel&label=Der+Spiegel&site_url=https%3A%2F%2Fwww.spiegel.de&lang=de&limit=30&rev=source-history-20260427a&site=spiegel.de
+|WELT |OK |30 |2026-11-03T21:33:00+00:00 |https://www.welt.de/feeds/latest.rss
+|Süddeutsche Zeitung |OK |15 |2026-11-03T21:06:32+00:00 |https://rss.sueddeutsche.de/rss/Topthemen
+|FAZ |OK |163 |2026-11-03T21:38:05+00:00 |https://www.faz.net/rss/aktuell/
+|Tagesschau |OK |61 |2026-11-03T21:52:42+00:00 |https://www.tagesschau.de/index~rss2.xml
+|n-tv |OK |50 |2026-11-03T21:53:17+00:00 |https://www.n-tv.de/rss
+|t-online |OK |86 |2026-11-03T21:45:14+00:00 |https://www.t-online.de/feed.rss
+|Focus Online |OK |400 |2026-11-03T21:56:00+00:00 |https://www.focus.de/rss
+|Stern |OK |20 |2026-11-03T21:52:18+00:00 |https://www.stern.de/feed/standard/alle-nachrichten/
+|Zeit Online |OK |15 |2026-11-03T21:44:23+00:00 |https://newsfeed.zeit.de/index
+|The Sun |OK |23 |2026-11-03T21:55:27+00:00 |https://www.thesun.co.uk/feed/
+|The Mirror |OK |25 |2026-11-03T21:43:53+00:00 |https://www.mirror.co.uk/rss.xml
+|The Independent |OK |14 |2026-10-30T04:08:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=independent&label=The+Independent&site_url=https%3A%2F%2Fwww.independent.co.uk&lang=en&limit=30&rev=source-history-20260427a&site=independent.co.uk
+|Sky News |OK |10 |2026-11-03T20:32:00+00:00 |https://feeds.skynews.com/feeds/rss/home.xml
+|Telegraph |OFFEN |1 |2016-03-16T07:15:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=telegraph&label=Telegraph&site_url=https%3A%2F%2Fwww.telegraph.co.uk&lang=en&limit=30&rev=source-history-20260427a&site=telegraph.co.uk
+|Metro (UK) |OK |22 |2026-11-03T21:55:12+00:00 |https://metro.co.uk/feed/
+|Le Monde |OK |16 |2026-11-03T20:50:00+00:00 |https://www.lemonde.fr/rss/une.xml
+|Le Figaro |OK |20 |2026-11-03T21:52:05+00:00 |https://www.lefigaro.fr/rss/figaro_actualites.xml
+|La Repubblica |OK |30 |2026-11-03T21:21:23+00:00 |https://www.repubblica.it/rss/homepage/rss2.0.xml
+|Corriere della Sera |OK |131 |2026-11-03T21:39:43+00:00 |https://xml2.corriereobjects.it/feed-hp/homepage-restyle-2025.xml
+|El País |OK |159 |2026-11-03T21:52:24+00:00 |https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada
+|El Mundo |OK |29 |2026-11-03T21:24:37+00:00 |https://www.elmundo.es/rss/googlenews/portada.xml
+|La Nación |OK |92 |2026-11-03T21:52:29+00:00 |https://www.lanacion.com.ar/arc/outboundfeeds/rss/
+|Clarín |OK |10 |2026-11-03T21:30:14+00:00 |https://www.clarin.com/rss/lo-ultimo/
+|Globo |OK |14 |2026-11-01T10:29:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=globo&label=Globo&site_url=https%3A%2F%2Fwww.globo.com&lang=pt&limit=30&rev=source-history-20260427a&site=globo.com
+|UOL |OK |31 |2026-11-04T00:06:33+00:00 |https://www.uol.com.br/vueland/api/?loadComponent=XmlFeedRss
+|Folha de S.Paulo |OK |12 |2026-10-31T17:00:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=folha&label=Folha+de+S.Paulo&site_url=https%3A%2F%2Fwww.folha.uol.com.br&lang=pt&limit=30&rev=source-history-20260427a&site=folha.uol.com.br
+|O Estado de S. Paulo |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=estadao&label=O+Estado+de+S.+Paulo&site_url=https%3A%2F%2Fwww.estadao.com.br&lang=pt&limit=30&rev=source-history-20260427a&site=estadao.com.br
+|CBC News |OK |20 |2026-11-03T21:38:55+00:00 |https://www.cbc.ca/webfeed/rss/rss-topstories
+|Global News (CA) |OK |10 |2026-11-03T21:51:50+00:00 |https://globalnews.ca/feed/
+|Toronto Star |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=toronto_star&label=Toronto+Star&site_url=https%3A%2F%2Fwww.thestar.com&lang=en&limit=30&rev=source-history-20260427a&site=thestar.com
+|La Presse |OK |8 |2026-11-03T21:27:31+00:00 |https://www.lapresse.ca/actualites/manchettes/rss
+|Radio-Canada Info |OK |26 |2026-11-03T21:30:42+00:00 |https://ici.radio-canada.ca/info/rss/info/a-la-une
+|Yomiuri Online |OK |1 |2026-11-02T21:03:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=yomiuri&label=Yomiuri+Online&site_url=https%3A%2F%2Fwww.yomiuri.co.jp&lang=ja&limit=30&rev=source-history-20260427a&site=yomiuri.co.jp
+|Asahi Shimbun |OK |40 |2026-11-03T21:30:00+00:00 |https://www.asahi.com/rss/asahi/newsheadlines.rdf
+|Nikkei |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=nikkei&label=Nikkei&site_url=https%3A%2F%2Fwww.nikkei.com&lang=ja&limit=30&rev=source-history-20260427a&site=nikkei.com
+|Mainichi Shimbun |OK |20 |2026-11-03T21:52:25+00:00 |https://mainichi.jp/rss/etc/mainichi-flash.rss
+|Korea JoongAng Daily / JoongAng Ilbo |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=joongang&label=Korea+JoongAng+Daily+%2F+JoongAng+Ilbo&site_url=https%3A%2F%2Fkoreajoongangdaily.joins.com&lang=en&limit=30&rev=source-history-20260427a&site=koreajoongangdaily.joins.com&site=joins.com
+|Chosun Ilbo |OK |100 |2026-11-03T21:40:56+00:00 |https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml
+|Yonhap News |OK |120 |2026-11-03T21:49:03+00:00 |https://www.yna.co.kr/rss/news.xml
+|Sydney Morning Herald |OK |20 |2026-11-03T21:54:06+00:00 |https://www.smh.com.au/rss/feed.xml
+|The Age |OK |20 |2026-11-03T21:54:06+00:00 |https://www.theage.com.au/rss/feed.xml
+|News.com.au |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=news_com_au&label=News.com.au&site_url=https%3A%2F%2Fwww.news.com.au&lang=en&limit=30&rev=source-history-20260427a&site=news.com.au
+|ABC News (Australia) |OK |25 |2026-11-03T21:46:03+00:00 |https://www.abc.net.au/news/feed/51120/rss.xml
+|The Australian |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=the_australian&label=The+Australian&site_url=https%3A%2F%2Fwww.theaustralian.com.au&lang=en&limit=30&rev=source-history-20260427a&site=theaustralian.com.au
+|Stuff |OK |3 |2026-10-27T17:00:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=stuff_nz&label=Stuff&site_url=https%3A%2F%2Fwww.stuff.co.nz&lang=en&limit=30&rev=source-history-20260427a&site=stuff.co.nz
+|NZ Herald |OK |10 |2026-11-03T21:46:55+00:00 |https://rss.nzherald.co.nz/rss/xml/nzhrsscid_000000001.xml
+|Gulf News |OK |2 |2026-10-31T11:22:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=gulf_news&label=Gulf+News&site_url=https%3A%2F%2Fgulfnews.com&lang=en&limit=30&rev=source-history-20260427a&site=gulfnews.com
+|Khaleej Times |OK |19 |2026-11-03T16:43:03+00:00 |https://www.khaleejtimes.com/api/v1/collections/top-section.rss
+|Haaretz |OK |100 |2026-11-03T21:26:27+00:00 |https://www.haaretz.com/srv/haaretz-latest-headlines
+|Times of Israel |OK |15 |2026-11-03T20:45:25+00:00 |https://www.timesofisrael.com/feed/
+|Al Arabiya |OK |14 |2026-10-31T14:58:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=al_arabiya_en&label=Al+Arabiya&site_url=https%3A%2F%2Fenglish.alarabiya.net&lang=en&limit=30&rev=source-history-20260427a&site=english.alarabiya.net
+|Arab News |OFFEN |0 |nicht nachgewiesen |https://www.arabnews.com/rss.xml
+|South China Morning Post |OK |50 |2026-11-03T21:55:32+00:00 |https://www.scmp.com/rss/feed
+|The Straits Times |OK |50 |2026-11-03T17:57:36+00:00 |https://www.straitstimes.com/news/singapore/rss.xml
+|Channel NewsAsia / CNA |OK |20 |2026-11-03T21:49:45+00:00 |https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml
+|Rappler |OK |10 |2026-11-03T14:01:17+00:00 |https://www.rappler.com/feed/
+|Inquirer |OK |20 |2026-11-03T21:50:00+00:00 |https://www.inquirer.net/fullfeed
+|Bangkok Post |OK |10 |2026-11-03T21:06:00+00:00 |https://www.bangkokpost.com/rss/data/topstories.xml
+|VnExpress |OK |53 |2026-11-03T01:06:45+00:00 |https://vnexpress.net/rss/tin-moi-nhat.rss
+|AllAfrica |OK |33 |2026-11-03T17:39:16+00:00 |https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf
+|Mail & Guardian |OK |2 |2026-10-30T03:18:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=mail_and_guardian&label=Mail+%26+Guardian&site_url=https%3A%2F%2Fmg.co.za&lang=en&limit=30&rev=source-history-20260427a&site=mg.co.za
+|Daily Nation (Kenya) |OK |2 |2026-10-29T07:04:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=daily_nation_kenya&label=Daily+Nation+%28Kenya%29&site_url=https%3A%2F%2Fnation.africa&lang=en&limit=30&rev=source-history-20260427a&site=nation.africa
+|Infobae |OK |100 |2026-11-03T21:33:46+00:00 |https://www.infobae.com/arc/outboundfeeds/rss/category/america/mundo/
+|People |OK |50 |2026-11-03T18:45:18+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/cc522820-4870-4a9a-9d5a-4a08b7a572f8
+|ESPN |OK |37 |2026-11-03T21:45:49+00:00 |https://www.espn.com/espn/rss/news
+|Marca |OK |82 |2026-11-03T21:45:23+00:00 |https://www.marca.com/rss/googlenews/portada.xml
+|AS |OK |50 |2026-11-03T21:51:41+00:00 |https://feeds.as.com/mrss-s/pages/as/site/as.com/section/futbol/portada/
+|Cricbuzz |OK |5 |2026-11-01T08:50:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=cricbuzz&label=Cricbuzz&site_url=https%3A%2F%2Fwww.cricbuzz.com&lang=en&limit=30&rev=20261103b&site=cricbuzz.com%2Fcricket-news
+|Bleacher Report |OK |606 |2026-11-03T21:35:31+00:00 |https://feeds.bleacherreport.com/articles
+|Sports Reference |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=sports_reference&label=Sports+Reference&site_url=https%3A%2F%2Fwww.sports-reference.com&lang=en&limit=30&rev=source-history-20260427a&site=sports-reference.com
+|Goal |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=goal&label=Goal&site_url=https%3A%2F%2Fwww.goal.com&lang=en&limit=30&rev=source-history-20260427a&site=goal.com
+|Sky Sports |OK |20 |2026-11-03T21:50:00+00:00 |https://www.skysports.com/rss/11095
+|90min |OFFEN |14 |2026-03-20T01:46:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=ninetymin&label=90min&site_url=https%3A%2F%2Fwww.90min.com&lang=en&limit=30&rev=source-history-20260427a&site=90min.com
+|Transfermarkt |OK |10 |2026-11-03T20:33:51+00:00 |https://www.transfermarkt.de/rss/news
+|IMDb |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=imdb&label=IMDb&site_url=https%3A%2F%2Fwww.imdb.com&lang=en&limit=30&rev=source-history-20260427a&site=imdb.com
+|Fandom |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=fandom&label=Fandom&site_url=https%3A%2F%2Fwww.fandom.com&lang=en&limit=30&rev=source-history-20260427a&site=fandom.com
+|Rotten Tomatoes |OK |14 |2026-10-22T17:00:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=rotten_tomatoes&label=Rotten+Tomatoes&site_url=https%3A%2F%2Fwww.rottentomatoes.com&lang=en&limit=30&rev=source-history-20260427a&site=rottentomatoes.com
+|Variety |OK |10 |2026-11-03T20:49:07+00:00 |https://variety.com/feed/rss/
+|The Hollywood Reporter |OK |10 |2026-11-03T21:12:05+00:00 |https://www.hollywoodreporter.com/feed/rss/
+|TMZ |OK |20 |2026-11-03T21:38:29+00:00 |https://www.tmz.com/rss.xml
+|Rolling Stone |OK |10 |2026-11-03T21:38:04+00:00 |https://www.rollingstone.com/feed/rss/
+|Billboard |OK |10 |2026-11-03T21:36:10+00:00 |https://www.billboard.com/feed/rss/
+|Entertainment Weekly |OK |50 |2026-11-03T17:38:48+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/06e092d0-4dff-468a-93db-8d6a995730b4
+|Deadline |OK |12 |2026-11-03T21:13:13+00:00 |https://deadline.com/feed/rss/
+|TechCrunch |OK |20 |2026-11-03T21:43:08+00:00 |https://techcrunch.com/feed/
+|WIRED |OK |50 |2026-11-03T21:25:25+00:00 |https://www.wired.com/feed/rss
+|CNET |OK |25 |2026-11-03T21:28:10+00:00 |https://www.cnet.com/rss/all/
+|Tom's Guide |OK |14 |2026-10-09T12:42:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=toms_guide&label=Tom%27s+Guide&site_url=https%3A%2F%2Fwww.tomsguide.com&lang=en&limit=30&rev=source-history-20260427a&site=tomsguide.com
+|Tom's Hardware |OK |14 |2026-10-28T08:01:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=toms_hardware&label=Tom%27s+Hardware&site_url=https%3A%2F%2Fwww.tomshardware.com&lang=en&limit=30&rev=source-history-20260427a&site=tomshardware.com
+|Digital Trends |OK |30 |2026-11-03T21:55:56+00:00 |https://www.digitaltrends.com/feed/
+|How-To Geek |OK |10 |2026-11-03T21:30:15+00:00 |https://www.howtogeek.com/feed/
+|Scientific American |OK |50 |2026-11-03T19:45:00+00:00 |https://www.scientificamerican.com/platform/syndication/rss/
+|Discover Magazine |OK |1 |2026-10-23T05:49:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=discover_magazine&label=Discover+Magazine&site_url=https%3A%2F%2Fwww.discovermagazine.com&lang=en&limit=30&rev=source-history-20260427a&site=discovermagazine.com
+|New Scientist |OK |10 |2026-11-03T16:00:00+00:00 |https://www.newscientist.com/feed/home/
+|National Geographic |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=national_geographic&label=National+Geographic&site_url=https%3A%2F%2Fwww.nationalgeographic.com&lang=en&limit=30&rev=source-history-20260427a&site=nationalgeographic.com
+|Engadget |OK |20 |2026-11-03T21:27:50+00:00 |https://www.engadget.com/category/news/feed/
+|Gizmodo |OK |20 |2026-11-03T21:45:52+00:00 |https://gizmodo.com/feed
+|Ars Technica |OK |20 |2026-11-03T20:39:55+00:00 |https://feeds.arstechnica.com/arstechnica/index
+|IGN |OK |20 |2026-11-03T20:59:17+00:00 |https://feeds.ign.com/ign/all
+|GameSpot |OK |1 |2026-11-03T07:56:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=gamespot&label=GameSpot&site_url=https%3A%2F%2Fwww.gamespot.com&lang=en&limit=30&rev=source-history-20260427a&site=gamespot.com
+|Kotaku |OK |1 |2026-10-29T09:45:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=kotaku&label=Kotaku&site_url=https%3A%2F%2Fkotaku.com&lang=en&limit=30&rev=source-history-20260427a&site=kotaku.com
+|PC Gamer |OK |14 |2026-10-30T08:22:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=pc_gamer&label=PC+Gamer&site_url=https%3A%2F%2Fwww.pcgamer.com&lang=en&limit=30&rev=source-history-20260427a&site=pcgamer.com
+|Polygon |OK |10 |2026-11-03T21:40:53+00:00 |https://www.polygon.com/feed/
+|Investopedia |OK |50 |2026-11-03T20:38:45+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/f8466ec3-5044-46bc-94b7-2df65f770eff
+|MarketWatch |OK |10 |2026-11-03T21:30:00+00:00 |https://feeds.marketwatch.com/marketwatch/topstories
+|CNBC |OK |30 |2026-11-03T21:20:14+00:00 |https://www.cnbc.com/id/100003114/device/rss/rss.html
+|Fortune |OK |10 |2026-11-03T20:21:12+00:00 |https://fortune.com/feed
+|Health |OK |50 |2026-11-03T21:51:01+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/adf185b2-ff7d-4fe3-a978-b59ff8528c53
+|WebMD |OFFEN |14 |2026-09-14T16:59:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=webmd&label=WebMD&site_url=https%3A%2F%2Fwww.webmd.com&lang=en&limit=30&rev=source-history-20260427a&site=webmd.com
+|Healthline |OK |50 |nicht nachgewiesen |https://www.healthline.com/rss/health-news
+|Medical News Today |OK |13 |2026-10-30T05:21:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=medical_news_today&label=Medical+News+Today&site_url=https%3A%2F%2Fwww.medicalnewstoday.com&lang=en&limit=30&rev=source-history-20260427a&site=medicalnewstoday.com
+|Vogue |OK |30 |2026-11-03T21:37:10+00:00 |https://www.vogue.com/feed/rss
+|Cosmopolitan |OK |50 |2026-11-03T21:50:55+00:00 |https://www.cosmopolitan.com/rss/all.xml
+|ELLE |OK |50 |2026-11-03T21:42:53+00:00 |https://www.elle.com/rss/all.xml
+|GQ |OK |30 |2026-11-03T21:45:13+00:00 |https://www.gq.com/feed/rss
+|Men's Health |OK |50 |2026-11-03T20:24:00+00:00 |https://www.menshealth.com/rss/all.xml
+|Women's Health |OK |50 |2026-11-03T19:36:00+00:00 |https://www.womenshealthmag.com/rss/all.xml
+|Harper's Bazaar |OK |50 |2026-11-03T21:43:37+00:00 |https://www.harpersbazaar.com/rss/all.xml/
+|InStyle |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=instyle&label=InStyle&site_url=https%3A%2F%2Fwww.instyle.com&lang=en&limit=30&rev=source-history-20260427a&site=instyle.com
+|Allrecipes |OK |50 |2026-11-03T21:43:41+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/afd5e9ea-c220-419e-9135-d8457772e240
+|Food Network |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=food_network&label=Food+Network&site_url=https%3A%2F%2Fwww.foodnetwork.com&lang=en&limit=30&rev=source-history-20260427a&site=foodnetwork.com
+|Serious Eats |OK |50 |2026-11-03T13:00:00+00:00 |https://feeds-api.dotdashmeredith.com/v1/rss/google/ad57d421-0ff5-41e7-a5da-f2167b6d7f7a
+|Lonely Planet |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=lonely_planet&label=Lonely+Planet&site_url=https%3A%2F%2Fwww.lonelyplanet.com&lang=en&limit=30&rev=source-history-20260427a&site=lonelyplanet.com
+|Travel + Leisure |OK |2 |2026-10-06T17:06:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=travel_and_leisure&label=Travel+%2B+Leisure&site_url=https%3A%2F%2Fwww.travelandleisure.com&lang=en&limit=30&rev=source-history-20260427a&site=travelandleisure.com
+|Condé Nast Traveler |OK |3 |2026-11-01T16:01:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=cn_traveler&label=Cond%C3%A9+Nast+Traveler&site_url=https%3A%2F%2Fwww.cntraveler.com&lang=en&limit=30&rev=source-history-20260427a&site=cntraveler.com
+|Frommer's |OK |300 |2026-11-03T21:30:00+00:00 |https://www.frommers.com/feed.xml
+|Rough Guides |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=rough_guides&label=Rough+Guides&site_url=https%3A%2F%2Fwww.roughguides.com&lang=en&limit=30&rev=source-history-20260427a&site=roughguides.com
+|El Universal |OFFEN |0 |nicht nachgewiesen |http://localhost:8080/api/source-feed?engine=bing_news&id=el_universal_mx&label=El+Universal&site_url=https%3A%2F%2Fwww.eluniversal.com.mx&lang=es&limit=30&rev=source-history-20260427a&site=eluniversal.com.mx
+|The Atlantic |OK |25 |2026-11-03T21:53:00+00:00 |https://www.theatlantic.com/feed/all/
+|Slate |OK |4 |2026-11-03T05:00:00+00:00 |http://localhost:8080/api/source-feed?engine=bing_news&id=slate&label=Slate&site_url=https%3A%2F%2Fslate.com&lang=en&limit=30&rev=source-history-20260427a&site=slate.com
+|===

@@ -15,8 +15,10 @@ will not log: Unexpected endpoint or method. (OPTIONS /api/v1/chat).
 The proxy to LM Studio runs server-side (Python → http://127.0.0.1:1234), so no browser CORS.
 
 Usage:
-  python3 scripts/dev_server.py
-  python3 scripts/dev_server.py --port 8080 --target http://127.0.0.1:1234
+  .venv/bin/python scripts/dev_server.py
+  .venv/bin/python scripts/dev_server.py --port 8080 --target http://127.0.0.1:1234
+
+Setup: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
 
 Then open: http://127.0.0.1:8080/index.html
 In KI-Server: REST v1, check "REST über dieselbe Origin …", Save.
@@ -42,6 +44,13 @@ from urllib.error import HTTPError, URLError
 from typing import Optional
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
+
+if __package__:
+    from .publisher_feeds import fetch_publisher_articles, load_publishers
+else:
+    from publisher_feeds import fetch_publisher_articles, load_publishers
+
+PUBLISHER_SOURCES = load_publishers()
 
 MEDIA_RSS_NS = "http://search.yahoo.com/mrss/"
 ET.register_namespace("media", MEDIA_RSS_NS)
@@ -812,6 +821,10 @@ def _build_source_feed_rss_xml(
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = title
         ET.SubElement(item, "link").text = url
+        description_text = str(row.get("description") or "").strip()
+        if description_text:
+            # Publisher extraction returns plain text, including any literal HTML examples.
+            ET.SubElement(item, "description").text = html.escape(description_text)
         guid = ET.SubElement(item, "guid")
         guid.set("isPermaLink", "true")
         guid.text = url
@@ -1057,6 +1070,17 @@ def _get_cached_source_feed_xml(cache_key: str) -> str:
 
 def _put_cached_source_feed_xml(cache_key: str, xml: str) -> None:
     _source_feed_cache_by_key[cache_key] = {"xml": xml, "t": time.time()}
+
+
+def _validate_source_feed_xml(xml: str) -> None:
+    """Reject empty/error pages instead of caching them as successful feeds."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise RuntimeError("source_feed_invalid_xml") from exc
+    items = root.findall(".//{*}item") + root.findall(".//{http://www.w3.org/2005/Atom}entry")
+    if not items:
+        raise RuntimeError("source_feed_empty")
 
 
 def _source_feed_host_in_allowlist(url: str, allowed_suffixes: tuple[str, ...]) -> bool:
@@ -2883,12 +2907,13 @@ def make_handler(lm_target: str) -> type:
                 feed_url = _normalize_source_feed_direct_url(raw_feed_url)
                 lang = _normalize_source_feed_lang((qs.get("lang") or ["en"])[0])
                 rev = (((qs.get("rev") or [""])[0]) or "").strip()[:64]
+                source_id = ((qs.get("id") or [""])[0] or "").strip()
                 try:
                     lim = int((qs.get("limit") or ["30"])[0])
                 except (TypeError, ValueError):
                     lim = 30
                 lim = max(1, min(30, lim))
-                if engine not in ("bing_news", "google_news", "direct_rss", "html_sections"):
+                if engine not in ("bing_news", "google_news", "direct_rss", "html_sections", "publisher"):
                     err = json.dumps({"ok": False, "error": "invalid_engine"}, ensure_ascii=False).encode("utf-8")
                     self.send_response(400)
                     cors_headers(self)
@@ -2931,6 +2956,7 @@ def make_handler(lm_target: str) -> type:
                 mkt = ((qs.get("mkt") or [""])[0] or "").strip()
                 cache_key = json.dumps(
                     {
+                        "source_id": source_id,
                         "engine": engine,
                         "label": label,
                         "site_url": site_url,
@@ -2956,13 +2982,24 @@ def make_handler(lm_target: str) -> type:
                     self.wfile.write(body)
                     return
                 try:
-                    if engine == "bing_news":
+                    if engine == "publisher":
+                        publisher = PUBLISHER_SOURCES.get(source_id)
+                        if publisher is None or _normalize_source_feed_site_url(publisher.site_url) != site_url:
+                            raise ValueError("publisher_source_mismatch")
+                        items = fetch_publisher_articles(publisher, lim)
+                        xml = _build_source_feed_rss_xml(
+                            publisher.name, publisher.site_url, lang, items,
+                            description=f"{publisher.name} (verified public article pages)",
+                        )
+                    elif engine == "bing_news":
                         query = _build_bing_site_query(sites)
                         if not query:
                             raise ValueError("missing_site")
                         payload = _bing_news_rss_search_with_fallback(query, lim, lang, mkt)
                         if payload.get("ok") is not True:
                             raise RuntimeError(str(payload.get("error") or "bing_news_failed"))
+                        if not payload.get("results"):
+                            raise RuntimeError("source_feed_empty")
                         xml = _build_source_feed_rss_xml(
                             label,
                             site_url,
@@ -3005,6 +3042,7 @@ def make_handler(lm_target: str) -> type:
                         )
                         with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
                             xml = resp.read().decode("utf-8", errors="replace")
+                    _validate_source_feed_xml(xml)
                 except ValueError as e:
                     err = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
                     self.send_response(400)
