@@ -1,11 +1,17 @@
 == Troubleshooting
 
-=== News feed empty or fallback demo articles
+=== News feed empty or unavailable
 
 * Open the browser developer console and check for network errors.
 * *Heise* and some other feeds require correct URLs; many non-Heise RSS feeds need `scripts/dev_server.py` because publishers do not send `Access-Control-Allow-Origin` for RSS.
-* Many registry-backed international sources depend on `GET /api/source-feed`; if you open the app without `dev_server`, or if the underlying source proxy/search returns no usable items, the UI can fall back to the offline demo entry for that source.
+* Registry-backed sources depend on `GET /api/source-feed`. Verified publisher RSS feeds are used directly where available; some sources use Bing News search or the free `publisher` HTML/sitemap path. An empty search result does not mean the publisher has no new articles.
+* For `publisher` errors, inspect the HTTP 502 JSON reason and the configured URLs in `scripts/publisher_sources.json`. A source may have publicly readable articles while others require access; only verified public articles with explicit publication dates are included. No dates or article content are invented from sitemap entries.
+* Failed feeds are reported as errors. Existing real cached articles can still be displayed; offline demo rows from older releases are excluded and are no longer generated or sent to the AI.
 * Confirm you opened the app from the dev server origin when using `/api/*-feed` or `/api/source-feed` proxies.
+* Run `.venv/bin/python scripts/check_source_feeds.py --output /tmp/source-feeds.json` with the server running to check all configured sources. Use `--source n_tv` (repeatable) to check individual providers. The check validates XML, publisher article URLs, nonempty entries and whether the newest dated article is at most 30 days old. This freshness threshold is a diagnostic, not an application filter.
+* Run `.venv/bin/python -m unittest discover -s tests -v` for server regression checks, and open `http://localhost:8080/tests/feed-regression.html` for browser parser/error checks. Add `?live=1` to also fetch all configured sources through the actual browser scraper, using isolated test caches and no AI calls.
+
+The 18 providers that failed the 2026-11-03 validation have been removed from the catalog. They are absent from both the header source selector and the settings checklist. Existing enabled/favorite source lists are filtered against the current catalog; if the stored active source was removed, the app selects an available enabled source.
 
 === Categories missing or unexpectedly disabled
 

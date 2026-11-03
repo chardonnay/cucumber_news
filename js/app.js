@@ -7541,6 +7541,7 @@ class App {
                     this.showStatus('Geladene aus dem Cache (keine Netzwerkverbindung)');
                 }
             } else {
+                this.newsItems = [];
                 this.filteredNewsItems = [];
                 this._loadedNewsSource = '';
                 this.currentPage = 1;
@@ -9530,12 +9531,7 @@ class App {
      * @returns {boolean}
      */
     static isOfflineDemoNewsItem(item) {
-        if (!item || typeof item !== 'object') {
-            return false;
-        }
-        const id = String(item.id || '').trim().toLowerCase();
-        const title = String(item.title || '').trim();
-        return id.includes('fallback-') || /\(Offline-Demo\)/i.test(title);
+        return NewsScraper.isOfflineDemoNewsItem(item);
     }
 
     /**

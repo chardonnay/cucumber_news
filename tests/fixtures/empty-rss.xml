@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test fixture: reproduces the empty Bing RSS response. -->
+<rss version="2.0"><channel><title>Empty test feed</title></channel></rss>
